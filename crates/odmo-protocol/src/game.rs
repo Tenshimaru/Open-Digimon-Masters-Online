@@ -110,7 +110,10 @@ pub enum GameRequest {
         target_name: String,
         message: String,
     },
-    /// `pGame::MsgShout` C→S — opcode 1056. `[text message]`.
+    /// Shout delivery (sync record 11) is proven by the client reader; the simple
+    /// shout request has no proven opcode in the modern build (op 1056 at
+    /// 0x00DA6F50 reads one dword and only opens a dialog), so nothing on the wire
+    /// constructs this variant today.
     ShoutMessage {
         message: String,
     },
@@ -8151,10 +8154,6 @@ impl TryFrom<RawPacket> for GameRequest {
                     message,
                 })
             }
-            game::SHOUT_MESSAGE => {
-                let message = reader.read_modern_utf8_string()?;
-                Ok(Self::ShoutMessage { message })
-            }
             game::MEGAPHONE_MESSAGE => {
                 let mode = reader.read_u8()?;
                 let item_code = reader.read_u32()?;
@@ -11224,7 +11223,6 @@ mod tests {
         message.extend_from_slice(&5_u16.to_le_bytes());
         message.extend_from_slice(b"hello");
         for opcode in [
-            game::SHOUT_MESSAGE,
             game::GUILD_MESSAGE,
             game::GUILD_NOTICE,
             game::PARTY_CHAT,

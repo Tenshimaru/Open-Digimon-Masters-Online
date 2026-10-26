@@ -378,7 +378,10 @@ pub mod game {
     pub const EXITEM_USE: i16 = 0x0EDC;
     pub const EMOTICON: i16 = 1076;
     pub const WHISPER_MESSAGE: i16 = 1009;
-    pub const SHOUT_MESSAGE: i16 = 1056;
+    /// Op 1056 in the modern build: the reader at 0x00DA6F50 takes one dword and,
+    /// only for the value 1, opens a menu dialog (event 42). It never reads text,
+    /// so it cannot be the shout request; that opcode stays unresolved.
+    pub const UNKNOWN_1056: i16 = 1056;
     pub const MEGAPHONE_MESSAGE: i16 = 1074;
     pub const TAMER_REACTION: i16 = 1058;
     pub const PARTNER_STOP: i16 = 1033;
