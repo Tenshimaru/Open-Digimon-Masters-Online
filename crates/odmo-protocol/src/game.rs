@@ -3876,6 +3876,8 @@ impl LoadMobsPacket {
         writer.write_u32(0); // no monster growth skill
         writer.write_u32(0); // growth stack
         writer.write_u32(0); // condition
+        // Seed count; the client reads it unconditionally after the condition,
+        // then one placement quadruple per seed.
         writer.write_u32(0); // no skill/seed records
         writer.write_u8(ENTITY_BLOCK_END);
         writer.finalize()
