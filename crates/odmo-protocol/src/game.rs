@@ -3206,9 +3206,10 @@ impl Unknown1343Packet {
     }
 }
 
-/// Unnamed modern op 2140: {u4 a; u8[71] blob; s2 name}; event 564 pops
-/// with the whole envelope. The 71-byte block stays opaque; unresolved
-/// fields keep their read offsets.
+/// Unnamed modern op 2140 — parser @0x00D95910, event 564.
+/// `{u4 a; u8[71] blob; s2 name}`: the reader takes one word, copies 71 raw
+/// bytes (17 dwords, one word and one byte), then the text. The block's
+/// content and the words' meanings are unresolved, so they stay opaque.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Modern2140Packet {
     pub a: u32,
@@ -3236,8 +3237,9 @@ impl Modern2140Packet {
     }
 }
 
-/// Unnamed modern op 2141: {u4 a; s2 name}; event 565 pops with the
-/// pair.
+/// Unnamed modern op 2141 — parser @0x00D956F0, event 565.
+/// `{u4 a; s2 name}`: the reader takes one word then the text; the word's
+/// meaning is unresolved.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Modern2141Packet {
     pub a: u32,
@@ -3253,21 +3255,23 @@ impl Modern2141Packet {
     }
 }
 
-/// Unnamed modern op 2143: {u4 a; u1 count; s2 name}; the count replays
-/// the same u4 into count list nodes and event 566 pops with the
-/// envelope.
+/// Unnamed modern op 2143 — parser @0x00D95A50, event 566.
+/// `{u1 count; count x u4 value; s2 name}`: the reader takes one count byte,
+/// loops count words into a list node each, then the text. The values are
+/// unresolved, so they stay opaque.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Modern2143Packet {
-    pub a: u32,
-    pub count: u8,
+    pub values: Vec<u32>,
     pub name: String, // modern utf8 string, u16 length prefix
 }
 
 impl Modern2143Packet {
     pub fn encode(&self) -> Vec<u8> {
         let mut writer = PacketWriter::new(game::MODERN_2143);
-        writer.write_u32(self.a);
-        writer.write_u8(self.count);
+        writer.write_u8(self.values.len() as u8);
+        for value in &self.values {
+            writer.write_u32(*value);
+        }
         writer.write_modern_utf8_string(&self.name);
         writer.finalize()
     }
@@ -11934,16 +11938,19 @@ mod tests {
         assert_eq!(&raw.payload[6..10], b"stay");
 
         let notice2143 = Modern2143Packet {
-            a: 1,
-            count: 3,
-            name: String::new(),
+            values: vec![7, 9, 11],
+            name: "g".to_string(),
         }
         .encode();
         let raw = PacketReader::from_frame(&notice2143).expect("frame should decode");
         assert_eq!(raw.packet_type, game::MODERN_2143);
-        assert_eq!(raw.payload.len(), 4 + 1 + 2);
-        assert_eq!(raw.payload[4], 3);
-        assert_eq!(&raw.payload[5..7], &[0, 0]);
+        assert_eq!(raw.payload.len(), 1 + 12 + 3);
+        assert_eq!(raw.payload[0], 3);
+        assert_eq!(&raw.payload[1..5], &7u32.to_le_bytes());
+        assert_eq!(&raw.payload[5..9], &9u32.to_le_bytes());
+        assert_eq!(&raw.payload[9..13], &11u32.to_le_bytes());
+        assert_eq!(&raw.payload[13..15], &1u16.to_le_bytes());
+        assert_eq!(raw.payload[15], b'g');
 
         let unknown3247 = Unknown3247Packet {
             handler: 1,

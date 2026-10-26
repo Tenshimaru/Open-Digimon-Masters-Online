@@ -679,9 +679,9 @@ pub mod game {
     // at param 36.
     pub const UNKNOWN_1342: i16 = 1342;
     pub const UNKNOWN_1343: i16 = 1343;
-    // Notice-family strings: 2140 {u4 a; u8[71] blob; s2 name} through event 564 ;
-    // 2141 {u4 a; s2 name} through event 565 ; 2143 {u4 a; u1 count; s2 name} whose
-    // count replays the u4 into count list nodes and pops event 566.
+    // Notice-family strings, each parsed by its own reader: 2140 {u4 a; u8[71]
+    // blob; s2 name} @0x00D95910 event 564 ; 2141 {u4 a; s2 name} @0x00D956F0
+    // event 565 ; 2143 {u1 count; count x u4 value; s2 name} @0x00D95A50 event 566.
     pub const MODERN_2140: i16 = 2140;
     pub const MODERN_2141: i16 = 2141;
     pub const MODERN_2143: i16 = 2143;
