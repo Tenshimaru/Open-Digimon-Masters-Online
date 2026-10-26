@@ -2911,6 +2911,15 @@ impl GameApplication {
             GameRequest::CashShopBuyHistory => self.handle_cash_shop_buy_history(session),
             // ----- Friend slice -------------------------------------------------
             GameRequest::AddFriend { friend_name } => self.handle_add_friend(session, friend_name),
+            GameRequest::DeleteFriend { friend_name } => {
+                self.handle_delete_friend(session, friend_name)
+            }
+            GameRequest::FriendMemo { tamer_name, memo } => {
+                self.handle_friend_memo(session, tamer_name, memo)
+            }
+            GameRequest::GuildInviteFailure { inviter_name } => {
+                self.handle_guild_invite_failure(session, inviter_name)
+            }
             GameRequest::FriendList => self.handle_friend_list(session),
             GameRequest::GuildAuthorityMaster { target_name } => {
                 self.handle_guild_authority(session, target_name, 1)
@@ -3344,6 +3353,99 @@ impl GameApplication {
             self.repository
                 .update_friend_list(character_id, friends)
                 .map_err(|error| GameFlowError::Storage(error.to_string()))?;
+        }
+
+        Ok(Vec::new())
+    }
+
+    /// `pBuddy::Delete` (2402): drops the named friend, then refreshes the panel
+    /// from storage so a name that was never stored cannot leave the client's
+    /// optimistic removal standing.
+    fn handle_delete_friend(
+        &self,
+        session: &GameSession,
+        friend_name: String,
+    ) -> Result<Vec<Vec<u8>>, GameFlowError> {
+        let character_id = session.character_id.ok_or(GameFlowError::Unauthenticated)?;
+        let character = self
+            .repository
+            .character_by_id(character_id)
+            .map_err(|error| GameFlowError::Storage(error.to_string()))?
+            .ok_or(GameFlowError::CharacterNotFound(character_id))?;
+
+        let target = friend_name.trim();
+        let mut friends = character.friend_list.clone();
+        friends.retain(|friend| friend.name != target);
+        if friends.len() != character.friend_list.len() {
+            self.repository
+                .update_friend_list(character_id, friends)
+                .map_err(|error| GameFlowError::Storage(error.to_string()))?;
+        }
+
+        self.handle_friend_list(session)
+    }
+
+    /// `pBuddy::Memo` (2405): rewrites the annotation of one stored friend.
+    fn handle_friend_memo(
+        &self,
+        session: &GameSession,
+        tamer_name: String,
+        memo: String,
+    ) -> Result<Vec<Vec<u8>>, GameFlowError> {
+        let character_id = session.character_id.ok_or(GameFlowError::Unauthenticated)?;
+        let character = self
+            .repository
+            .character_by_id(character_id)
+            .map_err(|error| GameFlowError::Storage(error.to_string()))?
+            .ok_or(GameFlowError::CharacterNotFound(character_id))?;
+
+        let target = tamer_name.trim();
+        let mut friends = character.friend_list.clone();
+        let mut changed = false;
+        for friend in friends.iter_mut().filter(|friend| friend.name == target) {
+            friend.annotation = memo.clone();
+            changed = true;
+        }
+        if changed {
+            self.repository
+                .update_friend_list(character_id, friends)
+                .map_err(|error| GameFlowError::Storage(error.to_string()))?;
+        }
+
+        self.handle_friend_list(session)
+    }
+
+    /// `pGuild::ReqAddFailure` (2110): the sender could not take a pending invite
+    /// and names the tamer who sent it, so that tamer receives the failure
+    /// notice. Code 3 is the one the client renders as "cannot be invited right
+    /// now", which covers a client caught mid-flow.
+    fn handle_guild_invite_failure(
+        &self,
+        session: &GameSession,
+        inviter_name: String,
+    ) -> Result<Vec<Vec<u8>>, GameFlowError> {
+        let character_id = session.character_id.ok_or(GameFlowError::Unauthenticated)?;
+        let character = self
+            .repository
+            .character_by_id(character_id)
+            .map_err(|error| GameFlowError::Storage(error.to_string()))?
+            .ok_or(GameFlowError::CharacterNotFound(character_id))?;
+
+        let inviter = self
+            .repository
+            .character_by_name(inviter_name.trim())
+            .map_err(|error| GameFlowError::Storage(error.to_string()))?;
+        let Some(inviter) = inviter else {
+            return Ok(Vec::new());
+        };
+
+        let packet = GuildInviteFailPacket {
+            reason: 3,
+            target_name: character.name,
+        }
+        .encode();
+        if let Some(broadcast) = &self.broadcast {
+            let _ = broadcast.send_to(inviter.id, &packet);
         }
 
         Ok(Vec::new())

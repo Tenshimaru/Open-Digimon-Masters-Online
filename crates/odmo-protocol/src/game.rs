@@ -518,6 +518,21 @@ pub enum GameRequest {
     AddFriend {
         friend_name: String,
     },
+    /// `pBuddy::Delete` C→S — opcode 2402. `[text friend_name]`.
+    DeleteFriend {
+        friend_name: String,
+    },
+    /// `pBuddy::Memo` C→S — opcode 2405. `[text tamer_name][text memo]`.
+    FriendMemo {
+        tamer_name: String,
+        memo: String,
+    },
+    /// `pGuild::ReqAddFailure` C→S — opcode 2110. `[text inviter_name]`: the
+    /// sender could not take the pending invite, so the notice goes back to the
+    /// tamer who sent it.
+    GuildInviteFailure {
+        inviter_name: String,
+    },
     FriendList,
     /// `GuildToMaster` C→S — opcode 2119. `[text tamer_name]`.
     GuildAuthorityMaster {
@@ -8780,6 +8795,19 @@ impl TryFrom<RawPacket> for GameRequest {
                 let friend_name = reader.read_modern_utf8_string()?;
                 Ok(Self::AddFriend { friend_name })
             }
+            game::BUDDY_DELETE => {
+                let friend_name = reader.read_modern_utf8_string()?;
+                Ok(Self::DeleteFriend { friend_name })
+            }
+            game::BUDDY_MEMO => {
+                let tamer_name = reader.read_modern_utf8_string()?;
+                let memo = reader.read_modern_utf8_string()?;
+                Ok(Self::FriendMemo { tamer_name, memo })
+            }
+            game::GUILD_INVITE_FAIL => {
+                let inviter_name = reader.read_modern_utf8_string()?;
+                Ok(Self::GuildInviteFailure { inviter_name })
+            }
             game::GUILD_AUTHORITY_MASTER => {
                 let target_name = reader.read_modern_utf8_string()?;
                 Ok(Self::GuildAuthorityMaster { target_name })
@@ -11466,6 +11494,64 @@ mod tests {
             .expect("buddy add should parse"),
             GameRequest::AddFriend {
                 friend_name: "Kari".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn buddy_delete_and_memo_follow_the_modern_text_form() {
+        fn modern(text: &str) -> Vec<u8> {
+            let mut out = Vec::new();
+            out.extend_from_slice(&(text.len() as u16).to_le_bytes());
+            out.extend_from_slice(text.as_bytes());
+            out
+        }
+        fn decode(opcode: i16, payload: Vec<u8>) -> GameRequest {
+            GameRequest::try_from(RawPacket {
+                length: 0,
+                packet_type: opcode,
+                payload,
+            })
+            .unwrap_or_else(|error| panic!("opcode {opcode} should parse: {error}"))
+        }
+
+        assert_eq!(
+            decode(game::BUDDY_DELETE, modern("Kari")),
+            GameRequest::DeleteFriend {
+                friend_name: "Kari".to_string()
+            }
+        );
+        assert_eq!(
+            decode(game::BUDDY_MEMO, [modern("Kari"), modern("partner")].concat()),
+            GameRequest::FriendMemo {
+                tamer_name: "Kari".to_string(),
+                memo: "partner".to_string()
+            }
+        );
+        // The memo body carries two strings, so a lone name must not decode.
+        assert!(GameRequest::try_from(RawPacket {
+            length: 0,
+            packet_type: game::BUDDY_MEMO,
+            payload: modern("Kari"),
+        })
+        .is_err());
+    }
+
+    #[test]
+    fn guild_invite_failure_carries_only_the_inviter_name() {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&3_u16.to_le_bytes());
+        payload.extend_from_slice(b"Tai");
+
+        assert_eq!(
+            GameRequest::try_from(RawPacket {
+                length: 0,
+                packet_type: game::GUILD_INVITE_FAIL,
+                payload,
+            })
+            .expect("invite failure should parse"),
+            GameRequest::GuildInviteFailure {
+                inviter_name: "Tai".to_string()
             }
         );
     }
