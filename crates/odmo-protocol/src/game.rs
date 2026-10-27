@@ -3555,18 +3555,24 @@ impl SeasonTextRowPacket {
 ///
 /// One word fewer than the sibling row; a reader that reused the wider shape
 /// would take the first two string bytes as a value and then misread the text.
+///
+/// The same shape reappears on unrelated opcodes, so the type is named for the
+/// shape rather than for one caller.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SeasonShortTextRowPacket {
+pub struct WordTextNoticePacket {
     pub opcode: i16,
     pub value: u32,
     pub text: String,
 }
 
-impl SeasonShortTextRowPacket {
+impl WordTextNoticePacket {
     pub fn encode(&self) -> Vec<u8> {
         assert!(
-            matches!(self.opcode, game::NTF_SEASON_3506 | game::NTF_SEASON_3513),
-            "the short season text row body belongs to opcodes 3506 and 3513"
+            matches!(
+                self.opcode,
+                game::NTF_SEASON_3506 | game::NTF_SEASON_3513 | game::NOTICE_3308
+            ),
+            "the word-and-text body belongs to opcodes 3308, 3506 and 3513"
         );
         let mut writer = PacketWriter::new(self.opcode);
         writer.write_u32(self.value);
@@ -11469,8 +11475,12 @@ mod tests {
             ]
         );
 
-        for opcode in [game::NTF_SEASON_3506, game::NTF_SEASON_3513] {
-            let frame = SeasonShortTextRowPacket {
+        for opcode in [
+            game::NTF_SEASON_3506,
+            game::NTF_SEASON_3513,
+            game::NOTICE_3308,
+        ] {
+            let frame = WordTextNoticePacket {
                 opcode,
                 value: 5,
                 text: "cd".to_string(),

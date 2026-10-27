@@ -93,7 +93,7 @@ pub use game::{
     InitSkinDataPacket, SkinGroup, RankingStageClearPacket,
     MailDeleteResultPacket, MailDeleteRun, SyncVerificationPacket,
     CreateBreakthroughDataPacket, CircuitModuleNoticePacket,
-    SeasonNoticePacket, SeasonRow, SeasonTextRowPacket, SeasonShortTextRowPacket,
+    SeasonNoticePacket, SeasonRow, SeasonTextRowPacket, WordTextNoticePacket,
     BareStringNoticePacket, LoginStageNoticePacket,
     InventoryProcessResultPacket, SerializedItemRow,
     InitDigimonExploreDataPacket, ExploreSlot, ExploreSlotPair,
