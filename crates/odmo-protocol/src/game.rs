@@ -2884,6 +2884,64 @@ pub struct DungeonScheduleGift {
     pub item: u16,
 }
 
+/// One row of `Item::MakeLimitData`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ItemMakeLimitEntry {
+    pub value: u32,
+    pub limit: u32,
+}
+
+/// `Item::MakeLimitData` — opcode 5301: {u2 count; count x {u4 value; u4 limit}}.
+///
+/// The count is unsigned here, unlike the msg-scope notices, so a full 65,535
+/// rows stays representable.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ItemMakeLimitDataPacket {
+    pub entries: Vec<ItemMakeLimitEntry>,
+}
+
+impl ItemMakeLimitDataPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::ITEM_MAKE_LIMIT_DATA);
+        assert!(
+            self.entries.len() <= u16::MAX as usize,
+            "make-limit rows overflow u2"
+        );
+        writer.write_u16(self.entries.len() as u16);
+        for entry in &self.entries {
+            writer.write_u32(entry.value);
+            writer.write_u32(entry.limit);
+        }
+        writer.finalize()
+    }
+}
+
+/// `Item::MakeLimitReset` — opcode 5302: {u2 count; count x u4}.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MakeLimitResetPacket {
+    pub values: Vec<u32>,
+}
+
+impl MakeLimitResetPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::MAKE_LIMIT_RESET);
+        assert!(
+            self.values.len() <= u16::MAX as usize,
+            "reset rows overflow u2"
+        );
+        writer.write_u16(self.values.len() as u16);
+        for value in &self.values {
+            writer.write_u32(*value);
+        }
+        writer.finalize()
+    }
+}
+
+/// `Item::RefreshMacroProtector` — opcode 4145: no payload.
+pub fn encode_refresh_macro_protector() -> Vec<u8> {
+    PacketWriter::new(game::REFRESH_MACRO_PROTECTOR).finalize()
+}
+
 /// `Msg::DungeonScheduleList` — opcode 14010: {u4 dungeon id; u8 value; u8 value;
 /// u1 clear count; clear count x {u1 flag; u4 value};
 /// u1 schedule count; schedule count x {u1 kind; u8 value; u4 value; u2 value;
@@ -9809,6 +9867,43 @@ mod tests {
             assert_eq!(raw.packet_type, opcode);
             assert!(raw.payload.is_empty());
         }
+
+        let limits = ItemMakeLimitDataPacket {
+            entries: vec![
+                ItemMakeLimitEntry {
+                    value: 1,
+                    limit: 60,
+                },
+                ItemMakeLimitEntry {
+                    value: 2,
+                    limit: 120,
+                },
+            ],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&limits).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::ITEM_MAKE_LIMIT_DATA);
+        assert_eq!(
+            raw.payload,
+            [
+                2, 0, // count
+                1, 0, 0, 0, 60, 0, 0, 0, // first row
+                2, 0, 0, 0, 120, 0, 0, 0, // second row
+            ]
+        );
+
+        let reset = MakeLimitResetPacket {
+            values: vec![7, 8],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&reset).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::MAKE_LIMIT_RESET);
+        assert_eq!(raw.payload, [2, 0, 7, 0, 0, 0, 8, 0, 0, 0]);
+
+        let protector = encode_refresh_macro_protector();
+        let raw = PacketReader::from_frame(&protector).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::REFRESH_MACRO_PROTECTOR);
+        assert!(raw.payload.is_empty());
 
         let schedule = DungeonScheduleListPacket {
             dungeon_id: 1,
