@@ -3073,14 +3073,16 @@ impl DungeonScheduleListPacket {
     }
 }
 
-/// `Msg::DungeonStageInfo` — opcode 14001: {u4 value; u4 value; u2 value;
-/// u4 value; u8 value}.
+/// `Msg::DungeonStageInfo` — opcode 14001: {u4 slot; u4 id; modern string;
+/// u2 value; u4 value; u8 value}.
 ///
-/// Every field is unbound, so the type keeps them positional.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The text sits between the fixed words rather than at the end, so the trailing
+/// fields only line up when it is written as a length-prefixed string.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DungeonStageInfoPacket {
-    pub first: u32,
-    pub second: u32,
+    pub slot: u32,
+    pub id: u32,
+    pub name: String,
     pub third: u16,
     pub fourth: u32,
     pub fifth: u64,
@@ -3089,8 +3091,9 @@ pub struct DungeonStageInfoPacket {
 impl DungeonStageInfoPacket {
     pub fn encode(&self) -> Vec<u8> {
         let mut writer = PacketWriter::new(game::MSG_DUNGEON_STAGE_INFO);
-        writer.write_u32(self.first);
-        writer.write_u32(self.second);
+        writer.write_u32(self.slot);
+        writer.write_u32(self.id);
+        writer.write_modern_utf8_string(&self.name);
         writer.write_u16(self.third);
         writer.write_u32(self.fourth);
         writer.write_u32(self.fifth as u32);
@@ -10042,8 +10045,9 @@ mod tests {
         assert_eq!(payload.len(), 147, "no trailing bytes");
 
         let stage = DungeonStageInfoPacket {
-            first: 1,
-            second: 2,
+            slot: 1,
+            id: 2,
+            name: "ab".to_string(),
             third: 3,
             fourth: 4,
             fifth: 0x0000_0006_0000_0005,
@@ -10054,8 +10058,12 @@ mod tests {
         assert_eq!(
             raw.payload,
             [
-                1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 4, 0, 0, 0, // header
-                5, 0, 0, 0, 6, 0, 0, 0, // u8 value
+                1, 0, 0, 0, // slot
+                2, 0, 0, 0, // id
+                2, 0, b'a', b'b', // string: u2 byte length then bytes
+                3, 0, // u2
+                4, 0, 0, 0, // u4
+                5, 0, 0, 0, 6, 0, 0, 0, // u8
             ]
         );
 
