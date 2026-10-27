@@ -3703,6 +3703,50 @@ pub struct SeasonRewardRow {
     pub third_flag: u8,
 }
 
+/// One circuit module slot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CircuitModuleRow {
+    pub value: u32,
+    pub flag: u8,
+    pub item: SerializedItemRow,
+}
+
+/// `Circuit::ModuleSync` — opcode 4503: {u1 flag; u2 count;
+/// count x {u4 value; u1 flag; item row}; u2 count; count x u1}.
+///
+/// The module count is followed by a second counted run of single bytes, so the
+/// body does not end after the modules.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CircuitModuleSyncPacket {
+    pub flag: u8,
+    pub modules: Vec<CircuitModuleRow>,
+    pub trailing: Vec<u8>,
+}
+
+impl CircuitModuleSyncPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.modules.len() <= u16::MAX as usize,
+            "circuit module count overflows u2"
+        );
+        assert!(
+            self.trailing.len() <= u16::MAX as usize,
+            "circuit trailing count overflows u2"
+        );
+        let mut writer = PacketWriter::new(game::RES_CIRCUIT_MODULE_SYNC);
+        writer.write_u8(self.flag);
+        writer.write_u16(self.modules.len() as u16);
+        for module in &self.modules {
+            writer.write_u32(module.value);
+            writer.write_u8(module.flag);
+            module.item.encode_into(&mut writer);
+        }
+        writer.write_u16(self.trailing.len() as u16);
+        writer.write_bytes(&self.trailing);
+        writer.finalize()
+    }
+}
+
 /// `Circuit::ModuleExtract` — opcode 4502: {u1 flag; u4 value; u2 count;
 /// count x item row}.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -11792,6 +11836,22 @@ mod tests {
                 0, 0, // second slot has no pairs
                 13, 0, 0, 0, 14, 0, 0, 0, // second slot tail
             ]
+        );
+    }
+
+    #[test]
+    fn circuit_sync_ends_with_a_counted_byte_run() {
+        let frame = CircuitModuleSyncPacket {
+            flag: 1,
+            modules: Vec::new(),
+            trailing: vec![7, 8],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_CIRCUIT_MODULE_SYNC);
+        assert_eq!(
+            raw.payload,
+            [1u8, 0, 0, 2, 0, 7, 8] // flag, empty module run, then two bytes
         );
     }
 

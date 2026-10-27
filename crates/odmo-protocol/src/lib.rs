@@ -99,6 +99,7 @@ pub use game::{
     BreakthroughResultPacket, PresetDataSavePacket, FixedRowNoticePacket,
     AdvertBossCreatePacket, SeasonRewardPacket, SeasonRewardRow,
     CircuitModuleExtractPacket,
+    CircuitModuleSyncPacket, CircuitModuleRow,
     InitDigimonExploreDataPacket, ExploreSlot, ExploreSlotPair,
     ChangeSkinResultPacket, AcquireSkinPacket, TwoWordReplyPacket,
     FlagWordNoticePacket, FlagTwoWordNoticePacket, TwoWordPairPacket, FixedBlockNoticePacket,
