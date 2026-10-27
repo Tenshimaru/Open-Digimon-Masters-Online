@@ -3694,6 +3694,25 @@ impl UnionHackResultPacket {
     }
 }
 
+/// `Notice::FourWords` — opcode 1060: {u4 value; u4 value; u4 value; u4 value}.
+///
+/// Four words with no count and no trailing data; a reader expecting a counted
+/// run here would take the second word as a length.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FourWordNoticePacket {
+    pub values: [u32; 4],
+}
+
+impl FourWordNoticePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::NOTICE_1060);
+        for value in &self.values {
+            writer.write_u32(*value);
+        }
+        writer.finalize()
+    }
+}
+
 /// `Notice::FixedRow` — opcode 16038: {u4 value; u8 value; u1 flag;
 /// u2 count; count x 69 bytes}.
 ///
@@ -11708,6 +11727,20 @@ mod tests {
                 0, 0, // second slot has no pairs
                 13, 0, 0, 0, 14, 0, 0, 0, // second slot tail
             ]
+        );
+    }
+
+    #[test]
+    fn four_word_notice_has_no_count_prefix() {
+        let frame = FourWordNoticePacket {
+            values: [1, 2, 3, 4],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NOTICE_1060);
+        assert_eq!(
+            raw.payload,
+            [1u8, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 4, 0, 0, 0]
         );
     }
 

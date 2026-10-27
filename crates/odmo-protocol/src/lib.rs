@@ -97,6 +97,7 @@ pub use game::{
     BareStringNoticePacket, LoginStageNoticePacket,
     InventoryProcessResultPacket, SerializedItemRow, UnionHackResultPacket,
     BreakthroughResultPacket, PresetDataSavePacket, FixedRowNoticePacket,
+    FourWordNoticePacket,
     InitDigimonExploreDataPacket, ExploreSlot, ExploreSlotPair,
     ChangeSkinResultPacket, AcquireSkinPacket, TwoWordReplyPacket,
     FlagWordNoticePacket, FlagTwoWordNoticePacket, TwoWordPairPacket, FixedBlockNoticePacket,
