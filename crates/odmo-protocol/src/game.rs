@@ -3440,6 +3440,30 @@ impl InitSkinDataPacket {
     }
 }
 
+/// `Account::SyncVerification` — opcode 16072: {u2 count; count x u4 value}.
+///
+/// The count bounds a run of plain words with no per-row nesting, so the body is
+/// reachable without following a virtual call.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyncVerificationPacket {
+    pub values: Vec<u32>,
+}
+
+impl SyncVerificationPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.values.len() <= u16::MAX as usize,
+            "sync verification count overflows u2"
+        );
+        let mut writer = PacketWriter::new(game::RES_SYNC_VERIFICATION);
+        writer.write_u16(self.values.len() as u16);
+        for value in &self.values {
+            writer.write_u32(*value);
+        }
+        writer.finalize()
+    }
+}
+
 /// `Mail::DeleteRun` — one counted run of mail references.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MailDeleteRun {
@@ -11030,6 +11054,17 @@ mod tests {
         let raw = PacketReader::from_frame(&frame).expect("frame should decode");
         assert_eq!(raw.packet_type, game::RESPONSE_3603);
         assert_eq!(raw.payload, [5, 0, 0, 0, 6, 0, 0, 0]);
+    }
+
+    #[test]
+    fn sync_verification_counts_its_words_with_a_short() {
+        let frame = SyncVerificationPacket {
+            values: vec![1, 2],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_SYNC_VERIFICATION);
+        assert_eq!(raw.payload, [2, 0, 1, 0, 0, 0, 2, 0, 0, 0]);
     }
 
     #[test]
