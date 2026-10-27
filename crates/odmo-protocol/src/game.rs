@@ -3746,6 +3746,63 @@ impl ExtraInventoryInfoPacket {
     }
 }
 
+/// One extended item reference: fifteen bytes on the wire.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExtendedItemInfo {
+    pub id: u32,
+    pub first_word: u16,
+    pub second_word: u16,
+    pub first_flag: u8,
+    pub second_flag: u8,
+    pub third_flag: u8,
+    pub tail: u32,
+}
+
+/// `ExtraInventory::BatchMove` — opcode 3802: {u4 value; u1 flag;
+/// u2 count; count x extended item; u1 flag; u2 count; count x extended item}.
+///
+/// The extended item travels as fifteen bytes even though the object occupies
+/// nineteen, so a reader sized from the object would take four extra bytes each.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExtraInventoryBatchMovePacket {
+    pub value: u32,
+    pub flag: u8,
+    pub first: Vec<ExtendedItemInfo>,
+    pub second_flag: u8,
+    pub second: Vec<ExtendedItemInfo>,
+}
+
+impl ExtraInventoryBatchMovePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        for (len, what) in [
+            (self.first.len(), "first run"),
+            (self.second.len(), "second run"),
+        ] {
+            assert!(len <= u16::MAX as usize, "{what} count overflows u2");
+        }
+        let mut writer = PacketWriter::new(game::RES_EXITEM_BATCH_MOVE);
+        writer.write_u32(self.value);
+        writer.write_u8(self.flag);
+        write_extended_run(&mut writer, &self.first);
+        writer.write_u8(self.second_flag);
+        write_extended_run(&mut writer, &self.second);
+        writer.finalize()
+    }
+}
+
+fn write_extended_run(writer: &mut PacketWriter, rows: &[ExtendedItemInfo]) {
+    writer.write_u16(rows.len() as u16);
+    for row in rows {
+        writer.write_u32(row.id);
+        writer.write_u16(row.first_word);
+        writer.write_u16(row.second_word);
+        writer.write_u8(row.first_flag);
+        writer.write_u8(row.second_flag);
+        writer.write_u8(row.third_flag);
+        writer.write_u32(row.tail);
+    }
+}
+
 /// `ExtraInventory::Use` — opcode 3803: {u4 value; u1 flag; u2 count;
 /// count x item row}.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -11938,6 +11995,36 @@ mod tests {
                 13, 0, 0, 0, 14, 0, 0, 0, // second slot tail
             ]
         );
+    }
+
+    #[test]
+    fn batch_move_runs_are_flanked_by_flags() {
+        let row = ExtendedItemInfo {
+            id: 1,
+            first_word: 2,
+            second_word: 3,
+            first_flag: 4,
+            second_flag: 5,
+            third_flag: 6,
+            tail: 7,
+        };
+        let frame = ExtraInventoryBatchMovePacket {
+            value: 8,
+            flag: 9,
+            first: vec![row],
+            second_flag: 10,
+            second: Vec::new(),
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_EXITEM_BATCH_MOVE);
+        // The extended item is fifteen bytes, not the nineteen the object occupies.
+        assert_eq!(
+            raw.payload.len(),
+            4 + 1 + 2 + 15 + 1 + 2
+        );
+        assert_eq!(&raw.payload[..7], &[8, 0, 0, 0, 9, 1, 0]);
+        assert_eq!(raw.payload[22], 10);
     }
 
     #[test]
