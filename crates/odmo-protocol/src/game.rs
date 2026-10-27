@@ -2895,6 +2895,24 @@ pub enum SkillApplyAroundBody {
     Scene { source: u32, index: u32 },
 }
 
+/// Single-word notice — opcodes 1309 and 1315.
+///
+/// Both carry one unbound word and branch on whether it is zero, so the encoding
+/// is identical and only the opcode distinguishes them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SingleWordNoticePacket {
+    pub opcode: i16,
+    pub value: u32,
+}
+
+impl SingleWordNoticePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(self.opcode);
+        writer.write_u32(self.value);
+        writer.finalize()
+    }
+}
+
 /// `Game::ProgressNotice` — opcode 905: {u4 value; u8 value}.
 ///
 /// Both fields are unbound, so they keep positional names.
@@ -10133,6 +10151,16 @@ mod tests {
         .encode();
         let raw = PacketReader::from_frame(&scene).expect("frame should decode");
         assert_eq!(raw.payload, [3, 9, 0, 0, 0, 10, 0, 0, 0]);
+    }
+
+    #[test]
+    fn single_word_notices_share_one_shape() {
+        for opcode in [game::NOTICE_1309, game::NOTICE_1315] {
+            let frame = SingleWordNoticePacket { opcode, value: 7 }.encode();
+            let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+            assert_eq!(raw.packet_type, opcode);
+            assert_eq!(raw.payload, [7, 0, 0, 0]);
+        }
     }
 
     #[test]

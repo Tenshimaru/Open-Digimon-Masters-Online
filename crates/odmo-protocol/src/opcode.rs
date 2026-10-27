@@ -843,6 +843,10 @@ pub mod game {
     pub const CASH_BALANCE_NOTICE: i16 = 1056;
     // Progress notice {u4 value; u8 value}; both fields are unbound.
     pub const PROGRESS_NOTICE_905: i16 = 905;
+    // Pair of single-word notices; each dispatches a different local event
+    // depending on whether the value is zero.
+    pub const NOTICE_1309: i16 = 1309;
+    pub const NOTICE_1315: i16 = 1315;
     // Notices the client registers with a handler that consumes nothing: the
     // frame is header only and the payload must stay empty. Sending a body would
     // leave those bytes to be read as the next frame's header. The numbers are
