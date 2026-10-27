@@ -841,6 +841,8 @@ pub mod game {
     pub const OTHER_TAMER_DETAIL_INFO: i16 = -25535;
     // Cash-shop balance notice {u4 value}; the client reacts only to value 1.
     pub const CASH_BALANCE_NOTICE: i16 = 1056;
+    // Progress notice {u4 value; u8 value}; both fields are unbound.
+    pub const PROGRESS_NOTICE_905: i16 = 905;
     // Notices the client registers with a handler that consumes nothing: the
     // frame is header only and the payload must stay empty. Sending a body would
     // leave those bytes to be read as the next frame's header. The numbers are

@@ -2895,7 +2895,26 @@ pub enum SkillApplyAroundBody {
     Scene { source: u32, index: u32 },
 }
 
-/// `Skill::ApplyAround` — opcode 1102: {u1 tag; tag body}.
+/// `Game::ProgressNotice` — opcode 905: {u4 value; u8 value}.
+///
+/// Both fields are unbound, so they keep positional names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProgressNoticePacket {
+    pub value: u32,
+    pub second_value: u64,
+}
+
+impl ProgressNoticePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::PROGRESS_NOTICE_905);
+        writer.write_u32(self.value);
+        writer.write_u32(self.second_value as u32);
+        writer.write_u32((self.second_value >> 32) as u32);
+        writer.finalize()
+    }
+}
+
+/// `Game::SkillApplyAround` — opcode 1102: {u1 tag; tag body}.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SkillApplyAroundPacket {
     pub body: SkillApplyAroundBody,
@@ -10114,6 +10133,18 @@ mod tests {
         .encode();
         let raw = PacketReader::from_frame(&scene).expect("frame should decode");
         assert_eq!(raw.payload, [3, 9, 0, 0, 0, 10, 0, 0, 0]);
+    }
+
+    #[test]
+    fn progress_notice_writes_a_word_then_a_double_word() {
+        let frame = ProgressNoticePacket {
+            value: 1,
+            second_value: 0x0000_0002_0000_0003,
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::PROGRESS_NOTICE_905);
+        assert_eq!(raw.payload, [1, 0, 0, 0, 3, 0, 0, 0, 2, 0, 0, 0]);
     }
 
     #[test]
