@@ -2799,6 +2799,71 @@ impl MsgRaidRankingListPacket {
     }
 }
 
+/// `Msg::DungeonMatchState` — opcode 14007: {u4 value; u1 flag; u1 flag;
+/// u4 value; u2 value}.
+///
+/// Four of the five fields are unbound, so they keep positional names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DungeonMatchStatePacket {
+    pub value: u32,
+    pub flag: u8,
+    pub second_flag: u8,
+    pub second_value: u32,
+    pub trailing: u16,
+}
+
+impl DungeonMatchStatePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::MSG_DUNGEON_MATCH_STATE);
+        writer.write_u32(self.value);
+        writer.write_u8(self.flag);
+        writer.write_u8(self.second_flag);
+        writer.write_u32(self.second_value);
+        writer.write_u16(self.trailing);
+        writer.finalize()
+    }
+}
+
+/// `Msg::DungeonMatchResult` — opcode 14008: {u4 value; u1 result; u4 value}.
+///
+/// The middle byte is the match result; the two u4 fields stay unbound.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DungeonMatchResultPacket {
+    pub value: u32,
+    pub result: u8,
+    pub second_value: u32,
+}
+
+impl DungeonMatchResultPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::MSG_DUNGEON_MATCH_RESULT);
+        writer.write_u32(self.value);
+        writer.write_u8(self.result);
+        writer.write_u32(self.second_value);
+        writer.finalize()
+    }
+}
+
+/// `Msg::DungeonMatchCounter` — opcode 14009: {u4 value; u8 value; u8 value}.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DungeonMatchCounterPacket {
+    pub value: u32,
+    pub first: u64,
+    pub second: u64,
+}
+
+impl DungeonMatchCounterPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::MSG_DUNGEON_MATCH_COUNTER);
+        writer.write_u32(self.value);
+        writer.write_u32(self.first as u32);
+        writer.write_u32((self.first >> 32) as u32);
+        writer.write_u32(self.second as u32);
+        writer.write_u32((self.second >> 32) as u32);
+        writer.finalize()
+    }
+}
+
 /// `Msg::DungeonMatchEnd` — opcode 14005: no payload.
 ///
 /// The notice only signals that the matchmaking session ended; the client reads
@@ -9552,6 +9617,45 @@ mod tests {
             assert_eq!(raw.packet_type, opcode);
             assert!(raw.payload.is_empty());
         }
+
+        let state = DungeonMatchStatePacket {
+            value: 1,
+            flag: 2,
+            second_flag: 3,
+            second_value: 4,
+            trailing: 5,
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&state).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::MSG_DUNGEON_MATCH_STATE);
+        assert_eq!(raw.payload, [1, 0, 0, 0, 2, 3, 4, 0, 0, 0, 5, 0]);
+
+        let result = DungeonMatchResultPacket {
+            value: 6,
+            result: 7,
+            second_value: 8,
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&result).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::MSG_DUNGEON_MATCH_RESULT);
+        assert_eq!(raw.payload, [6, 0, 0, 0, 7, 8, 0, 0, 0]);
+
+        let counter = DungeonMatchCounterPacket {
+            value: 9,
+            first: 0x1122_3344_5566_7788,
+            second: u64::MAX,
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&counter).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::MSG_DUNGEON_MATCH_COUNTER);
+        assert_eq!(
+            raw.payload,
+            [
+                9, 0, 0, 0, // value
+                0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, // first
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, // second
+            ]
+        );
 
         let re_enter = DungeonReEnterResultPacket { result: 1 }.encode();
         let raw = PacketReader::from_frame(&re_enter).expect("frame should decode");

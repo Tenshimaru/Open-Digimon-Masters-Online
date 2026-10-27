@@ -78,6 +78,7 @@ pub use game::{
     EventHotTimePacket, EventItemTypePacket, MsgRaidRankingRow,
     MsgRaidRankingListPacket,
     DungeonReEnterResultPacket, RankingPlayProgressPacket, RankingPlayProgressStage,
+    DungeonMatchStatePacket, DungeonMatchResultPacket, DungeonMatchCounterPacket,
     GameTwoAllMsgPacket, GameTwoAllMsgBody,
     GameTwoMonsterAreaAttackPacket, MonsterAreaBody, MonsterAreaTarget,
     GameTwoDoorObjectOpenPacket, GameGuardRow, GameTwoGameGuardCheckPacket,

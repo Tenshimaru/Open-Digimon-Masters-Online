@@ -803,9 +803,16 @@ pub mod game {
     // Msg-scope notices with an empty payload: 14005 and 14015 both notify
     // without reading a single byte, so the frame is header only.
     pub const MSG_DUNGEON_MATCH_END: i16 = 14005;
-    pub const MSG_DUNGEON_MATCH_CANCEL: i16 = 14015;    // Dungeon re-entry result {u1 result}; the client stores it and notifies
+    pub const MSG_DUNGEON_MATCH_CANCEL: i16 = 14015;
+    // Dungeon re-entry result {u1 result}; the client stores it and notifies
     // once per frame.
     pub const MSG_DUNGEON_RE_ENTER_RESULT: i16 = 14016;
+    // Match state notices: 14007 {u4; u1; u1; u4; u2}, 14008 {u4; u1; u4} and
+    // 14009 {u4; u8; u8}. Each ends with one notification carrying the whole
+    // envelope.
+    pub const MSG_DUNGEON_MATCH_STATE: i16 = 14007;
+    pub const MSG_DUNGEON_MATCH_RESULT: i16 = 14008;
+    pub const MSG_DUNGEON_MATCH_COUNTER: i16 = 14009;
     // Ranking play progress {u2 dungeon; u4 value; u1 flag; u4 value; u2 value;
     // u4 value; u2 value; u4 value; u2 count; count x {u2 stage; u2 wave;
     // u4 value}}.
