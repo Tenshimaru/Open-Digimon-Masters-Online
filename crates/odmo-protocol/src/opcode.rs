@@ -827,6 +827,14 @@ pub mod game {
     // Macro protector refresh: the client only clears a local flag and reads no
     // payload byte, so the frame is header only.
     pub const REFRESH_MACRO_PROTECTOR: i16 = 4145;
+    // User setting data {u2 count; count x {u2 prefix; modern string}}.
+    // The opcode exceeds i16 positive range, so it rides the wire as its
+    // two-complement negative form, which is what the client compares against.
+    pub const USER_SETTING_DATA: i16 = -5535;
+    // Other-tamer detail info, same negative encoding.
+    pub const OTHER_TAMER_DETAIL_INFO: i16 = -25535;
+    // Cash-shop balance notice {u4 value}; the client reacts only to value 1.
+    pub const CASH_BALANCE_NOTICE: i16 = 1056;
     // Ranking play progress {u2 dungeon; u4 value; u1 flag; u4 value; u2 value;
     // u4 value; u2 value; u4 value; u2 count; count x {u2 stage; u2 wave;
     // u4 value}}.

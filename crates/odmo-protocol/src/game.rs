@@ -2884,6 +2884,56 @@ pub struct DungeonScheduleGift {
     pub item: u16,
 }
 
+/// One row of `User::SettingData`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UserSettingEntry {
+    pub prefix: u16,
+    pub value: String,
+}
+
+/// `User::SettingData` — opcode 60001: {u2 count; count x {u2 prefix;
+/// modern string}}.
+///
+/// The text is the length-prefixed UTF-8 form, so the row has no terminator and
+/// the next row starts right after it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UserSettingDataPacket {
+    pub entries: Vec<UserSettingEntry>,
+}
+
+impl UserSettingDataPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::USER_SETTING_DATA);
+        assert!(
+            self.entries.len() <= u16::MAX as usize,
+            "user setting rows overflow u2"
+        );
+        writer.write_u16(self.entries.len() as u16);
+        for entry in &self.entries {
+            writer.write_u16(entry.prefix);
+            writer.write_modern_utf8_string(&entry.value);
+        }
+        writer.finalize()
+    }
+}
+
+/// `Item::CashBalanceNotice` — opcode 1056: {u4 value}.
+///
+/// The client only opens its cash-shop refresh when the value is 1, so the
+/// server sends anything else to make the notice inert.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CashBalanceNoticePacket {
+    pub value: u32,
+}
+
+impl CashBalanceNoticePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::CASH_BALANCE_NOTICE);
+        writer.write_u32(self.value);
+        writer.finalize()
+    }
+}
+
 /// One row of `Item::MakeLimitData`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ItemMakeLimitEntry {
@@ -9867,6 +9917,35 @@ mod tests {
             assert_eq!(raw.packet_type, opcode);
             assert!(raw.payload.is_empty());
         }
+
+        let settings = UserSettingDataPacket {
+            entries: vec![
+                UserSettingEntry {
+                    prefix: 1,
+                    value: "ab".to_string(),
+                },
+                UserSettingEntry {
+                    prefix: 2,
+                    value: "c".to_string(),
+                },
+            ],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&settings).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::USER_SETTING_DATA);
+        assert_eq!(
+            raw.payload,
+            [
+                2, 0, // count
+                1, 0, 2, 0, b'a', b'b', // first row: prefix then u2 length + bytes
+                2, 0, 1, 0, b'c', // second row
+            ]
+        );
+
+        let balance = CashBalanceNoticePacket { value: 1 }.encode();
+        let raw = PacketReader::from_frame(&balance).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::CASH_BALANCE_NOTICE);
+        assert_eq!(raw.payload, [1, 0, 0, 0]);
 
         let limits = ItemMakeLimitDataPacket {
             entries: vec![
