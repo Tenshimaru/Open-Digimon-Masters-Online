@@ -3489,6 +3489,52 @@ impl SerializedItemRow {
     }
 }
 
+/// `Season::TextRow` — opcode 3503: {u4 value; u4 value; u8 value;
+/// modern string}.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeasonTextRowPacket {
+    pub value: u32,
+    pub second_value: u32,
+    pub wide_value: u64,
+    pub text: String,
+}
+
+impl SeasonTextRowPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::NTF_SEASON_3503);
+        writer.write_u32(self.value);
+        writer.write_u32(self.second_value);
+        writer.write_u32(self.wide_value as u32);
+        writer.write_u32((self.wide_value >> 32) as u32);
+        writer.write_modern_utf8_string(&self.text);
+        writer.finalize()
+    }
+}
+
+/// `Season::ShortTextRow` — opcodes 3506 and 3513: {u4 value; modern string}.
+///
+/// One word fewer than the sibling row; a reader that reused the wider shape
+/// would take the first two string bytes as a value and then misread the text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeasonShortTextRowPacket {
+    pub opcode: i16,
+    pub value: u32,
+    pub text: String,
+}
+
+impl SeasonShortTextRowPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            matches!(self.opcode, game::NTF_SEASON_3506 | game::NTF_SEASON_3513),
+            "the short season text row body belongs to opcodes 3506 and 3513"
+        );
+        let mut writer = PacketWriter::new(self.opcode);
+        writer.write_u32(self.value);
+        writer.write_modern_utf8_string(&self.text);
+        writer.finalize()
+    }
+}
+
 /// One bonus entry of an explore slot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ExploreSlotPair {
@@ -11327,6 +11373,40 @@ mod tests {
         let raw = PacketReader::from_frame(&frame).expect("frame should decode");
         assert_eq!(raw.packet_type, game::RESPONSE_3603);
         assert_eq!(raw.payload, [5, 0, 0, 0, 6, 0, 0, 0]);
+    }
+
+    #[test]
+    fn season_text_rows_end_with_a_modern_string() {
+        let frame = SeasonTextRowPacket {
+            value: 1,
+            second_value: 2,
+            wide_value: 0x0000_0004_0000_0003,
+            text: "ab".to_string(),
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NTF_SEASON_3503);
+        assert_eq!(
+            raw.payload,
+            [
+                1u8, 0, 0, 0, // first word
+                2, 0, 0, 0, // second word
+                3, 0, 0, 0, 4, 0, 0, 0, // wide value
+                2, 0, b'a', b'b', // byte-length prefix, no terminator
+            ]
+        );
+
+        for opcode in [game::NTF_SEASON_3506, game::NTF_SEASON_3513] {
+            let frame = SeasonShortTextRowPacket {
+                opcode,
+                value: 5,
+                text: "cd".to_string(),
+            }
+            .encode();
+            let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+            assert_eq!(raw.packet_type, opcode);
+            assert_eq!(raw.payload, [5u8, 0, 0, 0, 2, 0, b'c', b'd']);
+        }
     }
 
     #[test]

@@ -975,6 +975,10 @@ pub mod game {
     // Explore slot snapshot: {u2 count; count x slot row}, each slot row
     // carrying its own counted pair run.
     pub const NTF_INIT_DIGIMON_EXPLORE_DATA: i16 = 5351;
+    // Season pass text row: {u4 value; u4 value; u8 value; modern string}.
+    pub const NTF_SEASON_3503: i16 = 3503;
+    pub const NTF_SEASON_3506: i16 = 3506;
+    pub const NTF_SEASON_3513: i16 = 3513;
     pub const RES_REDUCE_DIGIMON_EXPLORE_TIME: i16 = 5357;
     pub const RES_ITEM_EXPLORE_COMPLETE_5359: i16 = 5359;
     pub const RES_ITEM_UPGRADE_DATA_TRANSFER: i16 = 5401;
