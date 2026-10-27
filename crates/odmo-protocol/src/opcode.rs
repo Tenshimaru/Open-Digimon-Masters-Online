@@ -972,6 +972,9 @@ pub mod game {
     // item row being the 71-byte serialized form.
     pub const RES_START_DIGIMON_EXPLORE: i16 = 5353;
     pub const RES_OPEN_DIGIMON_EXPLORE_SLOT: i16 = 5356;
+    // Explore slot snapshot: {u2 count; count x slot row}, each slot row
+    // carrying its own counted pair run.
+    pub const NTF_INIT_DIGIMON_EXPLORE_DATA: i16 = 5351;
     pub const RES_REDUCE_DIGIMON_EXPLORE_TIME: i16 = 5357;
     pub const RES_ITEM_EXPLORE_COMPLETE_5359: i16 = 5359;
     pub const RES_ITEM_UPGRADE_DATA_TRANSFER: i16 = 5401;

@@ -3489,6 +3489,63 @@ impl SerializedItemRow {
     }
 }
 
+/// One bonus entry of an explore slot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExploreSlotPair {
+    pub first: u32,
+    pub second: u32,
+}
+
+/// One explore slot of `Digimon::InitExploreData`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExploreSlot {
+    pub digimon: u32,
+    pub flag: u8,
+    pub started_at: u32,
+    pub duration: u32,
+    pub pairs: Vec<ExploreSlotPair>,
+    pub first_word: u32,
+    pub second_word: u32,
+}
+
+/// `Digimon::InitExploreData` — opcode 5351: {u2 count; count x slot}.
+///
+/// The slot's pair run is counted separately from the outer slot count, so the
+/// two counts stay distinct in the type.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InitDigimonExploreDataPacket {
+    pub slots: Vec<ExploreSlot>,
+}
+
+impl InitDigimonExploreDataPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.slots.len() <= u16::MAX as usize,
+            "explore slot count overflows u2"
+        );
+        let mut writer = PacketWriter::new(game::NTF_INIT_DIGIMON_EXPLORE_DATA);
+        writer.write_u16(self.slots.len() as u16);
+        for slot in &self.slots {
+            writer.write_u32(slot.digimon);
+            writer.write_u8(slot.flag);
+            writer.write_u32(slot.started_at);
+            writer.write_u32(slot.duration);
+            assert!(
+                slot.pairs.len() <= u16::MAX as usize,
+                "explore slot pair count overflows u2"
+            );
+            writer.write_u16(slot.pairs.len() as u16);
+            for pair in &slot.pairs {
+                writer.write_u32(pair.first);
+                writer.write_u32(pair.second);
+            }
+            writer.write_u32(slot.first_word);
+            writer.write_u32(slot.second_word);
+        }
+        writer.finalize()
+    }
+}
+
 /// `Inventory::ProcessResult` — opcodes 5353, 5356, 5357, 5359, 5401 and 5402:
 /// {u4 value; u2 count; count x item row}.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -11270,6 +11327,52 @@ mod tests {
         let raw = PacketReader::from_frame(&frame).expect("frame should decode");
         assert_eq!(raw.packet_type, game::RESPONSE_3603);
         assert_eq!(raw.payload, [5, 0, 0, 0, 6, 0, 0, 0]);
+    }
+
+    #[test]
+    fn explore_slots_nest_their_pair_run_inside_the_slot_run() {
+        let frame = InitDigimonExploreDataPacket {
+            slots: vec![
+                ExploreSlot {
+                    digimon: 1,
+                    flag: 2,
+                    started_at: 3,
+                    duration: 4,
+                    pairs: vec![
+                        ExploreSlotPair {
+                            first: 5,
+                            second: 6,
+                        },
+                    ],
+                    first_word: 7,
+                    second_word: 8,
+                },
+                ExploreSlot {
+                    digimon: 9,
+                    flag: 10,
+                    started_at: 11,
+                    duration: 12,
+                    pairs: Vec::new(),
+                    first_word: 13,
+                    second_word: 14,
+                },
+            ],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NTF_INIT_DIGIMON_EXPLORE_DATA);
+        assert_eq!(
+            raw.payload,
+            [
+                2, 0, // slot count
+                1, 0, 0, 0, 2, 3, 0, 0, 0, 4, 0, 0, 0, // first slot head
+                1, 0, 5, 0, 0, 0, 6, 0, 0, 0, // first slot pairs
+                7, 0, 0, 0, 8, 0, 0, 0, // first slot tail
+                9, 0, 0, 0, 10, 11, 0, 0, 0, 12, 0, 0, 0, // second slot head
+                0, 0, // second slot has no pairs
+                13, 0, 0, 0, 14, 0, 0, 0, // second slot tail
+            ]
+        );
     }
 
     #[test]
