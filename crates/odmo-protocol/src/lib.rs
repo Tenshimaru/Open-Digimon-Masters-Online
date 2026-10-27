@@ -91,7 +91,7 @@ pub use game::{
     PartyRecruitMemberNoticePacket, PartyRecruitMember,
     PartyRecruitQueryListPacket, PartyRecruitView,
     InitSkinDataPacket, SkinGroup, RankingStageClearPacket,
-    MailDeleteResultPacket, MailDeleteRun, SyncVerificationPacket,
+    MailDeleteResultPacket, MailDeleteRun, CountedWordNoticePacket,
     CreateBreakthroughDataPacket, CircuitModuleNoticePacket,
     SeasonNoticePacket, SeasonRow, SeasonTextRowPacket, WordTextNoticePacket,
     BareStringNoticePacket, LoginStageNoticePacket,

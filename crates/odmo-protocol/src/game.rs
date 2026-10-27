@@ -3805,22 +3805,32 @@ impl CreateBreakthroughDataPacket {
     }
 }
 
-/// `Account::SyncVerification` — opcode 16072: {u2 count; count x u4 value}.
+/// `Account::SyncVerification` — opcodes 16072 and 4401: {u2 count; count x
+/// u4 value}.
 ///
 /// The count bounds a run of plain words with no per-row nesting, so the body is
-/// reachable without following a virtual call.
+/// reachable without following a virtual call. The same shape serves unrelated
+/// opcodes, so the type is named for the shape.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SyncVerificationPacket {
+pub struct CountedWordNoticePacket {
+    pub opcode: i16,
     pub values: Vec<u32>,
 }
 
-impl SyncVerificationPacket {
+impl CountedWordNoticePacket {
     pub fn encode(&self) -> Vec<u8> {
         assert!(
-            self.values.len() <= u16::MAX as usize,
-            "sync verification count overflows u2"
+            matches!(
+                self.opcode,
+                game::RES_SYNC_VERIFICATION | game::NTF_SEASON_MISSION_ALERT
+            ),
+            "the counted word body belongs to opcodes 4401 and 16072"
         );
-        let mut writer = PacketWriter::new(game::RES_SYNC_VERIFICATION);
+        assert!(
+            self.values.len() <= u16::MAX as usize,
+            "counted word count overflows u2"
+        );
+        let mut writer = PacketWriter::new(self.opcode);
         writer.write_u16(self.values.len() as u16);
         for value in &self.values {
             writer.write_u32(*value);
@@ -11665,13 +11675,16 @@ mod tests {
 
     #[test]
     fn sync_verification_counts_its_words_with_a_short() {
-        let frame = SyncVerificationPacket {
-            values: vec![1, 2],
+        for opcode in [game::RES_SYNC_VERIFICATION, game::NTF_SEASON_MISSION_ALERT] {
+            let frame = CountedWordNoticePacket {
+                opcode,
+                values: vec![1, 2],
+            }
+            .encode();
+            let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+            assert_eq!(raw.packet_type, opcode);
+            assert_eq!(raw.payload, [2, 0, 1, 0, 0, 0, 2, 0, 0, 0]);
         }
-        .encode();
-        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
-        assert_eq!(raw.packet_type, game::RES_SYNC_VERIFICATION);
-        assert_eq!(raw.payload, [2, 0, 1, 0, 0, 0, 2, 0, 0, 0]);
     }
 
     #[test]
