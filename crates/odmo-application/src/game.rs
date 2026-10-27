@@ -2521,7 +2521,7 @@ impl GameApplication {
             } => self.handle_hatch_increase(session, data_level),
             // HatchFinish — complete the hatch and create a new partner.
             GameRequest::HatchFinish {
-                vip: _,
+                flag: _,
                 portable_pos: _,
                 name,
                 npc_idx: _,

@@ -183,31 +183,43 @@ pub enum GameRequest {
         inven_slot: i32,
         new_name: String,
     },
+    /// `pGame::HatchIn` C→S — opcode 1036. `[u1 vip][u4 inven_slot][i4 npc_idx]`.
+    ///
+    /// The leading byte is always emitted; the builder derives it from the
+    /// hatch dialog state (comparison against 2), so it is a 0/1 flag.
     HatchInsertEgg {
         vip: u8,
         inven_slot: u32,
         npc_idx: i32,
     },
+    /// `pGame::HatchUp` C→S — opcode 1037. `[u1 vip][i4 npc_idx][u1 data_level]`.
     HatchIncrease {
         vip: u8,
         npc_idx: i32,
         data_level: i8,
     },
+    /// `pGame::HatchOut` C→S — opcode 1038. `[u1 flag][u4 portable_pos][text name][i4 npc_idx]`.
+    ///
+    /// The builder writes a constant 1 into `flag` instead of a VIP state, so
+    /// the byte is carried through without a resolved meaning.
     HatchFinish {
-        vip: u8,
+        flag: u8,
         portable_pos: u32,
         name: String,
         npc_idx: i32,
     },
+    /// `pGame::HatchCancel` C→S — opcode 1039. `[u1 vip][i4 npc_idx]`.
     HatchRemoveEgg {
         vip: u8,
         npc_idx: i32,
     },
+    /// `pItem::HatchBackupDiskAdd` C→S — opcode 3946. `[u1 vip][u4 inven_slot][i4 npc_idx]`.
     HatchBackupInsert {
         vip: u8,
         inven_slot: u32,
         npc_idx: i32,
     },
+    /// `pItem::HatchBackupDiskCancel` C→S — opcode 3947. `[u1 vip][i4 npc_idx]`.
     HatchBackupCancel {
         vip: u8,
         npc_idx: i32,
@@ -8307,12 +8319,12 @@ impl TryFrom<RawPacket> for GameRequest {
                 })
             }
             game::HATCH_FINISH => {
-                let vip = reader.read_u8()?;
+                let flag = reader.read_u8()?;
                 let portable_pos = reader.read_u32()?;
                 let name = reader.read_modern_utf8_string()?;
                 let npc_idx = reader.read_i32()?;
                 Ok(Self::HatchFinish {
-                    vip,
+                    flag,
                     portable_pos,
                     name,
                     npc_idx,
@@ -13564,10 +13576,53 @@ mod tests {
         assert_eq!(
             request,
             GameRequest::HatchFinish {
-                vip: 1,
+                flag: 1,
                 portable_pos: 7,
                 name: "Impmon".to_string(),
                 npc_idx: 91_001,
+            }
+        );
+    }
+
+    #[test]
+    fn hatch_requests_lead_with_the_flag_byte() {
+        let mut insert = PacketWriter::new(game::HATCH_INSERT_EGG);
+        insert.write_u8(0);
+        insert.write_u32(12);
+        insert.write_i32(91_002);
+        let raw = PacketReader::from_frame(&insert.finalize()).expect("frame should decode");
+        assert_eq!(
+            GameRequest::try_from(raw).expect("request should decode"),
+            GameRequest::HatchInsertEgg {
+                vip: 0,
+                inven_slot: 12,
+                npc_idx: 91_002,
+            }
+        );
+
+        let mut increase = PacketWriter::new(game::HATCH_INCREASE);
+        increase.write_u8(1);
+        increase.write_i32(91_002);
+        increase.write_u8(3);
+        let raw = PacketReader::from_frame(&increase.finalize()).expect("frame should decode");
+        assert_eq!(
+            GameRequest::try_from(raw).expect("request should decode"),
+            GameRequest::HatchIncrease {
+                vip: 1,
+                npc_idx: 91_002,
+                data_level: 3,
+            }
+        );
+
+        let mut remove = PacketWriter::new(game::HATCH_REMOVE_EGG);
+        remove.write_u8(0);
+        remove.write_i32(91_002);
+        let raw = PacketReader::from_frame(&remove.finalize()).expect("frame should decode");
+        assert_eq!(
+            GameRequest::try_from(raw).expect("request should decode"),
+            GameRequest::HatchRemoveEgg {
+                vip: 0,
+                npc_idx: 91_002,
             }
         );
     }
