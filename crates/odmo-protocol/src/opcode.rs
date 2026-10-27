@@ -881,6 +881,13 @@ pub mod game {
     // Macro protector refresh result {u4 value; u2 count; count x u1 bytes;
     // u1 tail}. The byte run is stored as a blob, not as text.
     pub const RESULT_REFRESH_MACRO_PROTECTOR: i16 = 5206;
+    // Small item notices: 5005 and 5009 read {u1; u2}; 5006 reads {u1; u2; u2};
+    // 5007 reads {u2}; 5008 reads {u1}.
+    pub const ITEM_NOTICE_5005: i16 = 5005;
+    pub const ITEM_NOTICE_5006: i16 = 5006;
+    pub const ITEM_NOTICE_5007: i16 = 5007;
+    pub const ITEM_NOTICE_5008: i16 = 5008;
+    pub const ITEM_NOTICE_5009: i16 = 5009;
     // Ranking play progress {u2 dungeon; u4 value; u1 flag; u4 value; u2 value;
     // u4 value; u2 value; u4 value; u2 count; count x {u2 stage; u2 wave;
     // u4 value}}.

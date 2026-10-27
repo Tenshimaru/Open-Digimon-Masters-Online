@@ -2895,6 +2895,77 @@ pub enum SkillApplyAroundBody {
     Scene { source: u32, index: u32 },
 }
 
+/// Small item notices — opcodes 5005 through 5009.
+///
+/// Each carries one flag byte followed by one or two words; the shapes differ
+/// per opcode, so the encoder writes only what that opcode declares.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ItemNoticeBody {
+    /// 5005 and 5009: {u1 flag; u2 value}.
+    FlagWord { flag: u8, value: u16 },
+    /// 5006: {u1 flag; u2 value; u2 second value}.
+    FlagTwoWords {
+        flag: u8,
+        value: u16,
+        second_value: u16,
+    },
+    /// 5007: {u2 value}.
+    Word { value: u16 },
+    /// 5008: {u1 flag}.
+    Flag { flag: u8 },
+}
+
+/// `Item::SmallNotice` — opcodes 5005 to 5009.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ItemSmallNoticePacket {
+    pub opcode: i16,
+    pub body: ItemNoticeBody,
+}
+
+impl ItemSmallNoticePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(self.opcode);
+        match self.body {
+            ItemNoticeBody::FlagWord { flag, value } => {
+                assert!(
+                    self.opcode == game::ITEM_NOTICE_5005 || self.opcode == game::ITEM_NOTICE_5009,
+                    "the flag+word body belongs to opcodes 5005 and 5009"
+                );
+                writer.write_u8(flag);
+                writer.write_u16(value);
+            }
+            ItemNoticeBody::FlagTwoWords {
+                flag,
+                value,
+                second_value,
+            } => {
+                assert!(
+                    self.opcode == game::ITEM_NOTICE_5006,
+                    "the flag+two-word body belongs to opcode 5006"
+                );
+                writer.write_u8(flag);
+                writer.write_u16(value);
+                writer.write_u16(second_value);
+            }
+            ItemNoticeBody::Word { value } => {
+                assert!(
+                    self.opcode == game::ITEM_NOTICE_5007,
+                    "the bare word body belongs to opcode 5007"
+                );
+                writer.write_u16(value);
+            }
+            ItemNoticeBody::Flag { flag } => {
+                assert!(
+                    self.opcode == game::ITEM_NOTICE_5008,
+                    "the bare flag body belongs to opcode 5008"
+                );
+                writer.write_u8(flag);
+            }
+        }
+        writer.finalize()
+    }
+}
+
 /// `Item::RefreshMacroProtectorResult` — opcode 5206: {u4 value; u2 count;
 /// count x u1 bytes; u1 tail}.
 ///
@@ -10194,6 +10265,48 @@ mod tests {
         .encode();
         let raw = PacketReader::from_frame(&scene).expect("frame should decode");
         assert_eq!(raw.payload, [3, 9, 0, 0, 0, 10, 0, 0, 0]);
+    }
+
+    #[test]
+    fn small_item_notices_write_only_their_own_shape() {
+        for opcode in [game::ITEM_NOTICE_5005, game::ITEM_NOTICE_5009] {
+            let frame = ItemSmallNoticePacket {
+                opcode,
+                body: ItemNoticeBody::FlagWord { flag: 1, value: 2 },
+            }
+            .encode();
+            let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+            assert_eq!(raw.packet_type, opcode);
+            assert_eq!(raw.payload, [1, 2, 0]);
+        }
+
+        let frame = ItemSmallNoticePacket {
+            opcode: game::ITEM_NOTICE_5006,
+            body: ItemNoticeBody::FlagTwoWords {
+                flag: 3,
+                value: 4,
+                second_value: 5,
+            },
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.payload, [3, 4, 0, 5, 0]);
+
+        let frame = ItemSmallNoticePacket {
+            opcode: game::ITEM_NOTICE_5007,
+            body: ItemNoticeBody::Word { value: 6 },
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.payload, [6, 0]);
+
+        let frame = ItemSmallNoticePacket {
+            opcode: game::ITEM_NOTICE_5008,
+            body: ItemNoticeBody::Flag { flag: 7 },
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.payload, [7]);
     }
 
     #[test]
