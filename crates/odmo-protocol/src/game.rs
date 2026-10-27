@@ -3009,10 +3009,10 @@ impl SingleByteNoticePacket {
     }
 }
 
-/// Single-word notice — opcodes 1309 and 1315.
+/// Single-word notice — opcodes 1309, 1315, 9801, 9804 and 9806.
 ///
-/// Both carry one unbound word and branch on whether it is zero, so the encoding
-/// is identical and only the opcode distinguishes them.
+/// All carry one unbound word; the encoding is identical and only the opcode
+/// distinguishes them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SingleWordNoticePacket {
     pub opcode: i16,
@@ -3023,6 +3023,20 @@ impl SingleWordNoticePacket {
     pub fn encode(&self) -> Vec<u8> {
         let mut writer = PacketWriter::new(self.opcode);
         writer.write_u32(self.value);
+        writer.finalize()
+    }
+}
+
+/// `Game::HalfWordNotice` — opcode 10003: {u2 value}.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HalfWordNoticePacket {
+    pub value: u16,
+}
+
+impl HalfWordNoticePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::NOTICE_10003);
+        writer.write_u16(self.value);
         writer.finalize()
     }
 }
@@ -10332,12 +10346,23 @@ mod tests {
 
     #[test]
     fn single_word_notices_share_one_shape() {
-        for opcode in [game::NOTICE_1309, game::NOTICE_1315] {
+        for opcode in [
+            game::NOTICE_1309,
+            game::NOTICE_1315,
+            game::NOTICE_9801,
+            game::NOTICE_9804,
+            game::NOTICE_9806,
+        ] {
             let frame = SingleWordNoticePacket { opcode, value: 7 }.encode();
             let raw = PacketReader::from_frame(&frame).expect("frame should decode");
             assert_eq!(raw.packet_type, opcode);
             assert_eq!(raw.payload, [7, 0, 0, 0]);
         }
+
+        let frame = HalfWordNoticePacket { value: 9 }.encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NOTICE_10003);
+        assert_eq!(raw.payload, [9, 0]);
     }
 
     #[test]

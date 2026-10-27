@@ -888,6 +888,12 @@ pub mod game {
     pub const ITEM_NOTICE_5007: i16 = 5007;
     pub const ITEM_NOTICE_5008: i16 = 5008;
     pub const ITEM_NOTICE_5009: i16 = 5009;
+    // Notices 9801, 9804 and 9806 each read one word; 10003 reads one half word.
+    // No capability is bound to them yet, so the names stay keyed to the number.
+    pub const NOTICE_9801: i16 = 9801;
+    pub const NOTICE_9804: i16 = 9804;
+    pub const NOTICE_9806: i16 = 9806;
+    pub const NOTICE_10003: i16 = 10003;
     // Ranking play progress {u2 dungeon; u4 value; u1 flag; u4 value; u2 value;
     // u4 value; u2 value; u4 value; u2 count; count x {u2 stage; u2 wave;
     // u4 value}}.
