@@ -3440,6 +3440,45 @@ impl InitSkinDataPacket {
     }
 }
 
+/// `Mail::DeleteRun` — one counted run of mail references.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MailDeleteRun {
+    pub entries: Vec<(u32, u32)>,
+}
+
+impl MailDeleteRun {
+    fn encode_into(&self, writer: &mut PacketWriter) {
+        assert!(
+            self.entries.len() <= u16::MAX as usize,
+            "mail delete run overflows u2"
+        );
+        writer.write_u16(self.entries.len() as u16);
+        for (first, second) in &self.entries {
+            writer.write_u32(*first);
+            writer.write_u32(*second);
+        }
+    }
+}
+
+/// `Mail::DeleteResult` — opcode 16054: two counted runs back to back.
+///
+/// Each run is its own count followed by that many pairs, so a single count for
+/// the whole body would leave the second run read as list rows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MailDeleteResultPacket {
+    pub first: MailDeleteRun,
+    pub second: MailDeleteRun,
+}
+
+impl MailDeleteResultPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::RES_MAIL_DELETE);
+        self.first.encode_into(&mut writer);
+        self.second.encode_into(&mut writer);
+        writer.finalize()
+    }
+}
+
 /// `Dungeon::RankingStageClear` — opcode 14059: {u2 stage; u1 flag; u4 value;
 /// u4 value; u2 value}.
 ///
@@ -10991,6 +11030,31 @@ mod tests {
         let raw = PacketReader::from_frame(&frame).expect("frame should decode");
         assert_eq!(raw.packet_type, game::RESPONSE_3603);
         assert_eq!(raw.payload, [5, 0, 0, 0, 6, 0, 0, 0]);
+    }
+
+    #[test]
+    fn mail_delete_carries_two_independent_runs() {
+        let frame = MailDeleteResultPacket {
+            first: MailDeleteRun {
+                entries: vec![(1, 2)],
+            },
+            second: MailDeleteRun {
+                entries: vec![(3, 4), (5, 6)],
+            },
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_MAIL_DELETE);
+        assert_eq!(
+            raw.payload,
+            [
+                1, 0, // first run count
+                1, 0, 0, 0, 2, 0, 0, 0, // first run entry
+                2, 0, // second run count
+                3, 0, 0, 0, 4, 0, 0, 0, // first second-run entry
+                5, 0, 0, 0, 6, 0, 0, 0, // second second-run entry
+            ]
+        );
     }
 
     #[test]
