@@ -3489,6 +3489,29 @@ impl SerializedItemRow {
     }
 }
 
+/// `Login::Notice` — opcode 901: {u4 value; u4 value; modern string; u4 value}.
+///
+/// The string sits between the leading pair and the trailing word, so the
+/// trailing word can only be located after the text length is consumed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoginStageNoticePacket {
+    pub value: u32,
+    pub second_value: u32,
+    pub text: String,
+    pub tail: u32,
+}
+
+impl LoginStageNoticePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::NOTICE_901);
+        writer.write_u32(self.value);
+        writer.write_u32(self.second_value);
+        writer.write_modern_utf8_string(&self.text);
+        writer.write_u32(self.tail);
+        writer.finalize()
+    }
+}
+
 /// `Notice::String` — opcode 3309: the body is a bare modern string.
 ///
 /// No leading word precedes the text, so the length prefix is the first byte
@@ -11390,6 +11413,28 @@ mod tests {
         let raw = PacketReader::from_frame(&frame).expect("frame should decode");
         assert_eq!(raw.packet_type, game::RESPONSE_3603);
         assert_eq!(raw.payload, [5, 0, 0, 0, 6, 0, 0, 0]);
+    }
+
+    #[test]
+    fn login_notice_places_the_text_before_the_trailing_word() {
+        let frame = LoginStageNoticePacket {
+            value: 1,
+            second_value: 2,
+            text: "ab".to_string(),
+            tail: 3,
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NOTICE_901);
+        assert_eq!(
+            raw.payload,
+            [
+                1u8, 0, 0, 0, // first word
+                2, 0, 0, 0, // second word
+                2, 0, b'a', b'b', // text
+                3, 0, 0, 0, // trailing word
+            ]
+        );
     }
 
     #[test]
