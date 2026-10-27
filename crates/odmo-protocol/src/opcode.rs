@@ -739,6 +739,12 @@ pub mod game {
     // skill_index; u4 expected} — direct digimon-table mutation plus an empty
     // event-477 ping.
     pub const SKILL_LIMIT_OPEN: i16 = 3245;
+    // Skill application broadcast {u1 tag; tag body}. Tag 0 is a melee cast with
+    // a caster block, a stat chain and an 18-slot target table; tag 2 is a
+    // damage-over-time tick list; tag 3 is a scene cast. Tag 1 carries a body
+    // whose trailing field meanings are still unbound, so the encoder refuses it
+    // rather than guessing a layout.
+    pub const SKILL_APPLY_AROUND: i16 = 1102;
     // Enchant/tactics decrease notice applied to the local digimon: {u2 anchor
     // (client stores value - 1); u2 x14 in two runs of seven}; the loop pairs run
     // one with run two into seven info-list entries, decrements a 69-byte

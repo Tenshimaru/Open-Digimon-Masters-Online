@@ -83,6 +83,7 @@ pub use game::{
     DungeonScheduleListPacket, DungeonScheduleEntry, DungeonScheduleMember,
     DungeonScheduleRow, DungeonScheduleGift,
     ItemMakeLimitDataPacket, ItemMakeLimitEntry, MakeLimitResetPacket,
+    SkillApplyAroundPacket, SkillApplyAroundBody, SkillStatRow, SkillDotRow,
     UserSettingDataPacket, UserSettingEntry, CashBalanceNoticePacket,
     GameTwoAllMsgPacket, GameTwoAllMsgBody,
     GameTwoMonsterAreaAttackPacket, MonsterAreaBody, MonsterAreaTarget,

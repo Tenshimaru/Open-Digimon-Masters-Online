@@ -2848,6 +2848,133 @@ impl DungeonClearInfoPacket {
     }
 }
 
+/// One stat row of a `Skill::ApplyAround` melee cast.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SkillStatRow {
+    pub value: i32,
+    pub extra: u32,
+    pub stat: u8, // the chain ends when this reaches 18
+}
+
+/// One tick row of a `Skill::ApplyAround` damage-over-time broadcast.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SkillDotRow {
+    pub handler: u32,
+    pub buff: u16,
+    pub stat: u8,
+    pub value: i32,
+    pub second_value: u32,
+}
+
+/// Body of `Skill::ApplyAround` — opcode 1102, selected by its leading tag.
+///
+/// Tag 1 is deliberately absent: its remaining fields are unbound, and encoding
+/// it on a guess would shift every later read on the client.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SkillApplyAroundBody {
+    /// Tag 0: melee cast.
+    Melee {
+        caster: u32,
+        skill_id: u32,
+        target: u32,
+        flag: u8,
+        /// 40 bytes read only when the caster is nonzero.
+        caster_block: Option<[u8; 40]>,
+        caster_stats: Vec<SkillStatRow>,
+        /// Rows that fill the target table, indexed by their own stat selector.
+        target_stats: Vec<SkillStatRow>,
+        tail: u32,
+    },
+    /// Tag 2: damage-over-time ticks.
+    Dot {
+        source: u32,
+        flag: u8,
+        rows: Vec<SkillDotRow>,
+    },
+    /// Tag 3: scene cast.
+    Scene { source: u32, index: u32 },
+}
+
+/// `Skill::ApplyAround` — opcode 1102: {u1 tag; tag body}.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkillApplyAroundPacket {
+    pub body: SkillApplyAroundBody,
+}
+
+impl SkillApplyAroundPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::SKILL_APPLY_AROUND);
+        match &self.body {
+            SkillApplyAroundBody::Melee {
+                caster,
+                skill_id,
+                target,
+                flag,
+                caster_block,
+                caster_stats,
+                target_stats,
+                tail,
+            } => {
+                assert!(
+                    (caster_block.is_some() == (*caster != 0)),
+                    "the caster block rides only when the caster is nonzero"
+                );
+                assert!(
+                    caster_stats.iter().all(|row| row.stat < 18)
+                        && target_stats.iter().all(|row| row.stat < 18),
+                    "a stat row at or above 18 would terminate the chain early"
+                );
+                writer.write_u8(0);
+                writer.write_u32(*caster);
+                writer.write_u32(*skill_id);
+                writer.write_u32(*target);
+                writer.write_u8(*flag);
+                if let Some(block) = caster_block {
+                    writer.write_bytes(block);
+                }
+                writer.write_u8(1); // one-byte field between the block and the chain
+                for row in caster_stats {
+                    writer.write_u32(row.value as u32);
+                    writer.write_u32(row.extra);
+                    writer.write_u8(row.stat);
+                }
+                writer.write_u8(18); // caster chain terminator
+                for row in target_stats {
+                    writer.write_u32(row.value as u32);
+                    writer.write_u32(row.extra);
+                    writer.write_u8(row.stat);
+                }
+                writer.write_u8(18); // target chain terminator
+                writer.write_u32(*tail);
+            }
+            SkillApplyAroundBody::Dot { source, flag, rows } => {
+                assert!(rows.len() <= u8::MAX as usize, "dot rows overflow u1");
+                assert!(
+                    rows.iter().all(|row| row.stat < 18),
+                    "a dot row stat at or above 18 would terminate the chain early"
+                );
+                writer.write_u8(2);
+                writer.write_u32(*source);
+                writer.write_u8(*flag);
+                writer.write_u8(rows.len() as u8);
+                for row in rows {
+                    writer.write_u32(row.handler);
+                    writer.write_u16(row.buff);
+                    writer.write_u8(row.stat);
+                    writer.write_u32(row.value as u32);
+                    writer.write_u32(row.second_value);
+                }
+            }
+            SkillApplyAroundBody::Scene { source, index } => {
+                writer.write_u8(3);
+                writer.write_u32(*source);
+                writer.write_u32(*index);
+            }
+        }
+        writer.finalize()
+    }
+}
+
 /// One member row of a dungeon schedule entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DungeonScheduleMember {
@@ -9908,6 +10035,85 @@ mod tests {
                 3, 0, 0, 0, // created count
             ]
         );
+    }
+
+    #[test]
+    fn skill_apply_around_bodies_follow_their_tag() {
+        let melee = SkillApplyAroundPacket {
+            body: SkillApplyAroundBody::Melee {
+                caster: 0,
+                skill_id: 2,
+                target: 3,
+                flag: 4,
+                caster_block: None,
+                caster_stats: vec![SkillStatRow {
+                    value: 5,
+                    extra: 6,
+                    stat: 7,
+                }],
+                target_stats: vec![SkillStatRow {
+                    value: 8,
+                    extra: 9,
+                    stat: 10,
+                }],
+                tail: 11,
+            },
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&melee).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::SKILL_APPLY_AROUND);
+        assert_eq!(
+            raw.payload,
+            [
+                0, // tag
+                0, 0, 0, 0, // caster
+                2, 0, 0, 0, // skill
+                3, 0, 0, 0, // target
+                4, // flag
+                1, // block marker byte (no 40-byte block: caster is zero)
+                5, 0, 0, 0, 6, 0, 0, 0, 7, // caster stat row
+                18, // caster terminator
+                8, 0, 0, 0, 9, 0, 0, 0, 10, // target stat row
+                18, // target terminator
+                11, 0, 0, 0, // tail
+            ]
+        );
+
+        let dot = SkillApplyAroundPacket {
+            body: SkillApplyAroundBody::Dot {
+                source: 1,
+                flag: 2,
+                rows: vec![SkillDotRow {
+                    handler: 3,
+                    buff: 4,
+                    stat: 5,
+                    value: 6,
+                    second_value: 7,
+                }],
+            },
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&dot).expect("frame should decode");
+        assert_eq!(
+            raw.payload,
+            [
+                2, // tag
+                1, 0, 0, 0, // source
+                2, // flag
+                1, // row count
+                3, 0, 0, 0, 4, 0, 5, 6, 0, 0, 0, 7, 0, 0, 0, // 15-byte row
+            ]
+        );
+
+        let scene = SkillApplyAroundPacket {
+            body: SkillApplyAroundBody::Scene {
+                source: 9,
+                index: 10,
+            },
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&scene).expect("frame should decode");
+        assert_eq!(raw.payload, [3, 9, 0, 0, 0, 10, 0, 0, 0]);
     }
 
     #[test]
