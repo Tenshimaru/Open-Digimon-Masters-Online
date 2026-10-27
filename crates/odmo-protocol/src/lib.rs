@@ -89,6 +89,7 @@ pub use game::{
     HalfWordNoticePacket, RawNoticePacket, RawNoticeBody,
     PartyRecruitReplyPacket, PartyRecruitLeaveMemberPacket,
     PartyRecruitMemberNoticePacket, PartyRecruitMember,
+    PartyRecruitQueryListPacket, PartyRecruitView,
     ChangeSkinResultPacket, AcquireSkinPacket, TwoWordReplyPacket,
     FlagWordNoticePacket, FlagTwoWordNoticePacket, TwoWordPairPacket, FixedBlockNoticePacket,
     MixedWidthNoticePacket, FlagDoubleWordNoticePacket, ExItemMoveResultPacket,

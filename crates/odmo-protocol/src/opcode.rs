@@ -941,6 +941,10 @@ pub mod game {
     pub const NOTICE_3601: i16 = 3601;
     // {u4 value; u8 value; u2 first short; u8 second value}.
     pub const NOTICE_3512: i16 = 3512;
+    // Recruiter query list {u4 value; u4 count; u4 value; count x view row;
+    // u4 value; u4 value; u4 value}, where a view row is
+    // {u8 values; u4 value; u4 value; name; u1 flag; note; u4 value}.
+    pub const PARTY_RECRUIT_QUERY_LIST: i16 = 2518;
     // Incubator level-up notice {u4 digimon; u4 level}.
     pub const LEVELUP_DIGIMON_IN_INCUBATER: i16 = 3250;
     // Extra inventory slot expansion notice {u1 flag; u2 slots}.

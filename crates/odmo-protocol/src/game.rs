@@ -3337,6 +3337,67 @@ impl PartyRecruitMemberNoticePacket {
     }
 }
 
+/// `Party::RecruitView` — one row of the recruiter query list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PartyRecruitView {
+    pub first_value: u32,
+    pub second_value: u32,
+    pub tamer: u32,
+    pub digimon: u32,
+    pub name: String,
+    pub flag: u8,
+    pub note: String,
+    pub tail: u32,
+}
+
+impl PartyRecruitView {
+    fn encode_into(&self, writer: &mut PacketWriter) {
+        writer.write_u32(self.first_value);
+        writer.write_u32(self.second_value);
+        writer.write_u32(self.tamer);
+        writer.write_u32(self.digimon);
+        writer.write_modern_utf8_string(&self.name);
+        writer.write_u8(self.flag);
+        writer.write_modern_utf8_string(&self.note);
+        writer.write_u32(self.tail);
+    }
+}
+
+/// `Party::RecruitQueryList` — opcode 2518: {u4 value; u4 count; u4 value;
+/// count x view row; u4 value; u4 value; u4 value}.
+///
+/// The count is a word, not a byte: the rows are read in a loop bounded by it,
+/// and both strings inside a row carry their own word-long length prefix.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PartyRecruitQueryListPacket {
+    pub value: u32,
+    pub second_value: u32,
+    pub views: Vec<PartyRecruitView>,
+    pub third_value: u32,
+    pub fourth_value: u32,
+    pub fifth_value: u32,
+}
+
+impl PartyRecruitQueryListPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.views.len() <= u32::MAX as usize,
+            "recruiter view count overflows u4"
+        );
+        let mut writer = PacketWriter::new(game::PARTY_RECRUIT_QUERY_LIST);
+        writer.write_u32(self.value);
+        writer.write_u32(self.second_value);
+        writer.write_u32(self.views.len() as u32);
+        for view in &self.views {
+            view.encode_into(&mut writer);
+        }
+        writer.write_u32(self.third_value);
+        writer.write_u32(self.fourth_value);
+        writer.write_u32(self.fifth_value);
+        writer.finalize()
+    }
+}
+
 /// `Party::RecruitReply` — opcodes 2501, 2503, 2508, 2510, 2511 and 2514:
 /// {u4 result}.
 ///
@@ -10862,6 +10923,35 @@ mod tests {
         let raw = PacketReader::from_frame(&frame).expect("frame should decode");
         assert_eq!(raw.packet_type, game::RESPONSE_3603);
         assert_eq!(raw.payload, [5, 0, 0, 0, 6, 0, 0, 0]);
+    }
+
+    #[test]
+    fn recruiter_query_list_counts_its_rows_with_a_word() {
+        let frame = PartyRecruitQueryListPacket {
+            value: 1,
+            second_value: 2,
+            views: vec![PartyRecruitView {
+                first_value: 3,
+                second_value: 4,
+                tamer: 5,
+                digimon: 6,
+                name: "a".to_string(),
+                flag: 7,
+                note: "b".to_string(),
+                tail: 8,
+            }],
+            third_value: 9,
+            fourth_value: 10,
+            fifth_value: 11,
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::PARTY_RECRUIT_QUERY_LIST);
+        let expected: Vec<u8> = vec![
+            1, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0, 3, 0, 0, 0, 4, 0, 0, 0, 5, 0, 0, 0, 6, 0, 0, 0,
+            1, 0, b'a', 7, 1, 0, b'b', 8, 0, 0, 0, 9, 0, 0, 0, 10, 0, 0, 0, 11, 0, 0, 0,
+        ];
+        assert_eq!(raw.payload, expected.as_slice());
     }
 
     #[test]
