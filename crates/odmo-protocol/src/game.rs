@@ -2895,6 +2895,22 @@ pub enum SkillApplyAroundBody {
     Scene { source: u32, index: u32 },
 }
 
+/// `Game::SingleByteNotice` — opcode 2318: {u1 value}.
+///
+/// The handler consumes the byte and drops it, so the value carries no state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SingleByteNoticePacket {
+    pub value: u8,
+}
+
+impl SingleByteNoticePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::SINGLE_BYTE_NOTICE_2318);
+        writer.write_u8(self.value);
+        writer.finalize()
+    }
+}
+
 /// Single-word notice — opcodes 1309 and 1315.
 ///
 /// Both carry one unbound word and branch on whether it is zero, so the encoding
@@ -10154,6 +10170,14 @@ mod tests {
     }
 
     #[test]
+    fn single_byte_notice_carries_one_dropped_byte() {
+        let frame = SingleByteNoticePacket { value: 9 }.encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::SINGLE_BYTE_NOTICE_2318);
+        assert_eq!(raw.payload, [9]);
+    }
+
+    #[test]
     fn single_word_notices_share_one_shape() {
         for opcode in [game::NOTICE_1309, game::NOTICE_1315] {
             let frame = SingleWordNoticePacket { opcode, value: 7 }.encode();
@@ -10195,6 +10219,12 @@ mod tests {
             game::NO_PAYLOAD_3921,
             game::NO_PAYLOAD_3928,
             game::NO_PAYLOAD_9904,
+            game::NO_PAYLOAD_2104,
+            game::NO_PAYLOAD_4128,
+            game::NO_PAYLOAD_4139,
+            game::NO_PAYLOAD_4142,
+            game::NO_PAYLOAD_4601,
+            game::NO_PAYLOAD_5358,
         ];
         for opcode in opcodes {
             let frame = PacketWriter::new(opcode).finalize();

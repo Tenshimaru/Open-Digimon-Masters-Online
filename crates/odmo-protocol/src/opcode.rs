@@ -868,6 +868,16 @@ pub mod game {
     pub const NO_PAYLOAD_3921: i16 = 3921;
     pub const NO_PAYLOAD_3928: i16 = 3928;
     pub const NO_PAYLOAD_9904: i16 = 9904;
+    // Further notices whose handler consumes nothing: the body is empty and the
+    // frame stays header only. 2104 fires a local event and returns.
+    pub const NO_PAYLOAD_2104: i16 = 2104;
+    pub const NO_PAYLOAD_4128: i16 = 4128;
+    pub const NO_PAYLOAD_4139: i16 = 4139;
+    pub const NO_PAYLOAD_4142: i16 = 4142;
+    pub const NO_PAYLOAD_4601: i16 = 4601;
+    pub const NO_PAYLOAD_5358: i16 = 5358;
+    // Single-byte notice; the handler consumes one byte and drops it.
+    pub const SINGLE_BYTE_NOTICE_2318: i16 = 2318;
     // Ranking play progress {u2 dungeon; u4 value; u1 flag; u4 value; u2 value;
     // u4 value; u2 value; u4 value; u2 count; count x {u2 stage; u2 wave;
     // u4 value}}.
