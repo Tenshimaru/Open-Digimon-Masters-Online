@@ -3440,6 +3440,56 @@ impl InitSkinDataPacket {
     }
 }
 
+/// `Item::CircuitModuleNotice` — opcodes 4504, 4505 and 4506.
+///
+/// All three open with a flag byte and a slot word; 4506 also carries a double
+/// word before the trailing byte run, and the run's count is a word over plain
+/// bytes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CircuitModuleNoticePacket {
+    pub opcode: i16,
+    pub flag: u8,
+    pub slot: u32,
+    pub second_flag: u8,
+    pub wide_value: Option<u64>,
+    pub payload: Vec<u8>,
+}
+
+impl CircuitModuleNoticePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            matches!(
+                self.opcode,
+                game::RES_DS_CIRCUIT_MODULE_EQUIP
+                    | game::RES_DS_CIRCUIT_MODULE_MOVE
+                    | game::RES_DS_CIRCUIT_MODULE_UNEQUIP
+            ),
+            "the circuit module body belongs to opcodes 4504 to 4506"
+        );
+        if self.opcode != game::RES_DS_CIRCUIT_MODULE_UNEQUIP {
+            assert!(
+                self.wide_value.is_none(),
+                "only the unequip body carries a double word"
+            );
+        }
+        assert!(
+            self.payload.len() <= u16::MAX as usize,
+            "circuit payload count overflows u2"
+        );
+        let mut writer = PacketWriter::new(self.opcode);
+        writer.write_u8(self.flag);
+        writer.write_u32(self.slot);
+        writer.write_u8(self.second_flag);
+        if let Some(wide_value) = self.wide_value {
+            writer.write_u32(wide_value as u32);
+            writer.write_u32((wide_value >> 32) as u32);
+        }
+        writer.write_u16(self.payload.len() as u16);
+        writer.write_bytes(&self.payload);
+        writer.finalize()
+    }
+}
+
 /// `Item::CreateBreakthroughData` — opcode 3672: {u4 item; u4 flag;
 /// {u2 count; count x u4 value}}.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -11080,6 +11130,43 @@ mod tests {
         let raw = PacketReader::from_frame(&frame).expect("frame should decode");
         assert_eq!(raw.packet_type, game::RESPONSE_3603);
         assert_eq!(raw.payload, [5, 0, 0, 0, 6, 0, 0, 0]);
+    }
+
+    #[test]
+    fn circuit_module_notices_share_a_prefix_and_differ_by_tail() {
+        for opcode in [
+            game::RES_DS_CIRCUIT_MODULE_EQUIP,
+            game::RES_DS_CIRCUIT_MODULE_MOVE,
+        ] {
+            let frame = CircuitModuleNoticePacket {
+                opcode,
+                flag: 1,
+                slot: 2,
+                second_flag: 3,
+                wide_value: None,
+                payload: vec![4, 5],
+            }
+            .encode();
+            let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+            assert_eq!(raw.packet_type, opcode);
+            assert_eq!(raw.payload, [1u8, 2, 0, 0, 0, 3, 2, 0, 4, 5]);
+        }
+
+        let frame = CircuitModuleNoticePacket {
+            opcode: game::RES_DS_CIRCUIT_MODULE_UNEQUIP,
+            flag: 6,
+            slot: 7,
+            second_flag: 8,
+            wide_value: Some(0x0000_000A_0000_0009),
+            payload: vec![11],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_DS_CIRCUIT_MODULE_UNEQUIP);
+        assert_eq!(
+            raw.payload,
+            [6u8, 7, 0, 0, 0, 8, 9, 0, 0, 0, 10, 0, 0, 0, 1, 0, 11]
+        );
     }
 
     #[test]

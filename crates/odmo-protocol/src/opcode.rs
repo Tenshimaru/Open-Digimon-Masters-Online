@@ -958,6 +958,12 @@ pub mod game {
     // Breakthrough: 3672 reads {u4; u4; {u2 count; count x u4}}; 3675 reads the
     // same body after its own leading words.
     pub const RES_CREATE_BREAKTHROUGH_DATA: i16 = 3672;
+    // Circuit module operations: 4504 reads {u1 flag; u4 slot; u1 flag;
+    // counted byte run}; 4505 the same without the trailing run; 4506 adds a
+    // leading double word before the run.
+    pub const RES_DS_CIRCUIT_MODULE_EQUIP: i16 = 4504;
+    pub const RES_DS_CIRCUIT_MODULE_MOVE: i16 = 4505;
+    pub const RES_DS_CIRCUIT_MODULE_UNEQUIP: i16 = 4506;
     // Incubator level-up notice {u4 digimon; u4 level}.
     pub const LEVELUP_DIGIMON_IN_INCUBATER: i16 = 3250;
     // Extra inventory slot expansion notice {u1 flag; u2 slots}.
