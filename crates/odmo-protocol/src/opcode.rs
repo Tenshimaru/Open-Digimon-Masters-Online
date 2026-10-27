@@ -878,6 +878,9 @@ pub mod game {
     pub const NO_PAYLOAD_5358: i16 = 5358;
     // Single-byte notice; the handler consumes one byte and drops it.
     pub const SINGLE_BYTE_NOTICE_2318: i16 = 2318;
+    // Macro protector refresh result {u4 value; u2 count; count x u1 bytes;
+    // u1 tail}. The byte run is stored as a blob, not as text.
+    pub const RESULT_REFRESH_MACRO_PROTECTOR: i16 = 5206;
     // Ranking play progress {u2 dungeon; u4 value; u1 flag; u4 value; u2 value;
     // u4 value; u2 value; u4 value; u2 count; count x {u2 stage; u2 wave;
     // u4 value}}.

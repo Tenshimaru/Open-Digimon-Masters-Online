@@ -2895,6 +2895,33 @@ pub enum SkillApplyAroundBody {
     Scene { source: u32, index: u32 },
 }
 
+/// `Item::RefreshMacroProtectorResult` — opcode 5206: {u4 value; u2 count;
+/// count x u1 bytes; u1 tail}.
+///
+/// The byte run is a blob the client stores verbatim, so it stays opaque here
+/// rather than being reinterpreted as text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RefreshMacroProtectorResultPacket {
+    pub value: u32,
+    pub blob: Vec<u8>,
+    pub tail: u8,
+}
+
+impl RefreshMacroProtectorResultPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::RESULT_REFRESH_MACRO_PROTECTOR);
+        assert!(
+            self.blob.len() <= u16::MAX as usize,
+            "macro protector blob overflows u2"
+        );
+        writer.write_u32(self.value);
+        writer.write_u16(self.blob.len() as u16);
+        writer.write_bytes(&self.blob);
+        writer.write_u8(self.tail);
+        writer.finalize()
+    }
+}
+
 /// `Game::SingleByteNotice` — opcode 2318: {u1 value}.
 ///
 /// The handler consumes the byte and drops it, so the value carries no state.
@@ -10167,6 +10194,19 @@ mod tests {
         .encode();
         let raw = PacketReader::from_frame(&scene).expect("frame should decode");
         assert_eq!(raw.payload, [3, 9, 0, 0, 0, 10, 0, 0, 0]);
+    }
+
+    #[test]
+    fn macro_protector_result_carries_its_blob_length() {
+        let frame = RefreshMacroProtectorResultPacket {
+            value: 1,
+            blob: vec![7, 8, 9],
+            tail: 2,
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RESULT_REFRESH_MACRO_PROTECTOR);
+        assert_eq!(raw.payload, [1, 0, 0, 0, 3, 0, 7, 8, 9, 2]);
     }
 
     #[test]
