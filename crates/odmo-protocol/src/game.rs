@@ -2799,6 +2799,149 @@ impl MsgRaidRankingListPacket {
     }
 }
 
+/// Body of the `GameTwo::AllMsg` announcement selected by its case word.
+///
+/// The case is a signed 16-bit selector and only four values carry a body; any
+/// other value leaves the rest of the payload untouched. Each body is written in
+/// the order the announcement consumer expects.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GameTwoAllMsgBody {
+    /// Case 1: a tamer used a level-up item; the announcement names the tamer,
+    /// the item row and the resulting level.
+    ItemLevelUp {
+        tamer: String, // modern utf8 string, u16 length prefix
+        item_id: u32,  // CItemTable row key
+        level: u32,
+    },
+    /// Case 1605: a raid monster died. An item id of zero makes the client
+    /// substitute its own peace text instead of an item name.
+    RaidMonsterDie {
+        monster_id: u32, // CMonsterTable row key
+        tamer: String,   // modern utf8 string, u16 length prefix
+        digimon_id: u32, // CDigimonTable row key
+        item_id: u32,    // CItemTable row key, 0 = no item
+    },
+    /// Case 1606: a random-regen monster appeared on the map.
+    RandomMonsterCreate { monster_id: u32, map_id: u32 },
+    /// Case 1609: a random-regen monster was removed from the map.
+    RandomMonsterEnd { monster_id: u32, map_id: u32 },
+}
+
+/// `GameTwo::AllMsg` — opcode 16006: {s2 case; case body}.
+///
+/// The monster, item and digimon names are resolved from the file tables by the
+/// consumer; a missing row falls back to its own "unknown" text. The finished
+/// announcement goes to the global message window.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GameTwoAllMsgPacket {
+    pub body: GameTwoAllMsgBody,
+}
+
+impl GameTwoAllMsgPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::GAMETWO_ALL_MSG);
+        match &self.body {
+            GameTwoAllMsgBody::ItemLevelUp {
+                tamer,
+                item_id,
+                level,
+            } => {
+                writer.write_u16(1);
+                writer.write_modern_utf8_string(tamer);
+                writer.write_u32(*item_id);
+                writer.write_u32(*level);
+            }
+            GameTwoAllMsgBody::RaidMonsterDie {
+                monster_id,
+                tamer,
+                digimon_id,
+                item_id,
+            } => {
+                writer.write_u16(1605);
+                writer.write_u32(*monster_id);
+                writer.write_modern_utf8_string(tamer);
+                writer.write_u32(*digimon_id);
+                writer.write_u32(*item_id);
+            }
+            GameTwoAllMsgBody::RandomMonsterCreate { monster_id, map_id } => {
+                writer.write_u16(1606);
+                writer.write_u32(*monster_id);
+                writer.write_u32(*map_id);
+            }
+            GameTwoAllMsgBody::RandomMonsterEnd { monster_id, map_id } => {
+                writer.write_u16(1609);
+                writer.write_u32(*monster_id);
+                writer.write_u32(*map_id);
+            }
+        }
+        writer.finalize()
+    }
+}
+
+/// One hit entry of a `GameTwo::MonsterAreaAttack` broadcast.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MonsterAreaTarget {
+    pub first: u32,
+    pub second: u32,
+}
+
+/// Per-monster-kind body of a `GameTwo::MonsterAreaAttack` broadcast.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MonsterAreaBody {
+    /// Kind 0: the attack only plays on the caster and carries no rows.
+    CasterOnly,
+    /// Kind 1: one u4 per target.
+    Targets(Vec<u32>),
+    /// Kinds 2, 4 and 7: one coordinate/value pair per target.
+    TargetPairs(Vec<MonsterAreaTarget>),
+}
+
+/// `GameTwo::MonsterAreaAttack` — opcode 16010: {u4 caster; u4 monster id;
+/// per-kind body}.
+///
+/// The body is selected by the monster row's kind field. An unknown kind ends
+/// the payload after the header. The row count is a u4 and a zero count ends the
+/// packet before any row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GameTwoMonsterAreaAttackPacket {
+    pub caster: u32,
+    pub monster_id: u32, // CMonsterTable row key
+    pub body: MonsterAreaBody,
+}
+
+impl GameTwoMonsterAreaAttackPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::GAMETWO_MONSTER_AREA_ATTACK);
+        writer.write_u32(self.caster);
+        writer.write_u32(self.monster_id);
+        match &self.body {
+            MonsterAreaBody::CasterOnly => {}
+            MonsterAreaBody::Targets(targets) => {
+                assert!(
+                    targets.len() <= u32::MAX as usize,
+                    "area-attack targets overflow u4"
+                );
+                writer.write_u32(targets.len() as u32);
+                for target in targets {
+                    writer.write_u32(*target);
+                }
+            }
+            MonsterAreaBody::TargetPairs(pairs) => {
+                assert!(
+                    pairs.len() <= u32::MAX as usize,
+                    "area-attack rows overflow u4"
+                );
+                writer.write_u32(pairs.len() as u32);
+                for pair in pairs {
+                    writer.write_u32(pair.first);
+                    writer.write_u32(pair.second);
+                }
+            }
+        }
+        writer.finalize()
+    }
+}
+
 /// `GameTwo::DoorObjectOpen` — opcode 16007: {u4 monster id; u1 opened}.
 /// The client logs "ActorObject - MonsterID / Opend" and spawns the door
 /// actor from the pair, pinging event 42 with the formatted log string
@@ -3518,28 +3661,91 @@ impl Modern3419Packet {
     }
 }
 
-/// ArenaRequestFame: {u4 handler; u4 row; u2 mode}; the companion list
-/// {u4 count; count x {u4 companion}} rides along only when the mode is
-/// 1 and drives the raid-skill pairing with the ev-42 chat feed.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct GamTwoArenaRequestFamePacket {
-    pub handler: u32,
-    pub row: u32,
-    pub mode: u16,
-    pub companions: Option<Vec<u32>>, // present only when mode == 1
+/// Chain entry of `GameTwo::RaidSkillChain` (opcode 16027).
+///
+/// Every entry rides one opcode and one coordinate pair that the client uses to
+/// spawn the raid-skill effect on the target entity; the pair is signed on the
+/// wire so the client can express a negative placement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RaidSkillChainPosition {
+    pub x: i32,
+    pub y: i32,
 }
 
-impl GamTwoArenaRequestFamePacket {
+/// One link of a `GameTwo::RaidSkillChain` walk.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RaidSkillChainEntry {
+    pub value: u32, // accumulated per link; feeds the effect strength
+    pub next: u32,  // next link, 0 closes the chain
+    pub position: RaidSkillChainPosition,
+}
+
+/// `GameTwo::RaidSkillChain` — opcode 16027: {u4 handler; u4 skill id;
+/// u2 entry count; entry count x {u4 value; u4 next; i32 x; i32 y}}.
+///
+/// The last entry closes the chain with a zero `next`, so the entry count is the
+/// chain length rather than an independent field. The walk starts at the first
+/// entry and stops when `next` is zero.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct GameTwoRaidSkillChainPacket {
+    pub handler: u32,
+    pub skill_id: u32, // resolved against the monster row the handler carries
+    pub entries: Vec<RaidSkillChainEntry>,
+}
+
+impl GameTwoRaidSkillChainPacket {
     pub fn encode(&self) -> Vec<u8> {
-        let mut writer = PacketWriter::new(game::GAMETWO_ARENA_REQUEST_FAME);
+        let mut writer = PacketWriter::new(game::GAMETWO_RAID_SKILL_CHAIN);
+        assert!(
+            self.entries.len() <= u16::MAX as usize,
+            "raid chain entries overflow u2"
+        );
         writer.write_u32(self.handler);
-        writer.write_u32(self.row);
-        writer.write_u16(self.mode);
-        if let Some(companions) = &self.companions {
-            writer.write_u32(companions.len() as u32);
-            for companion in companions {
-                writer.write_u32(*companion);
-            }
+        writer.write_u32(self.skill_id);
+        writer.write_u16(self.entries.len() as u16);
+        for entry in &self.entries {
+            writer.write_u32(entry.value);
+            writer.write_u32(entry.next);
+            writer.write_u32(entry.position.x as u32);
+            writer.write_u32(entry.position.y as u32);
+        }
+        writer.finalize()
+    }
+}
+
+/// One hall-of-fame row of `GameTwo::ArenaFameList` (opcode 16025).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ArenaFameRow {
+    pub rank: u8,
+    pub name: String,  // modern utf8 string, u16 length prefix
+    pub guild: String, // modern utf8 string, u16 length prefix
+    pub point: u32,
+}
+
+/// `GameTwo::ArenaFameList` — opcode 16025: {u2 season; u1 result; u1 count;
+/// count x {u1 rank; s2 name; s2 guild; u4 point}}.
+///
+/// One list node is built per row and event 387 fires with the season and result
+/// attached to the whole list. A season of zero asks for the current season.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ArenaFameListPacket {
+    pub season: u16,
+    pub result: u8,
+    pub rows: Vec<ArenaFameRow>,
+}
+
+impl ArenaFameListPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::ARENA_REQUEST_FAME);
+        assert!(self.rows.len() <= u8::MAX as usize, "fame rows overflow u1");
+        writer.write_u16(self.season);
+        writer.write_u8(self.result);
+        writer.write_u8(self.rows.len() as u8);
+        for row in &self.rows {
+            writer.write_u8(row.rank);
+            writer.write_modern_utf8_string(&row.name);
+            writer.write_modern_utf8_string(&row.guild);
+            writer.write_u32(row.point);
         }
         writer.finalize()
     }
@@ -7107,23 +7313,28 @@ impl AdvertBossDieNoticePacket {
     }
 }
 
-/// `AdvertBossCreate` notice — opcode 1060. Modern parser reads three u4 fields: the
-/// first keys a CMapTable row, the third keys a CMonsterTable row whose name is copied
-/// by the client and the second stays unresolved; the client then pings event 121 and
-/// registers the advert-boss entry when the local state matches.
+/// `AdvertBossCreate` notice — opcode 1060: {u4 map; u4 channel; u4 monster id;
+/// u4 created count}.
+///
+/// The announcement is broadcast to every tamer in the map. The map and monster
+/// keys resolve the place and the spawned boss name, the channel lets a tamer on
+/// another channel ignore the spawn, and the count is carried for display even
+/// though no consumer uses it yet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AdvertBossCreateNoticePacket {
-    pub map_id: u32,     // keyed through CMapTable (table id 33)
-    pub second: u32,     // unresolved
-    pub monster_id: u32, // keyed through CMonsterTable (table id 39)
+    pub map_id: u32,        // keyed through CMapTable (table id 33)
+    pub channel_id: u32,    // selects the channel that owns the spawn
+    pub monster_id: u32,    // keyed through CMonsterTable (table id 39)
+    pub created_count: u32, // spawned count, carried but not consumed
 }
 
 impl AdvertBossCreateNoticePacket {
     pub fn encode(&self) -> Vec<u8> {
         let mut writer = PacketWriter::new(game::ADVERT_BOSS_CREATE);
         writer.write_u32(self.map_id);
-        writer.write_u32(self.second);
+        writer.write_u32(self.channel_id);
         writer.write_u32(self.monster_id);
+        writer.write_u32(self.created_count);
         writer.finalize()
     }
 }
@@ -9237,8 +9448,9 @@ mod tests {
 
         let create = AdvertBossCreateNoticePacket {
             map_id: 500,
-            second: 2,
+            channel_id: 2,
             monster_id: 9001,
+            created_count: 3,
         }
         .encode();
         let create_raw = PacketReader::from_frame(&create).expect("frame should decode");
@@ -9247,9 +9459,108 @@ mod tests {
             create_raw.payload,
             [
                 244, 1, 0, 0, // map id
-                2, 0, 0, 0,    // unresolved
-                41, 35, 0, 0,  // monster id (9001)
+                2, 0, 0, 0, // channel id
+                41, 35, 0, 0, // monster id (9001)
+                3, 0, 0, 0, // created count
             ]
+        );
+    }
+
+    #[test]
+    fn game_two_all_msg_writes_the_case_word_then_its_body() {
+        let level_up = GameTwoAllMsgPacket {
+            body: GameTwoAllMsgBody::ItemLevelUp {
+                tamer: "Ana".to_string(),
+                item_id: 7,
+                level: 30,
+            },
+        }
+        .encode();
+        let level_raw = PacketReader::from_frame(&level_up).expect("frame should decode");
+        assert_eq!(level_raw.packet_type, game::GAMETWO_ALL_MSG);
+        assert_eq!(
+            level_raw.payload,
+            vec![1, 0, 3, 0, b'A', b'n', b'a', 7, 0, 0, 0, 30, 0, 0, 0]
+        );
+
+        let raid = GameTwoAllMsgPacket {
+            body: GameTwoAllMsgBody::RaidMonsterDie {
+                monster_id: 11,
+                tamer: "Bo".to_string(),
+                digimon_id: 12,
+                item_id: 0,
+            },
+        }
+        .encode();
+        let raid_raw = PacketReader::from_frame(&raid).expect("frame should decode");
+        assert_eq!(raid_raw.packet_type, game::GAMETWO_ALL_MSG);
+        assert_eq!(
+            raid_raw.payload,
+            vec![69, 6, 11, 0, 0, 0, 2, 0, b'B', b'o', 12, 0, 0, 0, 0, 0, 0, 0]
+        );
+
+        for (body, case) in [
+            (
+                GameTwoAllMsgBody::RandomMonsterCreate {
+                    monster_id: 21,
+                    map_id: 22,
+                },
+                1606u16,
+            ),
+            (
+                GameTwoAllMsgBody::RandomMonsterEnd {
+                    monster_id: 21,
+                    map_id: 22,
+                },
+                1609u16,
+            ),
+        ] {
+            let packet = GameTwoAllMsgPacket { body }.encode();
+            let raw = PacketReader::from_frame(&packet).expect("frame should decode");
+            assert_eq!(raw.packet_type, game::GAMETWO_ALL_MSG);
+            let mut expected = case.to_le_bytes().to_vec();
+            expected.extend_from_slice(&[21, 0, 0, 0, 22, 0, 0, 0]);
+            assert_eq!(raw.payload, expected);
+        }
+    }
+
+    #[test]
+    fn game_two_monster_area_attack_bodies_follow_the_row_kind() {
+        let caster_only = GameTwoMonsterAreaAttackPacket {
+            caster: 5,
+            monster_id: 900,
+            body: MonsterAreaBody::CasterOnly,
+        }
+        .encode();
+        let caster_raw = PacketReader::from_frame(&caster_only).expect("frame should decode");
+        assert_eq!(caster_raw.packet_type, game::GAMETWO_MONSTER_AREA_ATTACK);
+        assert_eq!(caster_raw.payload, [5, 0, 0, 0, 132, 3, 0, 0]);
+
+        let targets = GameTwoMonsterAreaAttackPacket {
+            caster: 5,
+            monster_id: 900,
+            body: MonsterAreaBody::Targets(vec![7, 8]),
+        }
+        .encode();
+        let targets_raw = PacketReader::from_frame(&targets).expect("frame should decode");
+        assert_eq!(
+            targets_raw.payload,
+            [5, 0, 0, 0, 132, 3, 0, 0, 2, 0, 0, 0, 7, 0, 0, 0, 8, 0, 0, 0]
+        );
+
+        let pairs = GameTwoMonsterAreaAttackPacket {
+            caster: 5,
+            monster_id: 900,
+            body: MonsterAreaBody::TargetPairs(vec![MonsterAreaTarget {
+                first: 30,
+                second: 40,
+            }]),
+        }
+        .encode();
+        let pairs_raw = PacketReader::from_frame(&pairs).expect("frame should decode");
+        assert_eq!(
+            pairs_raw.payload,
+            [5, 0, 0, 0, 132, 3, 0, 0, 1, 0, 0, 0, 30, 0, 0, 0, 40, 0, 0, 0]
         );
     }
 
@@ -12168,33 +12479,72 @@ mod tests {
     }
 
     #[test]
+    fn arena_fame_list_writes_its_text_rows() {
+        let fame = ArenaFameListPacket {
+            season: 3,
+            result: 1,
+            rows: vec![
+                ArenaFameRow {
+                    rank: 1,
+                    name: "Ana".to_string(),
+                    guild: "GK".to_string(),
+                    point: 900,
+                },
+                ArenaFameRow::default(),
+            ],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&fame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::ARENA_REQUEST_FAME);
+        assert_eq!(
+            raw.payload,
+            vec![
+                3, 0, // season
+                1, // result
+                2, // row count
+                1, 3, 0, b'A', b'n', b'a', 2, 0, b'G', b'K', 132, 3, 0, 0, // first row
+                0, 0, 0, 0, 0, 0, 0, 0, 0, // default row
+            ]
+        );
+    }
+
+    #[test]
+    fn raid_skill_chain_closes_on_a_zero_link() {
+        let packet = GameTwoRaidSkillChainPacket {
+            handler: 7,
+            skill_id: 42,
+            entries: vec![
+                RaidSkillChainEntry {
+                    value: 500,
+                    next: 9,
+                    position: RaidSkillChainPosition { x: 10, y: -4 },
+                },
+                RaidSkillChainEntry {
+                    value: 600,
+                    next: 0,
+                    position: RaidSkillChainPosition { x: 12, y: 8 },
+                },
+            ],
+        }
+        .encode();
+
+        let raw = PacketReader::from_frame(&packet).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::GAMETWO_RAID_SKILL_CHAIN);
+        assert_eq!(raw.payload.len(), 8 + 2 + 2 * 16);
+        assert_eq!(&raw.payload[..8], &[7, 0, 0, 0, 42, 0, 0, 0]);
+        assert_eq!(&raw.payload[8..10], &2u16.to_le_bytes());
+        assert_eq!(&raw.payload[10..14], &500u32.to_le_bytes());
+        assert_eq!(&raw.payload[14..18], &9u32.to_le_bytes());
+        assert_eq!(&raw.payload[18..22], &10i32.to_le_bytes());
+        assert_eq!(&raw.payload[22..26], &(-4i32).to_le_bytes());
+        assert_eq!(&raw.payload[26..30], &600u32.to_le_bytes());
+        assert_eq!(&raw.payload[30..34], &0u32.to_le_bytes());
+        assert_eq!(&raw.payload[34..38], &12i32.to_le_bytes());
+        assert_eq!(&raw.payload[38..42], &8i32.to_le_bytes());
+    }
+
+    #[test]
     fn fame_region_and_extended_cash_snapshot_writes_encoded_bodies() {
-        let fame_plain = GamTwoArenaRequestFamePacket {
-            handler: 1,
-            row: 2,
-            mode: 0,
-            companions: None,
-        }
-        .encode();
-        let raw = PacketReader::from_frame(&fame_plain).expect("frame should decode");
-        assert_eq!(raw.packet_type, game::GAMETWO_ARENA_REQUEST_FAME);
-        assert_eq!(raw.payload, [1, 0, 0, 0, 2, 0, 0, 0, 0, 0]);
-
-        let fame_list = GamTwoArenaRequestFamePacket {
-            handler: 1,
-            row: 2,
-            mode: 1,
-            companions: Some(vec![3, 4]),
-        }
-        .encode();
-        let raw = PacketReader::from_frame(&fame_list).expect("frame should decode");
-        // u4 + u4 + u2 mode + u4 count + 2 x u4
-        assert_eq!(raw.payload.len(), 14 + 8);
-        assert_eq!(raw.payload[8], 1);
-        assert_eq!(&raw.payload[10..14], &2u32.to_le_bytes());
-        assert_eq!(&raw.payload[14..18], &3u32.to_le_bytes());
-        assert_eq!(&raw.payload[18..22], &4u32.to_le_bytes());
-
         let region = GamTwoRegionBuffPacket {
             a: 1,
             blob: [5, 6, 7, 8, 9, 10, 11, 12],

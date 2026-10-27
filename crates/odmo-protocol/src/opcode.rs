@@ -643,14 +643,24 @@ pub mod game {
     // monster and pings event 666 when the guard path settles ; SkillAction {u4
     // kind} triggers a skill action only for kind 4 ; XGuageUpdate {u2 a; s2 name;
     // u4 b; u4 c} through event 423.
+    // AllMsg {u2 case; case body}; the case selects the announcement family and
+    // each family carries its own trailing fields: 1 = {s2 tamer; u4 item; u4
+    // level}, 1605 = {u4 monster; s2 tamer; u4 digimon; u4 item}, 1606 and 1609 =
+    // {u4 monster; u4 skipped}. Cases outside that set consume the case word and
+    // nothing else.
+    pub const GAMETWO_ALL_MSG: i16 = 16006;
+    // MonsterAreaAttack {u4 caster; u4 monster id; per-kind body}; the body is
+    // selected by the monster row kind: 0 = header only, 1 = {u4 count; count x
+    // u4 target}, 2/4/7 = {u4 count; count x {u4 a; u4 b}}.
+    pub const GAMETWO_MONSTER_AREA_ATTACK: i16 = 16010;
+    pub const GAMETWO_HACK_SHIELD_CHECK: i16 = 16011;
     pub const GAMETWO_DOOR_OBJECT_OPEN: i16 = 16007;
     pub const GAMETWO_GAME_GUARD_CHECK: i16 = 16011;
     pub const GAMETWO_SKILL_ACTION: i16 = 16012;
     pub const GAMETWO_X_GUAGE_UPDATE: i16 = 16034;
-    // ArenaRequestFame {u4 handler; u4 row; u2 mode}; when mode is 1 it
-    // extends with {u4 count; count x {u4 companion}} carrying the paired
-    // raid-skill chain used for chat substitutions.
-    pub const GAMETWO_ARENA_REQUEST_FAME: i16 = 16027;
+    // RaidSkillChain {u4 handler; u4 skill; u2 count; count x {u4 value; u4 next;
+    // i32 x; i32 y}}; the last link closes the walk with next == 0.
+    pub const GAMETWO_RAID_SKILL_CHAIN: i16 = 16027;
     // RegionBuff {u4 a; u8 blob; u1 flag; u2 count; count x 69-byte rows};
     // the flag selects which buffer view receives the rows.
     pub const GAMETWO_REGION_BUFF: i16 = 16038;
