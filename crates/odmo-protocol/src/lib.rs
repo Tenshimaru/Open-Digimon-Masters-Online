@@ -101,6 +101,7 @@ pub use game::{
     CircuitModuleExtractPacket,
     CircuitModuleSyncPacket, CircuitModuleRow,
     CircuitCombineRewardPacket, CircuitItemInfo,
+    ExtraInventoryInfoPacket, ExtraInventoryUsePacket,
     InitDigimonExploreDataPacket, ExploreSlot, ExploreSlotPair,
     ChangeSkinResultPacket, AcquireSkinPacket, TwoWordReplyPacket,
     FlagWordNoticePacket, FlagTwoWordNoticePacket, TwoWordPairPacket, FixedBlockNoticePacket,

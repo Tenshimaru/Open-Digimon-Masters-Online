@@ -3719,6 +3719,59 @@ pub struct CircuitItemInfo {
     pub second_word: u16,
 }
 
+/// `ExtraInventory::Info` — opcode 3701: {u8 value; u1 flag; u2 count;
+/// count x item row}.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExtraInventoryInfoPacket {
+    pub wide_value: u64,
+    pub flag: u8,
+    pub items: Vec<SerializedItemRow>,
+}
+
+impl ExtraInventoryInfoPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.items.len() <= u16::MAX as usize,
+            "extra inventory item count overflows u2"
+        );
+        let mut writer = PacketWriter::new(game::NTF_EXTRAINVEN_INFO);
+        writer.write_u32(self.wide_value as u32);
+        writer.write_u32((self.wide_value >> 32) as u32);
+        writer.write_u8(self.flag);
+        writer.write_u16(self.items.len() as u16);
+        for item in &self.items {
+            item.encode_into(&mut writer);
+        }
+        writer.finalize()
+    }
+}
+
+/// `ExtraInventory::Use` — opcode 3803: {u4 value; u1 flag; u2 count;
+/// count x item row}.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExtraInventoryUsePacket {
+    pub value: u32,
+    pub flag: u8,
+    pub items: Vec<SerializedItemRow>,
+}
+
+impl ExtraInventoryUsePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.items.len() <= u16::MAX as usize,
+            "extra inventory item count overflows u2"
+        );
+        let mut writer = PacketWriter::new(game::RES_EXITEM_USE);
+        writer.write_u32(self.value);
+        writer.write_u8(self.flag);
+        writer.write_u16(self.items.len() as u16);
+        for item in &self.items {
+            item.encode_into(&mut writer);
+        }
+        writer.finalize()
+    }
+}
+
 /// `Circuit::CombineReward` — opcode 4603: {u1 flag; u2 count; count x u1;
 /// u2 count; count x {u4 id; u2; u2}; u2 count; count x item row}.
 ///
@@ -11885,6 +11938,32 @@ mod tests {
                 13, 0, 0, 0, 14, 0, 0, 0, // second slot tail
             ]
         );
+    }
+
+    #[test]
+    fn extra_inventory_notices_lead_with_their_value() {
+        let info = ExtraInventoryInfoPacket {
+            wide_value: 1,
+            flag: 2,
+            items: Vec::new(),
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&info).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NTF_EXTRAINVEN_INFO);
+        assert_eq!(
+            raw.payload,
+            [1u8, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0] // eight-byte value, flag, empty count
+        );
+
+        let used = ExtraInventoryUsePacket {
+            value: 3,
+            flag: 4,
+            items: Vec::new(),
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&used).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_EXITEM_USE);
+        assert_eq!(raw.payload, [3u8, 0, 0, 0, 4, 0, 0]);
     }
 
     #[test]

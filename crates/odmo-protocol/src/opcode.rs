@@ -993,6 +993,10 @@ pub mod game {
     // Circuit combine reward: {u1 flag; {u2; u1}; {u2 count; count x {u4; u2; u2}};
     // {u2 count; count x item row}}.
     pub const RES_CIRCUIT_COMBINE_REWARD: i16 = 4603;
+    // Extra inventory info: {u8 value; u1 flag; u2 count; count x item row}.
+    pub const NTF_EXTRAINVEN_INFO: i16 = 3701;
+    // Extra inventory use: {u4 value; u1 flag; u2 count; count x item row}.
+    pub const RES_EXITEM_USE: i16 = 3803;
     // Login-stage notice {u4 value; u4 value; modern string; u4 value}.
     pub const NOTICE_901: i16 = 901;
     // Union hack chip results: 3173 reads {u4 x5; u2; u1; item list; u8},
