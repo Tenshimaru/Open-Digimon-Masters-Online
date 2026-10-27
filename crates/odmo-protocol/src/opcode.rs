@@ -995,6 +995,8 @@ pub mod game {
     pub const RES_RESET_BREAKTHROUGH: i16 = 3674;
     // Body is a bare modern string.
     pub const NTF_STRING_3309: i16 = 3309;
+    // Preset data save result: {u1 flag; u1 flag; counted item list}.
+    pub const RES_PRESET_DATA_SAVE: i16 = 4204;
     pub const RES_REDUCE_DIGIMON_EXPLORE_TIME: i16 = 5357;
     pub const RES_ITEM_EXPLORE_COMPLETE_5359: i16 = 5359;
     pub const RES_ITEM_UPGRADE_DATA_TRANSFER: i16 = 5401;

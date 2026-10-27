@@ -3694,6 +3694,32 @@ impl UnionHackResultPacket {
     }
 }
 
+/// `Preset::DataSave` — opcode 4204: {u1 flag; u1 flag; u2 count;
+/// count x item row}.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PresetDataSavePacket {
+    pub flag: u8,
+    pub second_flag: u8,
+    pub items: Vec<SerializedItemRow>,
+}
+
+impl PresetDataSavePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.items.len() <= u16::MAX as usize,
+            "preset item count overflows u2"
+        );
+        let mut writer = PacketWriter::new(game::RES_PRESET_DATA_SAVE);
+        writer.write_u8(self.flag);
+        writer.write_u8(self.second_flag);
+        writer.write_u16(self.items.len() as u16);
+        for item in &self.items {
+            item.encode_into(&mut writer);
+        }
+        writer.finalize()
+    }
+}
+
 /// `Breakthrough::Result` — opcodes 3673 and 3674: {u4 value; u2 count;
 /// count x item row; u4 tail[0..2]}.
 ///
@@ -11651,6 +11677,19 @@ mod tests {
                 13, 0, 0, 0, 14, 0, 0, 0, // second slot tail
             ]
         );
+    }
+
+    #[test]
+    fn preset_data_save_opens_with_two_flag_bytes() {
+        let frame = PresetDataSavePacket {
+            flag: 1,
+            second_flag: 2,
+            items: Vec::new(),
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_PRESET_DATA_SAVE);
+        assert_eq!(raw.payload, [1u8, 2, 0, 0]);
     }
 
     #[test]
