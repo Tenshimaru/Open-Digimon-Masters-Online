@@ -3027,6 +3027,53 @@ impl SingleWordNoticePacket {
     }
 }
 
+/// `Party::RecruitReply` — opcodes 2501, 2503, 2508, 2510, 2511 and 2514:
+/// {u4 result}.
+///
+/// The recruiter operations all answer with one result word, so one type covers
+/// them and the opcode selects which operation the client reports on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PartyRecruitReplyPacket {
+    pub opcode: i16,
+    pub result: u32,
+}
+
+impl PartyRecruitReplyPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            matches!(
+                self.opcode,
+                game::PARTY_RECRUIT_MAKE
+                    | game::PARTY_RECRUIT_APPLY
+                    | game::PARTY_RECRUIT_CHAT
+                    | game::PARTY_RECRUIT_KICKOUT
+                    | game::PARTY_RECRUIT_WITHDRAW
+                    | game::PARTY_RECRUIT_CREATE_PARTY
+            ),
+            "the single-result body belongs to the recruiter reply opcodes"
+        );
+        let mut writer = PacketWriter::new(self.opcode);
+        writer.write_u32(self.result);
+        writer.finalize()
+    }
+}
+
+/// `Party::RecruitLeaveMember` — opcode 2512: {u1 type; u4 member}.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PartyRecruitLeaveMemberPacket {
+    pub member_type: u8,
+    pub member: u32,
+}
+
+impl PartyRecruitLeaveMemberPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::PARTY_RECRUIT_LEAVE_MEMBER);
+        writer.write_u8(self.member_type);
+        writer.write_u32(self.member);
+        writer.finalize()
+    }
+}
+
 /// `Game::RawNotice` — notices whose body is a single fixed-width run.
 ///
 /// 3305, 5354, 3172 and 14058 carry one word; 16055 carries a double word; 9851
@@ -10334,6 +10381,32 @@ mod tests {
         .encode();
         let raw = PacketReader::from_frame(&scene).expect("frame should decode");
         assert_eq!(raw.payload, [3, 9, 0, 0, 0, 10, 0, 0, 0]);
+    }
+
+    #[test]
+    fn recruiter_replies_carry_one_result_word() {
+        for opcode in [
+            game::PARTY_RECRUIT_MAKE,
+            game::PARTY_RECRUIT_APPLY,
+            game::PARTY_RECRUIT_CHAT,
+            game::PARTY_RECRUIT_KICKOUT,
+            game::PARTY_RECRUIT_WITHDRAW,
+            game::PARTY_RECRUIT_CREATE_PARTY,
+        ] {
+            let frame = PartyRecruitReplyPacket { opcode, result: 1 }.encode();
+            let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+            assert_eq!(raw.packet_type, opcode);
+            assert_eq!(raw.payload, [1, 0, 0, 0]);
+        }
+
+        let frame = PartyRecruitLeaveMemberPacket {
+            member_type: 2,
+            member: 3,
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::PARTY_RECRUIT_LEAVE_MEMBER);
+        assert_eq!(raw.payload, [2, 3, 0, 0, 0]);
     }
 
     #[test]

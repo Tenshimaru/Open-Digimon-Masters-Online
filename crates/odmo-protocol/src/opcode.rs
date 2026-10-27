@@ -902,6 +902,15 @@ pub mod game {
     pub const NOTICE_14058: i16 = 14058;
     pub const NOTICE_16055: i16 = 16055;
     pub const NOTICE_9851: i16 = 9851;
+    // Party recruiter replies, each carrying a single result word.
+    pub const PARTY_RECRUIT_MAKE: i16 = 2501;
+    pub const PARTY_RECRUIT_APPLY: i16 = 2503;
+    pub const PARTY_RECRUIT_KICKOUT: i16 = 2511;
+    pub const PARTY_RECRUIT_WITHDRAW: i16 = 2510;
+    pub const PARTY_RECRUIT_CHAT: i16 = 2508;
+    pub const PARTY_RECRUIT_CREATE_PARTY: i16 = 2514;
+    // Recruiter leave notice {u1 type; u4 member}.
+    pub const PARTY_RECRUIT_LEAVE_MEMBER: i16 = 2512;
     // Ranking play progress {u2 dungeon; u4 value; u1 flag; u4 value; u2 value;
     // u4 value; u2 value; u4 value; u2 count; count x {u2 stage; u2 wave;
     // u4 value}}.

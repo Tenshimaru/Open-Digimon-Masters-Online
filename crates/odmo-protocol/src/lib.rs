@@ -87,6 +87,7 @@ pub use game::{
     ProgressNoticePacket, SingleWordNoticePacket, SingleByteNoticePacket,
     RefreshMacroProtectorResultPacket, ItemSmallNoticePacket, ItemNoticeBody,
     HalfWordNoticePacket, RawNoticePacket, RawNoticeBody,
+    PartyRecruitReplyPacket, PartyRecruitLeaveMemberPacket,
     UserSettingDataPacket, UserSettingEntry, CashBalanceNoticePacket,
     GameTwoAllMsgPacket, GameTwoAllMsgBody,
     GameTwoMonsterAreaAttackPacket, MonsterAreaBody, MonsterAreaTarget,
