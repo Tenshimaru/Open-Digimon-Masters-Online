@@ -911,6 +911,13 @@ pub mod game {
     pub const PARTY_RECRUIT_CREATE_PARTY: i16 = 2514;
     // Recruiter leave notice {u1 type; u4 member}.
     pub const PARTY_RECRUIT_LEAVE_MEMBER: i16 = 2512;
+    // Change-skin result {u1 result}.
+    pub const RES_CHANGE_SKIN_RESULT: i16 = 3154;
+    // Skin acquisition notice {u1 flag; u4 skin}.
+    pub const NTF_ACQUIRE_SKIN: i16 = 3152;
+    // Two more replies: 2513 reads one word; 3603 reads two words.
+    pub const REPLY_2513: i16 = 2513;
+    pub const RESPONSE_3603: i16 = 3603;
     // Ranking play progress {u2 dungeon; u4 value; u1 flag; u4 value; u2 value;
     // u4 value; u2 value; u4 value; u2 count; count x {u2 stage; u2 wave;
     // u4 value}}.

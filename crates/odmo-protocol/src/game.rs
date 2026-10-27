@@ -3027,6 +3027,52 @@ impl SingleWordNoticePacket {
     }
 }
 
+/// `Game::TwoWordReply` — opcode 3603: {u4 value; u4 second value}.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TwoWordReplyPacket {
+    pub value: u32,
+    pub second_value: u32,
+}
+
+impl TwoWordReplyPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::RESPONSE_3603);
+        writer.write_u32(self.value);
+        writer.write_u32(self.second_value);
+        writer.finalize()
+    }
+}
+
+/// `Item::ChangeSkinResult` — opcode 3154: {u1 result}.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChangeSkinResultPacket {
+    pub result: u8,
+}
+
+impl ChangeSkinResultPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::RES_CHANGE_SKIN_RESULT);
+        writer.write_u8(self.result);
+        writer.finalize()
+    }
+}
+
+/// `Item::AcquireSkin` — opcode 3152: {u1 flag; u4 skin}.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AcquireSkinPacket {
+    pub flag: u8,
+    pub skin: u32,
+}
+
+impl AcquireSkinPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::NTF_ACQUIRE_SKIN);
+        writer.write_u8(self.flag);
+        writer.write_u32(self.skin);
+        writer.finalize()
+    }
+}
+
 /// `Party::RecruitReply` — opcodes 2501, 2503, 2508, 2510, 2511 and 2514:
 /// {u4 result}.
 ///
@@ -3049,6 +3095,7 @@ impl PartyRecruitReplyPacket {
                     | game::PARTY_RECRUIT_KICKOUT
                     | game::PARTY_RECRUIT_WITHDRAW
                     | game::PARTY_RECRUIT_CREATE_PARTY
+                    | game::REPLY_2513
             ),
             "the single-result body belongs to the recruiter reply opcodes"
         );
@@ -10381,6 +10428,28 @@ mod tests {
         .encode();
         let raw = PacketReader::from_frame(&scene).expect("frame should decode");
         assert_eq!(raw.payload, [3, 9, 0, 0, 0, 10, 0, 0, 0]);
+    }
+
+    #[test]
+    fn skin_notices_carry_their_fields() {
+        let frame = ChangeSkinResultPacket { result: 4 }.encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_CHANGE_SKIN_RESULT);
+        assert_eq!(raw.payload, [4]);
+
+        let frame = AcquireSkinPacket { flag: 1, skin: 2 }.encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NTF_ACQUIRE_SKIN);
+        assert_eq!(raw.payload, [1, 2, 0, 0, 0]);
+
+        let frame = TwoWordReplyPacket {
+            value: 5,
+            second_value: 6,
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RESPONSE_3603);
+        assert_eq!(raw.payload, [5, 0, 0, 0, 6, 0, 0, 0]);
     }
 
     #[test]
