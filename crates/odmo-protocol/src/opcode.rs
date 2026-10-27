@@ -813,6 +813,11 @@ pub mod game {
     pub const MSG_DUNGEON_MATCH_STATE: i16 = 14007;
     pub const MSG_DUNGEON_MATCH_RESULT: i16 = 14008;
     pub const MSG_DUNGEON_MATCH_COUNTER: i16 = 14009;
+    // Dungeon stage info {u4; u4; u2; u4; u8}; all five fields are unbound.
+    pub const MSG_DUNGEON_STAGE_INFO: i16 = 14001;
+    // Dungeon clear info {u4; u1 clear count; count x {u1 flag; u4 value};
+    // u1 reward count; count x {u4 value; u2 item}}. Both counts are signed.
+    pub const MSG_DUNGEON_CLEAR_INFO: i16 = 14006;
     // Ranking play progress {u2 dungeon; u4 value; u1 flag; u4 value; u2 value;
     // u4 value; u2 value; u4 value; u2 count; count x {u2 stage; u2 wave;
     // u4 value}}.

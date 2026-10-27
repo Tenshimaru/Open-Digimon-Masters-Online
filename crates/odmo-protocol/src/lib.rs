@@ -79,6 +79,7 @@ pub use game::{
     MsgRaidRankingListPacket,
     DungeonReEnterResultPacket, RankingPlayProgressPacket, RankingPlayProgressStage,
     DungeonMatchStatePacket, DungeonMatchResultPacket, DungeonMatchCounterPacket,
+    DungeonStageInfoPacket, DungeonClearInfoPacket, DungeonClearEntry, DungeonClearReward,
     GameTwoAllMsgPacket, GameTwoAllMsgBody,
     GameTwoMonsterAreaAttackPacket, MonsterAreaBody, MonsterAreaTarget,
     GameTwoDoorObjectOpenPacket, GameGuardRow, GameTwoGameGuardCheckPacket,

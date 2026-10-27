@@ -2799,6 +2799,81 @@ impl MsgRaidRankingListPacket {
     }
 }
 
+/// One clear row of `Msg::DungeonClearInfo`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DungeonClearEntry {
+    pub flag: u8,
+    pub value: u32,
+}
+
+/// One reward row of `Msg::DungeonClearInfo`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DungeonClearReward {
+    pub value: u32,
+    pub item: u16,
+}
+
+/// `Msg::DungeonClearInfo` — opcode 14006: {u4 value; u1 clear count;
+/// clear count x {u1 flag; u4 value}; u1 reward count;
+/// reward count x {u4 value; u2 item}}.
+///
+/// Both counts are read as signed bytes, so a value above 127 would end the
+/// lists; the server keeps them within that range.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DungeonClearInfoPacket {
+    pub value: u32,
+    pub clears: Vec<DungeonClearEntry>,
+    pub rewards: Vec<DungeonClearReward>,
+}
+
+impl DungeonClearInfoPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::MSG_DUNGEON_CLEAR_INFO);
+        assert!(
+            self.clears.len() <= i8::MAX as usize && self.rewards.len() <= i8::MAX as usize,
+            "dungeon clear lists overflow a signed u1"
+        );
+        writer.write_u32(self.value);
+        writer.write_u8(self.clears.len() as u8);
+        for entry in &self.clears {
+            writer.write_u8(entry.flag);
+            writer.write_u32(entry.value);
+        }
+        writer.write_u8(self.rewards.len() as u8);
+        for reward in &self.rewards {
+            writer.write_u32(reward.value);
+            writer.write_u16(reward.item);
+        }
+        writer.finalize()
+    }
+}
+
+/// `Msg::DungeonStageInfo` — opcode 14001: {u4 value; u4 value; u2 value;
+/// u4 value; u8 value}.
+///
+/// Every field is unbound, so the type keeps them positional.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DungeonStageInfoPacket {
+    pub first: u32,
+    pub second: u32,
+    pub third: u16,
+    pub fourth: u32,
+    pub fifth: u64,
+}
+
+impl DungeonStageInfoPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::MSG_DUNGEON_STAGE_INFO);
+        writer.write_u32(self.first);
+        writer.write_u32(self.second);
+        writer.write_u16(self.third);
+        writer.write_u32(self.fourth);
+        writer.write_u32(self.fifth as u32);
+        writer.write_u32((self.fifth >> 32) as u32);
+        writer.finalize()
+    }
+}
+
 /// `Msg::DungeonMatchState` — opcode 14007: {u4 value; u1 flag; u1 flag;
 /// u4 value; u2 value}.
 ///
@@ -9617,6 +9692,46 @@ mod tests {
             assert_eq!(raw.packet_type, opcode);
             assert!(raw.payload.is_empty());
         }
+
+        let stage = DungeonStageInfoPacket {
+            first: 1,
+            second: 2,
+            third: 3,
+            fourth: 4,
+            fifth: 0x0000_0006_0000_0005,
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&stage).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::MSG_DUNGEON_STAGE_INFO);
+        assert_eq!(
+            raw.payload,
+            [
+                1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 4, 0, 0, 0, // header
+                5, 0, 0, 0, 6, 0, 0, 0, // u8 value
+            ]
+        );
+
+        let clear = DungeonClearInfoPacket {
+            value: 7,
+            clears: vec![DungeonClearEntry { flag: 1, value: 2 }],
+            rewards: vec![DungeonClearReward {
+                value: 3,
+                item: 4,
+            }],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&clear).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::MSG_DUNGEON_CLEAR_INFO);
+        assert_eq!(
+            raw.payload,
+            vec![
+                7, 0, 0, 0, // value
+                1, // clear count
+                1, 2, 0, 0, 0, // clear row
+                1, // reward count
+                3, 0, 0, 0, 4, 0, // reward row
+            ]
+        );
 
         let state = DungeonMatchStatePacket {
             value: 1,
