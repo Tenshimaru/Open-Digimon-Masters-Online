@@ -968,6 +968,14 @@ pub mod game {
     // u2 value; u8 value; u2 count; count x {u8 value; u2 value}}.
     pub const NTF_SEASON_3507: i16 = 3507;
     pub const NTF_SEASON_3508: i16 = 3508;
+    // Inventory results that report a word and then the updated item list, each
+    // item row being the 71-byte serialized form.
+    pub const RES_START_DIGIMON_EXPLORE: i16 = 5353;
+    pub const RES_OPEN_DIGIMON_EXPLORE_SLOT: i16 = 5356;
+    pub const RES_REDUCE_DIGIMON_EXPLORE_TIME: i16 = 5357;
+    pub const RES_ITEM_EXPLORE_COMPLETE_5359: i16 = 5359;
+    pub const RES_ITEM_UPGRADE_DATA_TRANSFER: i16 = 5401;
+    pub const RES_ITEM_5402: i16 = 5402;
     // Incubator level-up notice {u4 digimon; u4 level}.
     pub const LEVELUP_DIGIMON_IN_INCUBATER: i16 = 3250;
     // Extra inventory slot expansion notice {u1 flag; u2 slots}.

@@ -3440,6 +3440,92 @@ impl InitSkinDataPacket {
     }
 }
 
+/// One serialized inventory item row, 71 bytes on the wire.
+///
+/// The in-memory row occupies 75 bytes because a vtable pointer leads it; the
+/// vtable never travels, so anything that sized the wire row from the memory
+/// layout would over-read by four bytes per item.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SerializedItemRow {
+    pub item: u32,
+    pub first_word: u16,
+    pub second_word: u16,
+    pub first_flag: u8,
+    pub second_flag: u8,
+    pub third_flag: u8,
+    pub fourth_flag: u8,
+    pub packed_six: [u8; 6],
+    pub packed_three: [u8; 3],
+    pub first_block: [u8; 16],
+    pub second_block: [u8; 16],
+    pub wide_value: u64,
+    pub third_word: u32,
+    pub fourth_word: u32,
+    pub fifth_flag: u8,
+    pub sixth_flag: u8,
+}
+
+impl SerializedItemRow {
+    pub const WIRE_LEN: usize = 71;
+
+    fn encode_into(&self, writer: &mut PacketWriter) {
+        writer.write_u32(self.item);
+        writer.write_u16(self.first_word);
+        writer.write_u16(self.second_word);
+        writer.write_u8(self.first_flag);
+        writer.write_u8(self.second_flag);
+        writer.write_u8(self.third_flag);
+        writer.write_u8(self.fourth_flag);
+        writer.write_bytes(&self.packed_six);
+        writer.write_bytes(&self.packed_three);
+        writer.write_bytes(&self.first_block);
+        writer.write_bytes(&self.second_block);
+        writer.write_u32(self.wide_value as u32);
+        writer.write_u32((self.wide_value >> 32) as u32);
+        writer.write_u32(self.third_word);
+        writer.write_u32(self.fourth_word);
+        writer.write_u8(self.fifth_flag);
+        writer.write_u8(self.sixth_flag);
+    }
+}
+
+/// `Inventory::ProcessResult` — opcodes 5353, 5356, 5357, 5359, 5401 and 5402:
+/// {u4 value; u2 count; count x item row}.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InventoryProcessResultPacket {
+    pub opcode: i16,
+    pub value: u32,
+    pub items: Vec<SerializedItemRow>,
+}
+
+impl InventoryProcessResultPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            matches!(
+                self.opcode,
+                game::RES_START_DIGIMON_EXPLORE
+                    | game::RES_OPEN_DIGIMON_EXPLORE_SLOT
+                    | game::RES_REDUCE_DIGIMON_EXPLORE_TIME
+                    | game::RES_ITEM_EXPLORE_COMPLETE_5359
+                    | game::RES_ITEM_UPGRADE_DATA_TRANSFER
+                    | game::RES_ITEM_5402
+            ),
+            "the process result body belongs to the listed inventory results"
+        );
+        assert!(
+            self.items.len() <= u16::MAX as usize,
+            "process result item count overflows u2"
+        );
+        let mut writer = PacketWriter::new(self.opcode);
+        writer.write_u32(self.value);
+        writer.write_u16(self.items.len() as u16);
+        for item in &self.items {
+            item.encode_into(&mut writer);
+        }
+        writer.finalize()
+    }
+}
+
 /// `Season::Row` — one seasonal row: a double word head and a short tail.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SeasonRow {
@@ -11184,6 +11270,40 @@ mod tests {
         let raw = PacketReader::from_frame(&frame).expect("frame should decode");
         assert_eq!(raw.packet_type, game::RESPONSE_3603);
         assert_eq!(raw.payload, [5, 0, 0, 0, 6, 0, 0, 0]);
+    }
+
+    #[test]
+    fn process_result_items_take_seventy_one_bytes_not_seventy_five() {
+        let row = SerializedItemRow {
+            item: 1,
+            first_word: 2,
+            second_word: 3,
+            first_flag: 4,
+            second_flag: 5,
+            third_flag: 6,
+            fourth_flag: 7,
+            packed_six: [8; 6],
+            packed_three: [9; 3],
+            first_block: [10; 16],
+            second_block: [11; 16],
+            wide_value: 0x0000_000D_0000_000C,
+            third_word: 14,
+            fourth_word: 15,
+            fifth_flag: 16,
+            sixth_flag: 17,
+        };
+        assert_eq!(SerializedItemRow::WIRE_LEN, 71);
+
+        let frame = InventoryProcessResultPacket {
+            opcode: game::RES_REDUCE_DIGIMON_EXPLORE_TIME,
+            value: 99,
+            items: vec![row],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_REDUCE_DIGIMON_EXPLORE_TIME);
+        assert_eq!(raw.payload.len(), 4 + 2 + SerializedItemRow::WIRE_LEN);
+        assert_eq!(&raw.payload[..6], &[99, 0, 0, 0, 1, 0]);
     }
 
     #[test]
