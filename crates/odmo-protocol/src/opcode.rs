@@ -925,6 +925,13 @@ pub mod game {
     pub const RESPONSE_3501: i16 = 3501;
     pub const RESPONSE_3514: i16 = 3514;
     pub const NOTICE_16035: i16 = 16035;
+    // Ex-item move result {u4 result}.
+    pub const RES_EXITEM_MOVE: i16 = 3801;
+    // Mixed-width notices: 4125 and 3601 share {u4; u1; u4; u2; u2; u4};
+    // 4132 reads {u1; u8; u4}.
+    pub const NOTICE_4125: i16 = 4125;
+    pub const NOTICE_3601: i16 = 3601;
+    pub const NOTICE_4132: i16 = 4132;
     // Ranking play progress {u2 dungeon; u4 value; u1 flag; u4 value; u2 value;
     // u4 value; u2 value; u4 value; u2 count; count x {u2 stage; u2 wave;
     // u4 value}}.

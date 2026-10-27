@@ -3027,6 +3027,72 @@ impl SingleWordNoticePacket {
     }
 }
 
+/// `Item::MixedWidthNotice` — opcodes 4125 and 3601: {u4 value; u1 flag;
+/// u4 second value; u2 first short; u2 second short; u4 third value}.
+///
+/// The widths alternate, so a flat run of words would put every field after the
+/// first byte at the wrong offset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MixedWidthNoticePacket {
+    pub opcode: i16,
+    pub value: u32,
+    pub flag: u8,
+    pub second_value: u32,
+    pub first_short: u16,
+    pub second_short: u16,
+    pub third_value: u32,
+}
+
+impl MixedWidthNoticePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            matches!(self.opcode, game::NOTICE_4125 | game::NOTICE_3601),
+            "the mixed-width body belongs to opcodes 4125 and 3601"
+        );
+        let mut writer = PacketWriter::new(self.opcode);
+        writer.write_u32(self.value);
+        writer.write_u8(self.flag);
+        writer.write_u32(self.second_value);
+        writer.write_u16(self.first_short);
+        writer.write_u16(self.second_short);
+        writer.write_u32(self.third_value);
+        writer.finalize()
+    }
+}
+
+/// `Item::FlagDoubleWordNotice` — opcode 4132: {u1 flag; u8 value; u4 tail}.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FlagDoubleWordNoticePacket {
+    pub flag: u8,
+    pub value: u64,
+    pub tail: u32,
+}
+
+impl FlagDoubleWordNoticePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::NOTICE_4132);
+        writer.write_u8(self.flag);
+        writer.write_u32(self.value as u32);
+        writer.write_u32((self.value >> 32) as u32);
+        writer.write_u32(self.tail);
+        writer.finalize()
+    }
+}
+
+/// `Item::ExItemMoveResult` — opcode 3801: {u4 result}.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExItemMoveResultPacket {
+    pub result: u32,
+}
+
+impl ExItemMoveResultPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::RES_EXITEM_MOVE);
+        writer.write_u32(self.result);
+        writer.finalize()
+    }
+}
+
 /// `Item::FlagWordNotice` — opcode 4138: {u1 flag; u4 value}.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FlagWordNoticePacket {
@@ -10501,6 +10567,51 @@ mod tests {
         .encode();
         let raw = PacketReader::from_frame(&scene).expect("frame should decode");
         assert_eq!(raw.payload, [3, 9, 0, 0, 0, 10, 0, 0, 0]);
+    }
+
+    #[test]
+    fn mixed_width_notices_interleave_byte_word_and_short() {
+        for opcode in [game::NOTICE_4125, game::NOTICE_3601] {
+            let frame = MixedWidthNoticePacket {
+                opcode,
+                value: 1,
+                flag: 2,
+                second_value: 3,
+                first_short: 4,
+                second_short: 5,
+                third_value: 6,
+            }
+            .encode();
+            let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+            assert_eq!(raw.packet_type, opcode);
+            assert_eq!(
+                raw.payload,
+                [
+                    1, 0, 0, 0, // u4
+                    2, // u1
+                    3, 0, 0, 0, // u4
+                    4, 0, // u2
+                    5, 0, // u2
+                    6, 0, 0, 0, // u4
+                ]
+            );
+            assert_eq!(raw.payload.len(), 17);
+        }
+
+        let frame = FlagDoubleWordNoticePacket {
+            flag: 7,
+            value: 0x0000_0009_0000_0008,
+            tail: 10,
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NOTICE_4132);
+        assert_eq!(raw.payload, [7, 8, 0, 0, 0, 9, 0, 0, 0, 10, 0, 0, 0]);
+
+        let frame = ExItemMoveResultPacket { result: 11 }.encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_EXITEM_MOVE);
+        assert_eq!(raw.payload, [11, 0, 0, 0]);
     }
 
     #[test]

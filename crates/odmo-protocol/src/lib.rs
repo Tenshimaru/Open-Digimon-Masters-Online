@@ -90,6 +90,7 @@ pub use game::{
     PartyRecruitReplyPacket, PartyRecruitLeaveMemberPacket,
     ChangeSkinResultPacket, AcquireSkinPacket, TwoWordReplyPacket,
     FlagWordNoticePacket, FlagTwoWordNoticePacket, TwoWordPairPacket, FixedBlockNoticePacket,
+    MixedWidthNoticePacket, FlagDoubleWordNoticePacket, ExItemMoveResultPacket,
     UserSettingDataPacket, UserSettingEntry, CashBalanceNoticePacket,
     GameTwoAllMsgPacket, GameTwoAllMsgBody,
     GameTwoMonsterAreaAttackPacket, MonsterAreaBody, MonsterAreaTarget,
