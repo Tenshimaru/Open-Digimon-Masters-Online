@@ -3694,6 +3694,38 @@ impl UnionHackResultPacket {
     }
 }
 
+/// `Notice::FixedRow` — opcode 16038: {u4 value; u8 value; u1 flag;
+/// u2 count; count x 69 bytes}.
+///
+/// The row width is fixed at 69 and is not the 71-byte item row, so the two
+/// must not share a reader.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FixedRowNoticePacket {
+    pub value: u32,
+    pub wide_value: u64,
+    pub flag: u8,
+    pub rows: Vec<[u8; 69]>,
+}
+
+impl FixedRowNoticePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.rows.len() <= u16::MAX as usize,
+            "fixed row count overflows u2"
+        );
+        let mut writer = PacketWriter::new(game::NOTICE_16038);
+        writer.write_u32(self.value);
+        writer.write_u32(self.wide_value as u32);
+        writer.write_u32((self.wide_value >> 32) as u32);
+        writer.write_u8(self.flag);
+        writer.write_u16(self.rows.len() as u16);
+        for row in &self.rows {
+            writer.write_bytes(row);
+        }
+        writer.finalize()
+    }
+}
+
 /// `Preset::DataSave` — opcode 4204: {u1 flag; u1 flag; u2 count;
 /// count x item row}.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -11677,6 +11709,22 @@ mod tests {
                 13, 0, 0, 0, 14, 0, 0, 0, // second slot tail
             ]
         );
+    }
+
+    #[test]
+    fn fixed_row_notice_rows_are_sixty_nine_bytes() {
+        let frame = FixedRowNoticePacket {
+            value: 1,
+            wide_value: 2,
+            flag: 3,
+            rows: vec![[7u8; 69]],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NOTICE_16038);
+        assert_eq!(raw.payload.len(), 4 + 8 + 1 + 2 + 69);
+        assert_eq!(&raw.payload[..15], &[1, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 3, 1, 0]);
+        assert!(raw.payload[15..].iter().all(|byte| *byte == 7));
     }
 
     #[test]
