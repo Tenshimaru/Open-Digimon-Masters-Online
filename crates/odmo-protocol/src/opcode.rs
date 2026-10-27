@@ -894,6 +894,14 @@ pub mod game {
     pub const NOTICE_9804: i16 = 9804;
     pub const NOTICE_9806: i16 = 9806;
     pub const NOTICE_10003: i16 = 10003;
+    // Word notices: 3305, 5354, 3172 and 14058 each read one u4. 16055 reads one
+    // u8; 9851 reads a fixed 32-byte run.
+    pub const NOTICE_3305: i16 = 3305;
+    pub const NOTICE_5354: i16 = 5354;
+    pub const NOTICE_3172: i16 = 3172;
+    pub const NOTICE_14058: i16 = 14058;
+    pub const NOTICE_16055: i16 = 16055;
+    pub const NOTICE_9851: i16 = 9851;
     // Ranking play progress {u2 dungeon; u4 value; u1 flag; u4 value; u2 value;
     // u4 value; u2 value; u4 value; u2 count; count x {u2 stage; u2 wave;
     // u4 value}}.

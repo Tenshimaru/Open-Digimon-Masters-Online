@@ -3027,6 +3027,61 @@ impl SingleWordNoticePacket {
     }
 }
 
+/// `Game::RawNotice` — notices whose body is a single fixed-width run.
+///
+/// 3305, 5354, 3172 and 14058 carry one word; 16055 carries a double word; 9851
+/// carries a fixed 32-byte run the client copies verbatim.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RawNoticeBody {
+    Word(u32),
+    DoubleWord(u64),
+    Fixed32([u8; 32]),
+}
+
+/// `Game::RawNotice` — see [`RawNoticeBody`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RawNoticePacket {
+    pub opcode: i16,
+    pub body: RawNoticeBody,
+}
+
+impl RawNoticePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(self.opcode);
+        match self.body {
+            RawNoticeBody::Word(value) => {
+                assert!(
+                    matches!(
+                        self.opcode,
+                        game::NOTICE_3305
+                            | game::NOTICE_5354
+                            | game::NOTICE_3172
+                            | game::NOTICE_14058
+                    ),
+                    "the word body belongs to opcodes 3305, 5354, 3172 and 14058"
+                );
+                writer.write_u32(value);
+            }
+            RawNoticeBody::DoubleWord(value) => {
+                assert!(
+                    self.opcode == game::NOTICE_16055,
+                    "the double-word body belongs to opcode 16055"
+                );
+                writer.write_u32(value as u32);
+                writer.write_u32((value >> 32) as u32);
+            }
+            RawNoticeBody::Fixed32(block) => {
+                assert!(
+                    self.opcode == game::NOTICE_9851,
+                    "the 32-byte body belongs to opcode 9851"
+                );
+                writer.write_bytes(&block);
+            }
+        }
+        writer.finalize()
+    }
+}
+
 /// `Game::HalfWordNotice` — opcode 10003: {u2 value}.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HalfWordNoticePacket {
@@ -10279,6 +10334,43 @@ mod tests {
         .encode();
         let raw = PacketReader::from_frame(&scene).expect("frame should decode");
         assert_eq!(raw.payload, [3, 9, 0, 0, 0, 10, 0, 0, 0]);
+    }
+
+    #[test]
+    fn raw_notices_write_their_fixed_runs() {
+        for opcode in [
+            game::NOTICE_3305,
+            game::NOTICE_5354,
+            game::NOTICE_3172,
+            game::NOTICE_14058,
+        ] {
+            let frame = RawNoticePacket {
+                opcode,
+                body: RawNoticeBody::Word(5),
+            }
+            .encode();
+            let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+            assert_eq!(raw.packet_type, opcode);
+            assert_eq!(raw.payload, [5, 0, 0, 0]);
+        }
+
+        let frame = RawNoticePacket {
+            opcode: game::NOTICE_16055,
+            body: RawNoticeBody::DoubleWord(0x0000_0002_0000_0001),
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NOTICE_16055);
+        assert_eq!(raw.payload, [1, 0, 0, 0, 2, 0, 0, 0]);
+
+        let frame = RawNoticePacket {
+            opcode: game::NOTICE_9851,
+            body: RawNoticeBody::Fixed32([3; 32]),
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NOTICE_9851);
+        assert_eq!(raw.payload, [3u8; 32]);
     }
 
     #[test]

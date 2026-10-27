@@ -86,7 +86,7 @@ pub use game::{
     SkillApplyAroundPacket, SkillApplyAroundBody, SkillStatRow, SkillDotRow,
     ProgressNoticePacket, SingleWordNoticePacket, SingleByteNoticePacket,
     RefreshMacroProtectorResultPacket, ItemSmallNoticePacket, ItemNoticeBody,
-    HalfWordNoticePacket,
+    HalfWordNoticePacket, RawNoticePacket, RawNoticeBody,
     UserSettingDataPacket, UserSettingEntry, CashBalanceNoticePacket,
     GameTwoAllMsgPacket, GameTwoAllMsgBody,
     GameTwoMonsterAreaAttackPacket, MonsterAreaBody, MonsterAreaTarget,
