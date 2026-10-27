@@ -10117,6 +10117,36 @@ mod tests {
     }
 
     #[test]
+    fn no_payload_notices_emit_a_bare_header() {
+        let opcodes = [
+            game::NO_PAYLOAD_1031,
+            game::NO_PAYLOAD_1079,
+            game::NO_PAYLOAD_1080,
+            game::NO_PAYLOAD_1089,
+            game::NO_PAYLOAD_1103,
+            game::NO_PAYLOAD_1112,
+            game::NO_PAYLOAD_2121,
+            game::NO_PAYLOAD_2205,
+            game::NO_PAYLOAD_3003,
+            game::NO_PAYLOAD_3101,
+            game::NO_PAYLOAD_3906,
+            game::NO_PAYLOAD_3908,
+            game::NO_PAYLOAD_3919,
+            game::NO_PAYLOAD_3920,
+            game::NO_PAYLOAD_3921,
+            game::NO_PAYLOAD_3928,
+            game::NO_PAYLOAD_9904,
+        ];
+        for opcode in opcodes {
+            let frame = PacketWriter::new(opcode).finalize();
+            assert_eq!(frame.len(), 6, "opcode {opcode} must be header only");
+            let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+            assert_eq!(raw.packet_type, opcode);
+            assert!(raw.payload.is_empty(), "opcode {opcode} must carry no body");
+        }
+    }
+
+    #[test]
     fn msg_scope_notices_write_their_bodies() {
         for (frame, opcode) in [
             (encode_dungeon_match_end(), game::MSG_DUNGEON_MATCH_END),

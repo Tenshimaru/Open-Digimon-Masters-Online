@@ -841,6 +841,27 @@ pub mod game {
     pub const OTHER_TAMER_DETAIL_INFO: i16 = -25535;
     // Cash-shop balance notice {u4 value}; the client reacts only to value 1.
     pub const CASH_BALANCE_NOTICE: i16 = 1056;
+    // Notices the client registers with a handler that consumes nothing: the
+    // frame is header only and the payload must stay empty. Sending a body would
+    // leave those bytes to be read as the next frame's header. The numbers are
+    // kept in the names because no capability is bound to them yet.
+    pub const NO_PAYLOAD_1031: i16 = 1031;
+    pub const NO_PAYLOAD_1079: i16 = 1079;
+    pub const NO_PAYLOAD_1080: i16 = 1080;
+    pub const NO_PAYLOAD_1089: i16 = 1089;
+    pub const NO_PAYLOAD_1103: i16 = 1103;
+    pub const NO_PAYLOAD_1112: i16 = 1112;
+    pub const NO_PAYLOAD_2121: i16 = 2121;
+    pub const NO_PAYLOAD_2205: i16 = 2205;
+    pub const NO_PAYLOAD_3003: i16 = 3003;
+    pub const NO_PAYLOAD_3101: i16 = 3101;
+    pub const NO_PAYLOAD_3906: i16 = 3906;
+    pub const NO_PAYLOAD_3908: i16 = 3908;
+    pub const NO_PAYLOAD_3919: i16 = 3919;
+    pub const NO_PAYLOAD_3920: i16 = 3920;
+    pub const NO_PAYLOAD_3921: i16 = 3921;
+    pub const NO_PAYLOAD_3928: i16 = 3928;
+    pub const NO_PAYLOAD_9904: i16 = 9904;
     // Ranking play progress {u2 dungeon; u4 value; u1 flag; u4 value; u2 value;
     // u4 value; u2 value; u4 value; u2 count; count x {u2 stage; u2 wave;
     // u4 value}}.
