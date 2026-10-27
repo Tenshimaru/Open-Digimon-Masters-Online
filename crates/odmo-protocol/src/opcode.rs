@@ -985,6 +985,8 @@ pub mod game {
     pub const NTF_SEASON_MISSION_ALERT: i16 = 4401;
     // Season rewards claim: {u1 flag; {u2 count; count x {u2; u1; u1; u1}}}.
     pub const RES_SEASON_PASS_GET_SEASON_REWARDS: i16 = 3555;
+    // Circuit module extract: {u1 flag; u4 value; counted item list}.
+    pub const RES_CIRCUIT_MODULE_EXTRACT: i16 = 4502;
     // Login-stage notice {u4 value; u4 value; modern string; u4 value}.
     pub const NOTICE_901: i16 = 901;
     // Union hack chip results: 3173 reads {u4 x5; u2; u1; item list; u8},

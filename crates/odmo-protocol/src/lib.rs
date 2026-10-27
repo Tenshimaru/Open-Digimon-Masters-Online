@@ -98,6 +98,7 @@ pub use game::{
     InventoryProcessResultPacket, SerializedItemRow, UnionHackResultPacket,
     BreakthroughResultPacket, PresetDataSavePacket, FixedRowNoticePacket,
     AdvertBossCreatePacket, SeasonRewardPacket, SeasonRewardRow,
+    CircuitModuleExtractPacket,
     InitDigimonExploreDataPacket, ExploreSlot, ExploreSlotPair,
     ChangeSkinResultPacket, AcquireSkinPacket, TwoWordReplyPacket,
     FlagWordNoticePacket, FlagTwoWordNoticePacket, TwoWordPairPacket, FixedBlockNoticePacket,

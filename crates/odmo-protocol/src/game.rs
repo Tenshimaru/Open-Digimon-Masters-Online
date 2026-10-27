@@ -3703,6 +3703,32 @@ pub struct SeasonRewardRow {
     pub third_flag: u8,
 }
 
+/// `Circuit::ModuleExtract` — opcode 4502: {u1 flag; u4 value; u2 count;
+/// count x item row}.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CircuitModuleExtractPacket {
+    pub flag: u8,
+    pub value: u32,
+    pub items: Vec<SerializedItemRow>,
+}
+
+impl CircuitModuleExtractPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.items.len() <= u16::MAX as usize,
+            "circuit extract item count overflows u2"
+        );
+        let mut writer = PacketWriter::new(game::RES_CIRCUIT_MODULE_EXTRACT);
+        writer.write_u8(self.flag);
+        writer.write_u32(self.value);
+        writer.write_u16(self.items.len() as u16);
+        for item in &self.items {
+            item.encode_into(&mut writer);
+        }
+        writer.finalize()
+    }
+}
+
 /// `SeasonPass::GetSeasonRewards` — opcode 3555: {u1 flag; u2 count;
 /// count x {u2 id; u1; u1; u1}}.
 ///
@@ -11767,6 +11793,19 @@ mod tests {
                 13, 0, 0, 0, 14, 0, 0, 0, // second slot tail
             ]
         );
+    }
+
+    #[test]
+    fn circuit_extract_puts_the_flag_before_the_word() {
+        let frame = CircuitModuleExtractPacket {
+            flag: 1,
+            value: 2,
+            items: Vec::new(),
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_CIRCUIT_MODULE_EXTRACT);
+        assert_eq!(raw.payload, [1u8, 2, 0, 0, 0, 0, 0]);
     }
 
     #[test]
