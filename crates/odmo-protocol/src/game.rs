@@ -3711,6 +3711,54 @@ pub struct CircuitModuleRow {
     pub item: SerializedItemRow,
 }
 
+/// One circuit item reference: eight bytes on the wire.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CircuitItemInfo {
+    pub id: u32,
+    pub first_word: u16,
+    pub second_word: u16,
+}
+
+/// `Circuit::CombineReward` — opcode 4603: {u1 flag; u2 count; count x u1;
+/// u2 count; count x {u4 id; u2; u2}; u2 count; count x item row}.
+///
+/// Three counted runs in sequence. The item references are eight bytes, not the
+/// twelve the object occupies in memory, because a vtable pointer leads the object.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CircuitCombineRewardPacket {
+    pub flag: u8,
+    pub bytes: Vec<u8>,
+    pub infos: Vec<CircuitItemInfo>,
+    pub items: Vec<SerializedItemRow>,
+}
+
+impl CircuitCombineRewardPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        for (len, what) in [
+            (self.bytes.len(), "byte run"),
+            (self.infos.len(), "item reference run"),
+            (self.items.len(), "item row run"),
+        ] {
+            assert!(len <= u16::MAX as usize, "{what} count overflows u2");
+        }
+        let mut writer = PacketWriter::new(game::RES_CIRCUIT_COMBINE_REWARD);
+        writer.write_u8(self.flag);
+        writer.write_u16(self.bytes.len() as u16);
+        writer.write_bytes(&self.bytes);
+        writer.write_u16(self.infos.len() as u16);
+        for info in &self.infos {
+            writer.write_u32(info.id);
+            writer.write_u16(info.first_word);
+            writer.write_u16(info.second_word);
+        }
+        writer.write_u16(self.items.len() as u16);
+        for item in &self.items {
+            item.encode_into(&mut writer);
+        }
+        writer.finalize()
+    }
+}
+
 /// `Circuit::ModuleSync` — opcode 4503: {u1 flag; u2 count;
 /// count x {u4 value; u1 flag; item row}; u2 count; count x u1}.
 ///
@@ -11835,6 +11883,32 @@ mod tests {
                 9, 0, 0, 0, 10, 11, 0, 0, 0, 12, 0, 0, 0, // second slot head
                 0, 0, // second slot has no pairs
                 13, 0, 0, 0, 14, 0, 0, 0, // second slot tail
+            ]
+        );
+    }
+
+    #[test]
+    fn circuit_combine_reward_carries_three_counted_runs() {
+        let frame = CircuitCombineRewardPacket {
+            flag: 1,
+            bytes: vec![2],
+            infos: vec![CircuitItemInfo {
+                id: 3,
+                first_word: 4,
+                second_word: 5,
+            }],
+            items: Vec::new(),
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_CIRCUIT_COMBINE_REWARD);
+        assert_eq!(
+            raw.payload,
+            [
+                1u8, // flag
+                1, 0, 2, // one byte
+                1, 0, 3, 0, 0, 0, 4, 0, 5, 0, // one eight-byte item reference
+                0, 0, // empty item row run
             ]
         );
     }
