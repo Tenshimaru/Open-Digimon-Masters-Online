@@ -932,6 +932,10 @@ pub mod game {
     pub const NOTICE_4125: i16 = 4125;
     pub const NOTICE_3601: i16 = 3601;
     pub const NOTICE_4132: i16 = 4132;
+    // Incubator level-up notice {u4 digimon; u4 level}.
+    pub const LEVELUP_DIGIMON_IN_INCUBATER: i16 = 3250;
+    // Extra inventory slot expansion notice {u1 flag; u2 slots}.
+    pub const NTF_EXTRAINVEN_SLOTEXPANSION: i16 = 3702;
     // Ranking play progress {u2 dungeon; u4 value; u1 flag; u4 value; u2 value;
     // u4 value; u2 value; u4 value; u2 count; count x {u2 stage; u2 wave;
     // u4 value}}.

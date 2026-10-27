@@ -3027,6 +3027,38 @@ impl SingleWordNoticePacket {
     }
 }
 
+/// `Digimon::LevelUpInIncubator` — opcode 3250: {u4 digimon; u4 level}.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LevelUpInIncubatorPacket {
+    pub digimon: u32,
+    pub level: u32,
+}
+
+impl LevelUpInIncubatorPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::LEVELUP_DIGIMON_IN_INCUBATER);
+        writer.write_u32(self.digimon);
+        writer.write_u32(self.level);
+        writer.finalize()
+    }
+}
+
+/// `Item::ExtraInvenSlotExpansion` — opcode 3702: {u1 flag; u2 slots}.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExtraInvenSlotExpansionPacket {
+    pub flag: u8,
+    pub slots: u16,
+}
+
+impl ExtraInvenSlotExpansionPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::NTF_EXTRAINVEN_SLOTEXPANSION);
+        writer.write_u8(self.flag);
+        writer.write_u16(self.slots);
+        writer.finalize()
+    }
+}
+
 /// `Item::MixedWidthNotice` — opcodes 4125 and 3601: {u4 value; u1 flag;
 /// u4 second value; u2 first short; u2 second short; u4 third value}.
 ///
@@ -10567,6 +10599,23 @@ mod tests {
         .encode();
         let raw = PacketReader::from_frame(&scene).expect("frame should decode");
         assert_eq!(raw.payload, [3, 9, 0, 0, 0, 10, 0, 0, 0]);
+    }
+
+    #[test]
+    fn incubator_and_slot_notices_carry_their_fields() {
+        let frame = LevelUpInIncubatorPacket {
+            digimon: 1,
+            level: 2,
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::LEVELUP_DIGIMON_IN_INCUBATER);
+        assert_eq!(raw.payload, [1, 0, 0, 0, 2, 0, 0, 0]);
+
+        let frame = ExtraInvenSlotExpansionPacket { flag: 3, slots: 4 }.encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NTF_EXTRAINVEN_SLOTEXPANSION);
+        assert_eq!(raw.payload, [3, 4, 0]);
     }
 
     #[test]
