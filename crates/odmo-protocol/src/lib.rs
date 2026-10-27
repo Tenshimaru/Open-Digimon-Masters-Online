@@ -23,7 +23,7 @@ pub use game::{
     ArenaFameInfoPacket, ArenaFameSeasonListPacket, ArenaArchiveRankRow, ArenaOldRankingInfoPacket,
     ArenaRankRow, ArenaRankingDailyLoadPacket, ArenaRankingDailyUpdatePointsPacket,
     ArenaRankingInfoPacket,
-    AvailableChannelsPacket, BurningEventPacket, CashShopBuyResponsePacket, CashShopCoinsPacket,
+    AvailableChannelsPacket, CashShopBuyResponsePacket, CashShopCoinsPacket,
     CashShopCropResponsePacket, CashShopWarehousePacket, CastSkillPacket,
     ChangeTamerModelPacket, DailyCheckEventInfoPacket, DailyCheckEventInfoRow,
     DailyCheckEventItemResultPacket, DetailItemRecord, DetailStatPair,

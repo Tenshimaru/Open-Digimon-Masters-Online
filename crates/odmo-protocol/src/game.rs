@@ -345,11 +345,14 @@ pub enum GameRequest {
     DamageSkinChange {
         skin_id: i32,
     },
+    /// `Seal::Open` C→S — opcode 3971. `[u2 seal_idx]`.
     SealOpen {
         seal_idx: i16,
     },
+    /// `Seal::Close` C→S — opcode 3972. `[u2 seal_idx][u4 value]`.
     SealClose {
         seal_idx: i16,
+        value: u32,
     },
     SealSetLeader {
         card_code: u16,
@@ -516,8 +519,9 @@ pub enum GameRequest {
     SeasonPassSeasonReward {
         level: i32,
     },
+    /// `pGame::ChangeChannel` C→S — opcode 1050. `[u4 channel]`.
     ChangeChannel {
-        channel: u8,
+        channel: u32,
     },
     ChannelSwitchConfirm,
     TamerShopList,
@@ -6242,25 +6246,7 @@ impl DungeonArenaNextStagePacket {
 // Event packets
 // ===========================================================================
 
-/// `BurningEvent` — opcode 3132.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct BurningEventPacket {
-    pub exp_rate: u32,
-    pub next_day_rate: u32,
-    pub exp_target: u32,
-}
-
-impl BurningEventPacket {
-    pub fn encode(&self) -> Vec<u8> {
-        let mut writer = PacketWriter::new(game::BURNING_EVENT);
-        writer.write_u32(self.exp_rate);
-        writer.write_u32(self.next_day_rate);
-        writer.write_u32(self.exp_target);
-        writer.finalize()
-    }
-}
-
-/// `DailyCheckEventInfo` — opcode 3136.
+/// `DailyCheckEventInfo` - opcode 3136.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DailyCheckEventInfoRow {
     pub group_id: i32,
@@ -8549,7 +8535,8 @@ impl TryFrom<RawPacket> for GameRequest {
             }
             game::SEAL_CLOSE => {
                 let seal_idx = reader.read_i16()?;
-                Ok(Self::SealClose { seal_idx })
+                let value = reader.read_u32()?;
+                Ok(Self::SealClose { seal_idx, value })
             }
             game::SEAL_SET_LEADER => {
                 let card_code = reader.read_u16()?;
@@ -8792,7 +8779,7 @@ impl TryFrom<RawPacket> for GameRequest {
                 Ok(Self::SeasonPassSeasonReward { level })
             }
             game::CHANGE_CHANNEL => {
-                let channel = reader.read_u8()?;
+                let channel = reader.read_u32()?;
                 Ok(Self::ChangeChannel { channel })
             }
             game::CHANNEL_SWITCH_CONFIRM => Ok(Self::ChannelSwitchConfirm),
@@ -13580,6 +13567,29 @@ mod tests {
                 portable_pos: 7,
                 name: "Impmon".to_string(),
                 npc_idx: 91_001,
+            }
+        );
+    }
+
+    #[test]
+    fn channel_switch_and_seal_close_read_their_modern_widths() {
+        let mut change = PacketWriter::new(game::CHANGE_CHANNEL);
+        change.write_u32(300);
+        let raw = PacketReader::from_frame(&change.finalize()).expect("frame should decode");
+        assert_eq!(
+            GameRequest::try_from(raw).expect("request should decode"),
+            GameRequest::ChangeChannel { channel: 300 }
+        );
+
+        let mut close = PacketWriter::new(game::SEAL_CLOSE);
+        close.write_i16(7);
+        close.write_u32(42);
+        let raw = PacketReader::from_frame(&close.finalize()).expect("frame should decode");
+        assert_eq!(
+            GameRequest::try_from(raw).expect("request should decode"),
+            GameRequest::SealClose {
+                seal_idx: 7,
+                value: 42,
             }
         );
     }

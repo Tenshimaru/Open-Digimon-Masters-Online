@@ -14,7 +14,7 @@ use odmo_protocol::game::{EvolutionUnlockItem, TamerSummonRequest};
 use odmo_protocol::{
     ArenaFameInfoPacket, ArenaFameSeasonListPacket, ArenaOldRankingInfoPacket,
     ArenaRankingDailyLoadPacket, ArenaRankingDailyUpdatePointsPacket, ArenaRankingInfoPacket,
-    AvailableChannelsPacket, BurningEventPacket, CashShopBuyResponsePacket, CashShopCoinsPacket,
+    AvailableChannelsPacket, CashShopBuyResponsePacket, CashShopCoinsPacket,
     CashShopCropResponsePacket, CashShopWarehousePacket, CastSkillPacket,
     ChangeTamerModelPacket, DailyCheckEventInfoPacket, DailyCheckEventInfoRow,
     DailyCheckEventItemResultPacket, DetailStatPair, DigiSummonPurchaseResponsePacket,
@@ -2689,11 +2689,13 @@ impl GameApplication {
                 self.handle_damage_skin_change(session, skin_id)
             }
             // SealOpen — open the seal at `seal_idx` and persist the change. Without
-            // the legacy seal asset table we mark the seal as opened (amount = 1) and
-            // echo the result back to the client.
+            // the legacy seal asset table we mark the seal as opened (amount = 1).
             GameRequest::SealOpen { seal_idx } => self.handle_seal_open(session, seal_idx),
             // SealClose — close the seal (clear the favorite flag and amount).
-            GameRequest::SealClose { seal_idx } => self.handle_seal_close(session, seal_idx),
+            // The trailing `value` of the request has no consumer yet.
+            GameRequest::SealClose { seal_idx, value: _ } => {
+                self.handle_seal_close(session, seal_idx)
+            }
             // SealSetLeader — set the leader seal id on the character.
             GameRequest::SealSetLeader { card_code } => {
                 self.handle_seal_set_leader(session, card_code)
@@ -2747,15 +2749,9 @@ impl GameApplication {
             // DungeonSurrender — leave the dungeon. We just send back an empty next-stage
             // signaling the run is over (legacy: tamers are teleported back to the lobby).
             GameRequest::DungeonSurrender => Ok(Vec::new()),
-            // BurningEvent — return the active burning-event multiplier.
-            GameRequest::BurningEvent => Ok(vec![
-                BurningEventPacket {
-                    exp_rate: 1000,
-                    next_day_rate: 100,
-                    exp_target: 1,
-                }
-                .encode(),
-            ]),
+            // BurningEvent - the modern client sends this as an empty ping and
+            // registers no reader for 3132, so there is nothing to answer.
+            GameRequest::BurningEvent => Ok(Vec::new()),
             // DailyCheckEvent — return the daily-check info table.
             GameRequest::DailyCheckEvent => Ok(vec![
                 DailyCheckEventInfoPacket {
@@ -3642,7 +3638,7 @@ impl GameApplication {
     fn handle_change_channel(
         &self,
         session: &GameSession,
-        channel: u8,
+        _channel: u32,
     ) -> Result<Vec<Vec<u8>>, GameFlowError> {
         let character_id = session.character_id.ok_or(GameFlowError::Unauthenticated)?;
         let character = self
@@ -3651,17 +3647,15 @@ impl GameApplication {
             .map_err(|error| GameFlowError::Storage(error.to_string()))?
             .ok_or(GameFlowError::CharacterNotFound(character_id))?;
 
-        // Persist the new channel via the existing `update_character_map` helper since
-        // map id and position stay the same.
+        // The character row carries no channel column yet, so only the map and
+        // position are re-written. 1050 travels client to server only: the modern
+        // client has no reader for it, so the switch is confirmed by the channel's
+        // own sync traffic.
         self.repository
             .update_character_map(character_id, character.map_id, character.x, character.y)
             .map_err(|error| GameFlowError::Storage(error.to_string()))?;
 
-        let mut writer =
-            odmo_protocol::writer::PacketWriter::new(odmo_protocol::opcode::game::CHANGE_CHANNEL);
-        writer.write_u8(channel);
-        writer.write_u8(1); // success
-        Ok(vec![writer.finalize()])
+        Ok(Vec::new())
     }
 
     // ----- Spirit / DigiSummon --------------------------------------------------------
@@ -4636,8 +4630,8 @@ impl GameApplication {
             .map_err(|error| GameFlowError::Storage(error.to_string()))?
             .ok_or(GameFlowError::CharacterNotFound(character_id))?;
 
-        // Without the skill asset table we acknowledge the request and update the
-        // skill_id slot directly on the partner_memory_skills array.
+        // Without the skill asset table the bump is applied to the memory slot
+        // directly; the modern client registers no reader for 1104, so no reply.
         let mut memory_skills = character.partner_memory_skills;
         let slot = (skill_idx as usize).min(memory_skills.len() - 1);
         memory_skills[slot] = memory_skills[slot].saturating_add(1);
@@ -4645,12 +4639,7 @@ impl GameApplication {
             .update_partner_memory_skills(character_id, memory_skills)
             .map_err(|error| GameFlowError::Storage(error.to_string()))?;
 
-        let mut writer =
-            odmo_protocol::writer::PacketWriter::new(odmo_protocol::opcode::game::SKILL_LEVEL_UP);
-        writer.write_u32(character.partner_handler);
-        writer.write_u8(skill_idx);
-        writer.write_i32(memory_skills[slot]);
-        Ok(vec![writer.finalize()])
+        Ok(Vec::new())
     }
 
     fn handle_tamer_charge_xcrystal(
@@ -6008,12 +5997,9 @@ impl GameApplication {
             .map_err(|error| GameFlowError::Storage(error.to_string()))?;
 
         // Without quest asset data we cannot infer which warehouse items belong to
-        // the cancelled quest, so we return an empty list (count = 0). The wire shape is:
-        //   [u2 deleteItemTotalCount = 0]
-        let mut writer =
-            odmo_protocol::writer::PacketWriter::new(odmo_protocol::opcode::game::QUEST_GIVE_UP);
-        writer.write_u16(0);
-        Ok(vec![writer.finalize()])
+        // the cancelled quest. The modern client registers no reader for 11003, so
+        // the cancellation is carried by the stored progress alone.
+        Ok(Vec::new())
     }
 
     fn handle_quest_update(
@@ -8131,11 +8117,9 @@ impl GameApplication {
             .update_seal_list(character_id, seal_list)
             .map_err(|error| GameFlowError::Storage(error.to_string()))?;
 
-        let mut writer =
-            odmo_protocol::writer::PacketWriter::new(odmo_protocol::opcode::game::SEAL_OPEN);
-        writer.write_i16(seal_idx);
-        writer.write_u8(1);
-        Ok(vec![writer.finalize()])
+        // The modern client registers no reader for 3971, so the request is
+        // acknowledged by the stored state alone.
+        Ok(Vec::new())
     }
 
     fn handle_seal_close(
@@ -8156,11 +8140,8 @@ impl GameApplication {
             .update_seal_list(character_id, seal_list)
             .map_err(|error| GameFlowError::Storage(error.to_string()))?;
 
-        let mut writer =
-            odmo_protocol::writer::PacketWriter::new(odmo_protocol::opcode::game::SEAL_CLOSE);
-        writer.write_i16(seal_idx);
-        writer.write_u8(1);
-        Ok(vec![writer.finalize()])
+        // Same as 3971: the client never reads 3972 back.
+        Ok(Vec::new())
     }
 
     fn handle_seal_set_leader(
