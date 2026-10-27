@@ -985,6 +985,10 @@ pub mod game {
     pub const NTF_SEASON_MISSION_ALERT: i16 = 4401;
     // Login-stage notice {u4 value; u4 value; modern string; u4 value}.
     pub const NOTICE_901: i16 = 901;
+    // Union hack chip results: 3173 reads {u4 x5; u2; u1; item list; u8},
+    // 3174 reads {u4 x4; u2; u1; u4; item list; u8}.
+    pub const RES_UNION_HACK_OPEN: i16 = 3173;
+    pub const RES_UNION_HACK_MODIFY: i16 = 3174;
     // Body is a bare modern string.
     pub const NTF_STRING_3309: i16 = 3309;
     pub const RES_REDUCE_DIGIMON_EXPLORE_TIME: i16 = 5357;

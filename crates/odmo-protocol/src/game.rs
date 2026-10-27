@@ -3638,6 +3638,62 @@ impl InitDigimonExploreDataPacket {
     }
 }
 
+/// `Union::HackResult` — opcodes 3173 and 3174.
+///
+/// Modify carries one extra word before the item list; the list itself is the
+/// same counted run of 71-byte rows the inventory results use.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnionHackResultPacket {
+    pub opcode: i16,
+    pub first: u32,
+    pub second: u32,
+    pub third: u32,
+    pub fourth: u32,
+    pub modify_word: Option<u32>,
+    pub short_value: u16,
+    pub flag: u8,
+    pub items: Vec<SerializedItemRow>,
+    pub wide_value: u64,
+}
+
+impl UnionHackResultPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            matches!(
+                self.opcode,
+                game::RES_UNION_HACK_OPEN | game::RES_UNION_HACK_MODIFY
+            ),
+            "the union hack result body belongs to opcodes 3173 and 3174"
+        );
+        assert_eq!(
+            self.opcode == game::RES_UNION_HACK_MODIFY,
+            self.modify_word.is_some(),
+            "only the modify body carries the extra word"
+        );
+        assert!(
+            self.items.len() <= u16::MAX as usize,
+            "union hack item count overflows u2"
+        );
+        let mut writer = PacketWriter::new(self.opcode);
+        writer.write_u32(self.first);
+        writer.write_u32(self.second);
+        writer.write_u32(self.third);
+        writer.write_u32(self.fourth);
+        if let Some(modify_word) = self.modify_word {
+            writer.write_u32(modify_word);
+        }
+        writer.write_u16(self.short_value);
+        writer.write_u8(self.flag);
+        writer.write_u16(self.items.len() as u16);
+        for item in &self.items {
+            item.encode_into(&mut writer);
+        }
+        writer.write_u32(self.wide_value as u32);
+        writer.write_u32((self.wide_value >> 32) as u32);
+        writer.finalize()
+    }
+}
+
 /// `Inventory::ProcessResult` — opcodes 5353, 5356, 5357, 5359, 5401 and 5402:
 /// {u4 value; u2 count; count x item row}.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -11545,6 +11601,71 @@ mod tests {
                 0, 0, // second slot has no pairs
                 13, 0, 0, 0, 14, 0, 0, 0, // second slot tail
             ]
+        );
+    }
+
+    #[test]
+    fn union_hack_modify_carries_one_extra_word() {
+        let row = SerializedItemRow {
+            item: 1,
+            first_word: 0,
+            second_word: 0,
+            first_flag: 0,
+            second_flag: 0,
+            third_flag: 0,
+            fourth_flag: 0,
+            packed_six: [0; 6],
+            packed_three: [0; 3],
+            first_block: [0; 16],
+            second_block: [0; 16],
+            wide_value: 0,
+            third_word: 0,
+            fourth_word: 0,
+            fifth_flag: 0,
+            sixth_flag: 0,
+        };
+
+        let open = UnionHackResultPacket {
+            opcode: game::RES_UNION_HACK_OPEN,
+            first: 1,
+            second: 2,
+            third: 3,
+            fourth: 4,
+            modify_word: None,
+            short_value: 5,
+            flag: 6,
+            items: Vec::new(),
+            wide_value: 7,
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&open).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_UNION_HACK_OPEN);
+        assert_eq!(
+            raw.payload,
+            [
+                1u8, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 4, 0, 0, 0, // four words
+                5, 0, 6, 0, 0, // short and flag, then empty item count
+                7, 0, 0, 0, 0, 0, 0, 0, // wide tail
+            ]
+        );
+
+        let modify = UnionHackResultPacket {
+            opcode: game::RES_UNION_HACK_MODIFY,
+            first: 1,
+            second: 2,
+            third: 3,
+            fourth: 4,
+            modify_word: Some(9),
+            short_value: 5,
+            flag: 6,
+            items: vec![row],
+            wide_value: 7,
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&modify).expect("frame should decode");
+        assert_eq!(
+            raw.payload.len(),
+            4 * 4 + 4 + 2 + 1 + 2 + SerializedItemRow::WIRE_LEN + 8
         );
     }
 
