@@ -931,11 +931,16 @@ pub mod game {
     pub const NOTICE_16035: i16 = 16035;
     // Ex-item move result {u4 result}.
     pub const RES_EXITEM_MOVE: i16 = 3801;
-    // Mixed-width notices: 4125 and 3601 share {u4; u1; u4; u2; u2; u4};
+    // Mixed-width notices: 4125 and 4136 share {u4; u1; u4; u2; u2; u4};
     // 4132 reads {u1; u8; u4}.
     pub const NOTICE_4125: i16 = 4125;
-    pub const NOTICE_3601: i16 = 3601;
+    pub const NOTICE_4136: i16 = 4136;
     pub const NOTICE_4132: i16 = 4132;
+    // {u4 value; u2 first short; u4 second value; u4 third value; u4 fourth
+    // value}, the shape opcode 3601 reads.
+    pub const NOTICE_3601: i16 = 3601;
+    // {u4 value; u8 value; u2 first short; u8 second value}.
+    pub const NOTICE_3512: i16 = 3512;
     // Incubator level-up notice {u4 digimon; u4 level}.
     pub const LEVELUP_DIGIMON_IN_INCUBATER: i16 = 3250;
     // Extra inventory slot expansion notice {u1 flag; u2 slots}.

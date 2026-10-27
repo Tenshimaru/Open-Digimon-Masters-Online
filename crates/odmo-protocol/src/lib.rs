@@ -92,6 +92,7 @@ pub use game::{
     ChangeSkinResultPacket, AcquireSkinPacket, TwoWordReplyPacket,
     FlagWordNoticePacket, FlagTwoWordNoticePacket, TwoWordPairPacket, FixedBlockNoticePacket,
     MixedWidthNoticePacket, FlagDoubleWordNoticePacket, ExItemMoveResultPacket,
+    ShortWordNoticePacket, WideFieldNoticePacket,
     LevelUpInIncubatorPacket, ExtraInvenSlotExpansionPacket,
     UserSettingDataPacket, UserSettingEntry, CashBalanceNoticePacket,
     GameTwoAllMsgPacket, GameTwoAllMsgBody,

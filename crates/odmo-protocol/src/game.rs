@@ -3059,7 +3059,7 @@ impl ExtraInvenSlotExpansionPacket {
     }
 }
 
-/// `Item::MixedWidthNotice` — opcodes 4125 and 3601: {u4 value; u1 flag;
+/// `Item::MixedWidthNotice` — opcodes 4125 and 4136: {u4 value; u1 flag;
 /// u4 second value; u2 first short; u2 second short; u4 third value}.
 ///
 /// The widths alternate, so a flat run of words would put every field after the
@@ -3078,8 +3078,8 @@ pub struct MixedWidthNoticePacket {
 impl MixedWidthNoticePacket {
     pub fn encode(&self) -> Vec<u8> {
         assert!(
-            matches!(self.opcode, game::NOTICE_4125 | game::NOTICE_3601),
-            "the mixed-width body belongs to opcodes 4125 and 3601"
+            matches!(self.opcode, game::NOTICE_4125 | game::NOTICE_4136),
+            "the mixed-width body belongs to opcodes 4125 and 4136"
         );
         let mut writer = PacketWriter::new(self.opcode);
         writer.write_u32(self.value);
@@ -3088,6 +3088,52 @@ impl MixedWidthNoticePacket {
         writer.write_u16(self.first_short);
         writer.write_u16(self.second_short);
         writer.write_u32(self.third_value);
+        writer.finalize()
+    }
+}
+
+/// `Game::ShortWordNotice` — opcode 3601: {u4 value; u2 first short;
+/// u4 second value; u4 third value; u4 fourth value}.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ShortWordNoticePacket {
+    pub value: u32,
+    pub first_short: u16,
+    pub second_value: u32,
+    pub third_value: u32,
+    pub fourth_value: u32,
+}
+
+impl ShortWordNoticePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::NOTICE_3601);
+        writer.write_u32(self.value);
+        writer.write_u16(self.first_short);
+        writer.write_u32(self.second_value);
+        writer.write_u32(self.third_value);
+        writer.write_u32(self.fourth_value);
+        writer.finalize()
+    }
+}
+
+/// `Game::WideFieldNotice` — opcode 3512: {u4 value; u8 wide value;
+/// u2 short; u8 second wide value}.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WideFieldNoticePacket {
+    pub value: u32,
+    pub wide_value: u64,
+    pub short: u16,
+    pub second_wide_value: u64,
+}
+
+impl WideFieldNoticePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::NOTICE_3512);
+        writer.write_u32(self.value);
+        writer.write_u32(self.wide_value as u32);
+        writer.write_u32((self.wide_value >> 32) as u32);
+        writer.write_u16(self.short);
+        writer.write_u32(self.second_wide_value as u32);
+        writer.write_u32((self.second_wide_value >> 32) as u32);
         writer.finalize()
     }
 }
@@ -10666,8 +10712,53 @@ mod tests {
     }
 
     #[test]
+    fn short_word_and_wide_field_notices_keep_their_layout() {
+        let frame = ShortWordNoticePacket {
+            value: 1,
+            first_short: 2,
+            second_value: 3,
+            third_value: 4,
+            fourth_value: 5,
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NOTICE_3601);
+        assert_eq!(
+            raw.payload,
+            [
+                1, 0, 0, 0, // u4
+                2, 0, // u2
+                3, 0, 0, 0, // u4
+                4, 0, 0, 0, // u4
+                5, 0, 0, 0, // u4
+            ]
+        );
+        assert_eq!(raw.payload.len(), 18);
+
+        let frame = WideFieldNoticePacket {
+            value: 6,
+            wide_value: 0x0000_0008_0000_0007,
+            short: 9,
+            second_wide_value: 0x0000_000B_0000_000A,
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NOTICE_3512);
+        assert_eq!(
+            raw.payload,
+            [
+                6, 0, 0, 0, // u4
+                7, 0, 0, 0, 8, 0, 0, 0, // u8
+                9, 0, // u2
+                10, 0, 0, 0, 11, 0, 0, 0, // u8
+            ]
+        );
+        assert_eq!(raw.payload.len(), 22);
+    }
+
+    #[test]
     fn mixed_width_notices_interleave_byte_word_and_short() {
-        for opcode in [game::NOTICE_4125, game::NOTICE_3601] {
+        for opcode in [game::NOTICE_4125, game::NOTICE_4136] {
             let frame = MixedWidthNoticePacket {
                 opcode,
                 value: 1,
