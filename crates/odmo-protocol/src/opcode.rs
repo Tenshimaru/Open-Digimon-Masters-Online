@@ -945,6 +945,9 @@ pub mod game {
     // u4 value; u4 value; u4 value}, where a view row is
     // {u8 values; u4 value; u4 value; name; u1 flag; note; u4 value}.
     pub const PARTY_RECRUIT_QUERY_LIST: i16 = 2518;
+    // Skin inventory snapshot {u2 group count; count x {u1 flag;
+    // u2 item count; count x u4 item}; u4 value}.
+    pub const NTF_INIT_SKIN_DATA: i16 = 3151;
     // Incubator level-up notice {u4 digimon; u4 level}.
     pub const LEVELUP_DIGIMON_IN_INCUBATER: i16 = 3250;
     // Extra inventory slot expansion notice {u1 flag; u2 slots}.

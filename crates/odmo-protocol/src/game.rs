@@ -3398,6 +3398,48 @@ impl PartyRecruitQueryListPacket {
     }
 }
 
+/// `Item::SkinGroup` — one group of the skin snapshot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkinGroup {
+    pub flag: u8,
+    pub items: Vec<u32>,
+}
+
+/// `Item::InitSkinData` — opcode 3151: {u2 group count; count x group;
+/// u4 value}.
+///
+/// Two levels of counting: the outer count bounds the groups and each group
+/// carries its own item count. Both counts are words.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InitSkinDataPacket {
+    pub groups: Vec<SkinGroup>,
+    pub tail: u32,
+}
+
+impl InitSkinDataPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.groups.len() <= u16::MAX as usize,
+            "skin group count overflows u2"
+        );
+        let mut writer = PacketWriter::new(game::NTF_INIT_SKIN_DATA);
+        writer.write_u16(self.groups.len() as u16);
+        for group in &self.groups {
+            assert!(
+                group.items.len() <= u16::MAX as usize,
+                "skin item count overflows u2"
+            );
+            writer.write_u8(group.flag);
+            writer.write_u16(group.items.len() as u16);
+            for item in &group.items {
+                writer.write_u32(*item);
+            }
+        }
+        writer.write_u32(self.tail);
+        writer.finalize()
+    }
+}
+
 /// `Party::RecruitReply` — opcodes 2501, 2503, 2508, 2510, 2511 and 2514:
 /// {u4 result}.
 ///
@@ -10923,6 +10965,38 @@ mod tests {
         let raw = PacketReader::from_frame(&frame).expect("frame should decode");
         assert_eq!(raw.packet_type, game::RESPONSE_3603);
         assert_eq!(raw.payload, [5, 0, 0, 0, 6, 0, 0, 0]);
+    }
+
+    #[test]
+    fn skin_snapshot_counts_groups_and_items_separately() {
+        let frame = InitSkinDataPacket {
+            groups: vec![
+                SkinGroup {
+                    flag: 1,
+                    items: vec![2, 3],
+                },
+                SkinGroup {
+                    flag: 4,
+                    items: vec![],
+                },
+            ],
+            tail: 5,
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NTF_INIT_SKIN_DATA);
+        assert_eq!(
+            raw.payload,
+            [
+                2, 0, // group count
+                1, // group: flag
+                2, 0, // group: item count
+                2, 0, 0, 0, 3, 0, 0, 0, // group: items
+                4, // group: flag
+                0, 0, // group: empty item count
+                5, 0, 0, 0, // tail
+            ]
+        );
     }
 
     #[test]
