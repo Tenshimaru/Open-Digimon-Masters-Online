@@ -3694,6 +3694,55 @@ impl UnionHackResultPacket {
     }
 }
 
+/// `Breakthrough::Result` — opcodes 3673 and 3674: {u4 value; u2 count;
+/// count x item row; u4 tail[0..2]}.
+///
+/// The item list sits in the middle of the body rather than at the end, so the
+/// trailing words can only be located after the row count is consumed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BreakthroughResultPacket {
+    pub opcode: i16,
+    pub value: u32,
+    pub items: Vec<SerializedItemRow>,
+    pub tails: Vec<u32>,
+}
+
+impl BreakthroughResultPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            matches!(
+                self.opcode,
+                game::RES_TRY_BREAKTHROUGH | game::RES_RESET_BREAKTHROUGH
+            ),
+            "the breakthrough result body belongs to opcodes 3673 and 3674"
+        );
+        let expected_tails = if self.opcode == game::RES_TRY_BREAKTHROUGH {
+            2
+        } else {
+            1
+        };
+        assert_eq!(
+            self.tails.len(),
+            expected_tails,
+            "the trailing word count is fixed per opcode"
+        );
+        assert!(
+            self.items.len() <= u16::MAX as usize,
+            "breakthrough item count overflows u2"
+        );
+        let mut writer = PacketWriter::new(self.opcode);
+        writer.write_u32(self.value);
+        writer.write_u16(self.items.len() as u16);
+        for item in &self.items {
+            item.encode_into(&mut writer);
+        }
+        for tail in &self.tails {
+            writer.write_u32(*tail);
+        }
+        writer.finalize()
+    }
+}
+
 /// `Inventory::ProcessResult` — opcodes 5353, 5356, 5357, 5359, 5401 and 5402:
 /// {u4 value; u2 count; count x item row}.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -11602,6 +11651,37 @@ mod tests {
                 13, 0, 0, 0, 14, 0, 0, 0, // second slot tail
             ]
         );
+    }
+
+    #[test]
+    fn breakthrough_results_close_with_one_or_two_words() {
+        let try_frame = BreakthroughResultPacket {
+            opcode: game::RES_TRY_BREAKTHROUGH,
+            value: 1,
+            items: Vec::new(),
+            tails: vec![2, 3],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&try_frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_TRY_BREAKTHROUGH);
+        assert_eq!(
+            raw.payload,
+            [
+                1u8, 0, 0, 0, // leading word
+                0, 0, // empty item count
+                2, 0, 0, 0, 3, 0, 0, 0, // two trailing words
+            ]
+        );
+
+        let reset_frame = BreakthroughResultPacket {
+            opcode: game::RES_RESET_BREAKTHROUGH,
+            value: 4,
+            items: Vec::new(),
+            tails: vec![5],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&reset_frame).expect("frame should decode");
+        assert_eq!(raw.payload, [4u8, 0, 0, 0, 0, 0, 5, 0, 0, 0]);
     }
 
     #[test]

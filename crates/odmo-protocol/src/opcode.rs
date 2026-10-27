@@ -989,6 +989,10 @@ pub mod game {
     // 3174 reads {u4 x4; u2; u1; u4; item list; u8}.
     pub const RES_UNION_HACK_OPEN: i16 = 3173;
     pub const RES_UNION_HACK_MODIFY: i16 = 3174;
+    // Breakthrough results that report a word, the updated item list, then
+    // trailing words: 3673 ends with two, 3674 with one.
+    pub const RES_TRY_BREAKTHROUGH: i16 = 3673;
+    pub const RES_RESET_BREAKTHROUGH: i16 = 3674;
     // Body is a bare modern string.
     pub const NTF_STRING_3309: i16 = 3309;
     pub const RES_REDUCE_DIGIMON_EXPLORE_TIME: i16 = 5357;
