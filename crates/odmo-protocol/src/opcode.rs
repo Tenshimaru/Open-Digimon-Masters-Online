@@ -818,6 +818,8 @@ pub mod game {
     // Dungeon clear info {u4; u1 clear count; count x {u1 flag; u4 value};
     // u1 reward count; count x {u4 value; u2 item}}. Both counts are signed.
     pub const MSG_DUNGEON_CLEAR_INFO: i16 = 14006;
+    // Dungeon schedule list {u4 id; u8; u8; clears; schedules; 69B rows; gifts}.
+    pub const MSG_DUNGEON_SCHEDULE_LIST: i16 = 14010;
     // Ranking play progress {u2 dungeon; u4 value; u1 flag; u4 value; u2 value;
     // u4 value; u2 value; u4 value; u2 count; count x {u2 stage; u2 wave;
     // u4 value}}.

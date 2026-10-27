@@ -2848,6 +2848,123 @@ impl DungeonClearInfoPacket {
     }
 }
 
+/// One member row of a dungeon schedule entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DungeonScheduleMember {
+    pub name: String,
+    pub value: u64,
+}
+
+/// One schedule row of `Msg::DungeonScheduleList`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DungeonScheduleEntry {
+    pub kind: u8,
+    pub value: u64,
+    pub second_value: u32,
+    pub short_value: u16,
+    pub title: String,
+    pub third_value: u32,
+    pub second_short: u16,
+    pub note: String,
+    pub members: Vec<DungeonScheduleMember>,
+}
+
+/// Opaque 69-byte row of `Msg::DungeonScheduleList`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DungeonScheduleRow {
+    pub head: u16,
+    pub tail: u16,
+    pub body: [u8; 69],
+}
+
+/// One reward row of `Msg::DungeonScheduleList`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DungeonScheduleGift {
+    pub value: u32,
+    pub item: u16,
+}
+
+/// `Msg::DungeonScheduleList` — opcode 14010: {u4 dungeon id; u8 value; u8 value;
+/// u1 clear count; clear count x {u1 flag; u4 value};
+/// u1 schedule count; schedule count x {u1 kind; u8 value; u4 value; u2 value;
+/// entry title; u4 value; u2 value; entry note; u1 member count;
+/// member count x {member name; u8 value}};
+/// u1 row count; row count x {u2 head; u2 tail; 69B body};
+/// u1 gift count; gift count x {u4 value; u2 item}}.
+///
+/// The nested counts are signed bytes on the wire, which bounds each list at
+/// 127 rows. Text fields use the length-prefixed UTF-8 form the modern client
+/// reads, not the legacy terminated form.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DungeonScheduleListPacket {
+    pub dungeon_id: u32,
+    pub value: u64,
+    pub second_value: u64,
+    pub clears: Vec<DungeonClearEntry>,
+    pub schedules: Vec<DungeonScheduleEntry>,
+    pub rows: Vec<DungeonScheduleRow>,
+    pub gifts: Vec<DungeonScheduleGift>,
+}
+
+impl DungeonScheduleListPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::MSG_DUNGEON_SCHEDULE_LIST);
+        writer.write_u32(self.dungeon_id);
+        writer.write_u64(self.value);
+        writer.write_u64(self.second_value);
+
+        assert!(
+            self.clears.len() <= i8::MAX as usize
+                && self.schedules.len() <= i8::MAX as usize
+                && self.rows.len() <= i8::MAX as usize
+                && self.gifts.len() <= i8::MAX as usize,
+            "dungeon schedule lists overflow a signed u1"
+        );
+
+        writer.write_u8(self.clears.len() as u8);
+        for entry in &self.clears {
+            writer.write_u8(entry.flag);
+            writer.write_u32(entry.value);
+        }
+
+        writer.write_u8(self.schedules.len() as u8);
+        for schedule in &self.schedules {
+            assert!(
+                schedule.members.len() <= i8::MAX as usize,
+                "dungeon schedule members overflow a signed u1"
+            );
+            writer.write_u8(schedule.kind);
+            writer.write_u64(schedule.value);
+            writer.write_u32(schedule.second_value);
+            writer.write_u16(schedule.short_value);
+            writer.write_modern_utf8_string(&schedule.title);
+            writer.write_u32(schedule.third_value);
+            writer.write_u16(schedule.second_short);
+            writer.write_modern_utf8_string(&schedule.note);
+            writer.write_u8(schedule.members.len() as u8);
+            for member in &schedule.members {
+                writer.write_modern_utf8_string(&member.name);
+                writer.write_u64(member.value);
+            }
+        }
+
+        writer.write_u8(self.rows.len() as u8);
+        for row in &self.rows {
+            writer.write_u16(row.head);
+            writer.write_u16(row.tail);
+            writer.write_bytes(&row.body);
+        }
+
+        writer.write_u8(self.gifts.len() as u8);
+        for gift in &self.gifts {
+            writer.write_u32(gift.value);
+            writer.write_u16(gift.item);
+        }
+
+        writer.finalize()
+    }
+}
+
 /// `Msg::DungeonStageInfo` — opcode 14001: {u4 value; u4 value; u2 value;
 /// u4 value; u8 value}.
 ///
@@ -9692,6 +9809,63 @@ mod tests {
             assert_eq!(raw.packet_type, opcode);
             assert!(raw.payload.is_empty());
         }
+
+        let schedule = DungeonScheduleListPacket {
+            dungeon_id: 1,
+            value: 2,
+            second_value: 3,
+            clears: vec![DungeonClearEntry { flag: 4, value: 5 }],
+            schedules: vec![DungeonScheduleEntry {
+                kind: 6,
+                value: 7,
+                second_value: 8,
+                short_value: 9,
+                title: "t".to_string(),
+                third_value: 10,
+                second_short: 11,
+                note: "n".to_string(),
+                members: vec![DungeonScheduleMember {
+                    name: "m".to_string(),
+                    value: 12,
+                }],
+            }],
+            rows: vec![DungeonScheduleRow {
+                head: 13,
+                tail: 14,
+                body: [15; 69],
+            }],
+            gifts: vec![DungeonScheduleGift {
+                value: 16,
+                item: 17,
+            }],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&schedule).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::MSG_DUNGEON_SCHEDULE_LIST);
+        let payload = raw.payload;
+        assert_eq!(&payload[0..4], &[1, 0, 0, 0], "dungeon id");
+        assert_eq!(&payload[4..12], &[2, 0, 0, 0, 0, 0, 0, 0], "first u8");
+        assert_eq!(&payload[12..20], &[3, 0, 0, 0, 0, 0, 0, 0], "second u8");
+        assert_eq!(payload[20], 1, "clear count");
+        assert_eq!(&payload[21..26], &[4, 5, 0, 0, 0], "clear row");
+        assert_eq!(payload[26], 1, "schedule count");
+        assert_eq!(payload[27], 6, "schedule kind");
+        assert_eq!(&payload[28..36], &[7, 0, 0, 0, 0, 0, 0, 0], "schedule u8");
+        assert_eq!(&payload[36..40], &[8, 0, 0, 0], "schedule u4");
+        assert_eq!(&payload[40..42], &[9, 0], "schedule u2");
+        assert_eq!(&payload[42..45], &[1, 0, b't'], "title prefix");
+        assert_eq!(&payload[45..49], &[10, 0, 0, 0], "schedule u4");
+        assert_eq!(&payload[49..51], &[11, 0], "schedule u2");
+        assert_eq!(&payload[51..54], &[1, 0, b'n'], "note prefix");
+        assert_eq!(payload[54], 1, "member count");
+        assert_eq!(&payload[55..58], &[1, 0, b'm'], "member name");
+        assert_eq!(&payload[58..66], &[12, 0, 0, 0, 0, 0, 0, 0], "member u8");
+        assert_eq!(payload[66], 1, "row count");
+        assert_eq!(&payload[67..71], &[13, 0, 14, 0], "row head/tail");
+        assert_eq!(&payload[71..140], &[15u8; 69], "row body");
+        assert_eq!(payload[140], 1, "gift count");
+        assert_eq!(&payload[141..147], &[16, 0, 0, 0, 17, 0], "gift row");
+        assert_eq!(payload.len(), 147, "no trailing bytes");
 
         let stage = DungeonStageInfoPacket {
             first: 1,
