@@ -92,6 +92,7 @@ pub use game::{
     PartyRecruitQueryListPacket, PartyRecruitView,
     InitSkinDataPacket, SkinGroup, RankingStageClearPacket,
     MailDeleteResultPacket, MailDeleteRun, SyncVerificationPacket,
+    CreateBreakthroughDataPacket,
     ChangeSkinResultPacket, AcquireSkinPacket, TwoWordReplyPacket,
     FlagWordNoticePacket, FlagTwoWordNoticePacket, TwoWordPairPacket, FixedBlockNoticePacket,
     MixedWidthNoticePacket, FlagDoubleWordNoticePacket, ExItemMoveResultPacket,

@@ -3440,6 +3440,32 @@ impl InitSkinDataPacket {
     }
 }
 
+/// `Item::CreateBreakthroughData` — opcode 3672: {u4 item; u4 flag;
+/// {u2 count; count x u4 value}}.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateBreakthroughDataPacket {
+    pub item: u32,
+    pub flag: u32,
+    pub options: Vec<u32>,
+}
+
+impl CreateBreakthroughDataPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.options.len() <= u16::MAX as usize,
+            "breakthrough option count overflows u2"
+        );
+        let mut writer = PacketWriter::new(game::RES_CREATE_BREAKTHROUGH_DATA);
+        writer.write_u32(self.item);
+        writer.write_u32(self.flag);
+        writer.write_u16(self.options.len() as u16);
+        for option in &self.options {
+            writer.write_u32(*option);
+        }
+        writer.finalize()
+    }
+}
+
 /// `Account::SyncVerification` — opcode 16072: {u2 count; count x u4 value}.
 ///
 /// The count bounds a run of plain words with no per-row nesting, so the body is
@@ -11054,6 +11080,27 @@ mod tests {
         let raw = PacketReader::from_frame(&frame).expect("frame should decode");
         assert_eq!(raw.packet_type, game::RESPONSE_3603);
         assert_eq!(raw.payload, [5, 0, 0, 0, 6, 0, 0, 0]);
+    }
+
+    #[test]
+    fn breakthrough_data_carries_a_counted_option_run() {
+        let frame = CreateBreakthroughDataPacket {
+            item: 1,
+            flag: 2,
+            options: vec![3, 4],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_CREATE_BREAKTHROUGH_DATA);
+        assert_eq!(
+            raw.payload,
+            [
+                1, 0, 0, 0, // item
+                2, 0, 0, 0, // flag
+                2, 0, // option count
+                3, 0, 0, 0, 4, 0, 0, 0, // options
+            ]
+        );
     }
 
     #[test]

@@ -955,6 +955,9 @@ pub mod game {
     pub const RES_MAIL_DELETE: i16 = 16054;
     // Sync verification result {u2 count; count x u4 value}.
     pub const RES_SYNC_VERIFICATION: i16 = 16072;
+    // Breakthrough: 3672 reads {u4; u4; {u2 count; count x u4}}; 3675 reads the
+    // same body after its own leading words.
+    pub const RES_CREATE_BREAKTHROUGH_DATA: i16 = 3672;
     // Incubator level-up notice {u4 digimon; u4 level}.
     pub const LEVELUP_DIGIMON_IN_INCUBATER: i16 = 3250;
     // Extra inventory slot expansion notice {u1 flag; u2 slots}.
