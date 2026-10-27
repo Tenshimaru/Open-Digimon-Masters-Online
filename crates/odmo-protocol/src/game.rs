@@ -3440,6 +3440,32 @@ impl InitSkinDataPacket {
     }
 }
 
+/// `Dungeon::RankingStageClear` — opcode 14059: {u2 stage; u1 flag; u4 value;
+/// u4 value; u2 value}.
+///
+/// The body opens with a short and then a single byte, so a reader expecting
+/// words would take the stage and flag as one field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RankingStageClearPacket {
+    pub stage: u16,
+    pub flag: u8,
+    pub value: u32,
+    pub second_value: u32,
+    pub tail: u16,
+}
+
+impl RankingStageClearPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::NTF_RANKING_STAGE_CLEAR);
+        writer.write_u16(self.stage);
+        writer.write_u8(self.flag);
+        writer.write_u32(self.value);
+        writer.write_u32(self.second_value);
+        writer.write_u16(self.tail);
+        writer.finalize()
+    }
+}
+
 /// `Party::RecruitReply` — opcodes 2501, 2503, 2508, 2510, 2511 and 2514:
 /// {u4 result}.
 ///
@@ -10965,6 +10991,31 @@ mod tests {
         let raw = PacketReader::from_frame(&frame).expect("frame should decode");
         assert_eq!(raw.packet_type, game::RESPONSE_3603);
         assert_eq!(raw.payload, [5, 0, 0, 0, 6, 0, 0, 0]);
+    }
+
+    #[test]
+    fn ranking_stage_clear_mixes_short_byte_and_words() {
+        let frame = RankingStageClearPacket {
+            stage: 1,
+            flag: 2,
+            value: 3,
+            second_value: 4,
+            tail: 5,
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NTF_RANKING_STAGE_CLEAR);
+        assert_eq!(
+            raw.payload,
+            [
+                1u8, 0, // stage
+                2, // flag
+                3, 0, 0, 0, // first word
+                4, 0, 0, 0, // second word
+                5, 0, // tail
+            ]
+        );
+        assert_eq!(raw.payload.len(), 13);
     }
 
     #[test]

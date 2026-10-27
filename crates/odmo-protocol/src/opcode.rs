@@ -948,6 +948,9 @@ pub mod game {
     // Skin inventory snapshot {u2 group count; count x {u1 flag;
     // u2 item count; count x u4 item}; u4 value}.
     pub const NTF_INIT_SKIN_DATA: i16 = 3151;
+    // Ranking stage clear notice {u2 stage; u1 flag; u4 value; u4 value;
+    // u2 value}.
+    pub const NTF_RANKING_STAGE_CLEAR: i16 = 14059;
     // Incubator level-up notice {u4 digimon; u4 level}.
     pub const LEVELUP_DIGIMON_IN_INCUBATER: i16 = 3250;
     // Extra inventory slot expansion notice {u1 flag; u2 slots}.
