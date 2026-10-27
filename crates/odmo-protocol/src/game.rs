@@ -3694,6 +3694,45 @@ impl UnionHackResultPacket {
     }
 }
 
+/// One claimed season reward.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SeasonRewardRow {
+    pub id: u16,
+    pub first_flag: u8,
+    pub second_flag: u8,
+    pub third_flag: u8,
+}
+
+/// `SeasonPass::GetSeasonRewards` — opcode 3555: {u1 flag; u2 count;
+/// count x {u2 id; u1; u1; u1}}.
+///
+/// The rows are five bytes each, not word aligned, so a reader that padded them
+/// would land one byte past every following row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeasonRewardPacket {
+    pub flag: u8,
+    pub rewards: Vec<SeasonRewardRow>,
+}
+
+impl SeasonRewardPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.rewards.len() <= u16::MAX as usize,
+            "season reward count overflows u2"
+        );
+        let mut writer = PacketWriter::new(game::RES_SEASON_PASS_GET_SEASON_REWARDS);
+        writer.write_u8(self.flag);
+        writer.write_u16(self.rewards.len() as u16);
+        for reward in &self.rewards {
+            writer.write_u16(reward.id);
+            writer.write_u8(reward.first_flag);
+            writer.write_u8(reward.second_flag);
+            writer.write_u8(reward.third_flag);
+        }
+        writer.finalize()
+    }
+}
+
 /// `Advert::BossCreate` — opcode 1060: {u4 value; u4 value; u4 value; u4 value}.
 ///
 /// Four words with no count and no trailing data; a reader expecting a counted
@@ -11728,6 +11767,23 @@ mod tests {
                 13, 0, 0, 0, 14, 0, 0, 0, // second slot tail
             ]
         );
+    }
+
+    #[test]
+    fn season_reward_rows_are_five_bytes() {
+        let frame = SeasonRewardPacket {
+            flag: 1,
+            rewards: vec![SeasonRewardRow {
+                id: 2,
+                first_flag: 3,
+                second_flag: 4,
+                third_flag: 5,
+            }],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_SEASON_PASS_GET_SEASON_REWARDS);
+        assert_eq!(raw.payload, [1u8, 1, 0, 2, 0, 3, 4, 5]);
     }
 
     #[test]
