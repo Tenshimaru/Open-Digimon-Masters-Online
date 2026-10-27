@@ -94,6 +94,7 @@ pub use game::{
     MailDeleteResultPacket, MailDeleteRun, SyncVerificationPacket,
     CreateBreakthroughDataPacket, CircuitModuleNoticePacket,
     SeasonNoticePacket, SeasonRow, SeasonTextRowPacket, SeasonShortTextRowPacket,
+    BareStringNoticePacket,
     InventoryProcessResultPacket, SerializedItemRow,
     InitDigimonExploreDataPacket, ExploreSlot, ExploreSlotPair,
     ChangeSkinResultPacket, AcquireSkinPacket, TwoWordReplyPacket,

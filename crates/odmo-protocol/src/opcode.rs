@@ -979,6 +979,8 @@ pub mod game {
     pub const NTF_SEASON_3503: i16 = 3503;
     pub const NTF_SEASON_3506: i16 = 3506;
     pub const NTF_SEASON_3513: i16 = 3513;
+    // Body is a bare modern string.
+    pub const NTF_STRING_3309: i16 = 3309;
     pub const RES_REDUCE_DIGIMON_EXPLORE_TIME: i16 = 5357;
     pub const RES_ITEM_EXPLORE_COMPLETE_5359: i16 = 5359;
     pub const RES_ITEM_UPGRADE_DATA_TRANSFER: i16 = 5401;

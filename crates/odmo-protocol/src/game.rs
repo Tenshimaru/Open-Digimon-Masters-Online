@@ -3489,6 +3489,23 @@ impl SerializedItemRow {
     }
 }
 
+/// `Notice::String` — opcode 3309: the body is a bare modern string.
+///
+/// No leading word precedes the text, so the length prefix is the first byte
+/// pair of the payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BareStringNoticePacket {
+    pub text: String,
+}
+
+impl BareStringNoticePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::NTF_STRING_3309);
+        writer.write_modern_utf8_string(&self.text);
+        writer.finalize()
+    }
+}
+
 /// `Season::TextRow` — opcode 3503: {u4 value; u4 value; u8 value;
 /// modern string}.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -11373,6 +11390,17 @@ mod tests {
         let raw = PacketReader::from_frame(&frame).expect("frame should decode");
         assert_eq!(raw.packet_type, game::RESPONSE_3603);
         assert_eq!(raw.payload, [5, 0, 0, 0, 6, 0, 0, 0]);
+    }
+
+    #[test]
+    fn bare_string_notice_starts_with_the_length_prefix() {
+        let frame = BareStringNoticePacket {
+            text: "hi".to_string(),
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NTF_STRING_3309);
+        assert_eq!(raw.payload, [2, 0, b'h', b'i']);
     }
 
     #[test]
