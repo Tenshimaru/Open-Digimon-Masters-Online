@@ -93,6 +93,7 @@ pub use game::{
     InitSkinDataPacket, SkinGroup, RankingStageClearPacket,
     MailDeleteResultPacket, MailDeleteRun, SyncVerificationPacket,
     CreateBreakthroughDataPacket, CircuitModuleNoticePacket,
+    SeasonNoticePacket, SeasonRow,
     ChangeSkinResultPacket, AcquireSkinPacket, TwoWordReplyPacket,
     FlagWordNoticePacket, FlagTwoWordNoticePacket, TwoWordPairPacket, FixedBlockNoticePacket,
     MixedWidthNoticePacket, FlagDoubleWordNoticePacket, ExItemMoveResultPacket,

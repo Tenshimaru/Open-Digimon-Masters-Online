@@ -964,6 +964,10 @@ pub mod game {
     pub const RES_DS_CIRCUIT_MODULE_EQUIP: i16 = 4504;
     pub const RES_DS_CIRCUIT_MODULE_MOVE: i16 = 4505;
     pub const RES_DS_CIRCUIT_MODULE_UNEQUIP: i16 = 4506;
+    // Seasonal notices 3507 and 3508 share {u4 value; u8 value; u4 value;
+    // u2 value; u8 value; u2 count; count x {u8 value; u2 value}}.
+    pub const NTF_SEASON_3507: i16 = 3507;
+    pub const NTF_SEASON_3508: i16 = 3508;
     // Incubator level-up notice {u4 digimon; u4 level}.
     pub const LEVELUP_DIGIMON_IN_INCUBATER: i16 = 3250;
     // Extra inventory slot expansion notice {u1 flag; u2 slots}.

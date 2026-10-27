@@ -3440,6 +3440,60 @@ impl InitSkinDataPacket {
     }
 }
 
+/// `Season::Row` — one seasonal row: a double word head and a short tail.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SeasonRow {
+    pub value: u64,
+    pub tail: u16,
+}
+
+/// `Season::Notice` — opcodes 3507 and 3508: {u4 value; u8 value; u4 value;
+/// u2 value; u8 value; u2 count; count x row}.
+///
+/// The count sits after a double word, so a reader that aligned the count to a
+/// word boundary would take the wrong two bytes for it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeasonNoticePacket {
+    pub opcode: i16,
+    pub value: u32,
+    pub wide_value: u64,
+    pub second_value: u32,
+    pub short_value: u16,
+    pub second_wide_value: u64,
+    pub rows: Vec<SeasonRow>,
+}
+
+impl SeasonNoticePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            matches!(
+                self.opcode,
+                game::NTF_SEASON_3507 | game::NTF_SEASON_3508
+            ),
+            "the seasonal notice body belongs to opcodes 3507 and 3508"
+        );
+        assert!(
+            self.rows.len() <= u16::MAX as usize,
+            "seasonal row count overflows u2"
+        );
+        let mut writer = PacketWriter::new(self.opcode);
+        writer.write_u32(self.value);
+        writer.write_u32(self.wide_value as u32);
+        writer.write_u32((self.wide_value >> 32) as u32);
+        writer.write_u32(self.second_value);
+        writer.write_u16(self.short_value);
+        writer.write_u32(self.second_wide_value as u32);
+        writer.write_u32((self.second_wide_value >> 32) as u32);
+        writer.write_u16(self.rows.len() as u16);
+        for row in &self.rows {
+            writer.write_u32(row.value as u32);
+            writer.write_u32((row.value >> 32) as u32);
+            writer.write_u16(row.tail);
+        }
+        writer.finalize()
+    }
+}
+
 /// `Item::CircuitModuleNotice` — opcodes 4504, 4505 and 4506.
 ///
 /// All three open with a flag byte and a slot word; 4506 also carries a double
@@ -11130,6 +11184,39 @@ mod tests {
         let raw = PacketReader::from_frame(&frame).expect("frame should decode");
         assert_eq!(raw.packet_type, game::RESPONSE_3603);
         assert_eq!(raw.payload, [5, 0, 0, 0, 6, 0, 0, 0]);
+    }
+
+    #[test]
+    fn season_notices_count_their_rows_after_a_wide_field() {
+        for opcode in [game::NTF_SEASON_3507, game::NTF_SEASON_3508] {
+            let frame = SeasonNoticePacket {
+                opcode,
+                value: 1,
+                wide_value: 0x0000_0003_0000_0002,
+                second_value: 4,
+                short_value: 5,
+                second_wide_value: 0x0000_0007_0000_0006,
+                rows: vec![SeasonRow {
+                    value: 0x0000_0009_0000_0008,
+                    tail: 10,
+                }],
+            }
+            .encode();
+            let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+            assert_eq!(raw.packet_type, opcode);
+            assert_eq!(
+                raw.payload,
+                [
+                    1u8, 0, 0, 0, // first word
+                    2, 0, 0, 0, 3, 0, 0, 0, // first wide value
+                    4, 0, 0, 0, // second word
+                    5, 0, // short
+                    6, 0, 0, 0, 7, 0, 0, 0, // second wide value
+                    1, 0, // row count
+                    8, 0, 0, 0, 9, 0, 0, 0, 10, 0, // one row
+                ]
+            );
+        }
     }
 
     #[test]
