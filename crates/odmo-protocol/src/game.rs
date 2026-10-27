@@ -2799,6 +2799,82 @@ impl MsgRaidRankingListPacket {
     }
 }
 
+/// `Msg::DungeonMatchEnd` — opcode 14005: no payload.
+///
+/// The notice only signals that the matchmaking session ended; the client reads
+/// nothing from the frame.
+pub fn encode_dungeon_match_end() -> Vec<u8> {
+    PacketWriter::new(game::MSG_DUNGEON_MATCH_END).finalize()
+}
+
+/// `Msg::DungeonMatchCancel` — opcode 14015: no payload.
+pub fn encode_dungeon_match_cancel() -> Vec<u8> {
+    PacketWriter::new(game::MSG_DUNGEON_MATCH_CANCEL).finalize()
+}
+
+/// `Msg::DungeonReEnterResult` — opcode 14016: {u1 result}.
+///
+/// The client stores the flag and fires one notification per frame; no other
+/// field rides the wire.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DungeonReEnterResultPacket {
+    pub result: u8,
+}
+
+impl DungeonReEnterResultPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::MSG_DUNGEON_RE_ENTER_RESULT);
+        writer.write_u8(self.result);
+        writer.finalize()
+    }
+}
+
+/// One stage row of `Msg::RankingPlayProgress`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RankingPlayProgressStage {
+    pub stage: u16,
+    pub wave: u16,
+    pub value: u32,
+}
+
+/// `Msg::RankingPlayProgress` — opcode 14057: {u2 dungeon; u4 value; u1 flag;
+/// u4 value; u2 value; u4 value; u2 value; u4 value; u2 count;
+/// count x {u2 stage; u2 wave; u4 value}}.
+///
+/// Seven fixed fields precede the stage list; their individual meanings are not
+/// yet bound, so they keep positional names.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RankingPlayProgressPacket {
+    pub dungeon_id: u16,
+    /// Positional run after the dungeon id: u4, u1, u4, u2, u4, u2.
+    pub fixed: [u32; 6],
+    pub stages: Vec<RankingPlayProgressStage>,
+}
+
+impl RankingPlayProgressPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::MSG_RANKING_PLAY_PROGRESS);
+        writer.write_u16(self.dungeon_id);
+        writer.write_u32(self.fixed[0]);
+        writer.write_u8(self.fixed[1] as u8);
+        writer.write_u32(self.fixed[2]);
+        writer.write_u16(self.fixed[3] as u16);
+        writer.write_u32(self.fixed[4]);
+        writer.write_u16(self.fixed[5] as u16);
+        assert!(
+            self.stages.len() <= u16::MAX as usize,
+            "ranking stages overflow u2"
+        );
+        writer.write_u16(self.stages.len() as u16);
+        for stage in &self.stages {
+            writer.write_u16(stage.stage);
+            writer.write_u16(stage.wave);
+            writer.write_u32(stage.value);
+        }
+        writer.finalize()
+    }
+}
+
 /// Body of the `GameTwo::AllMsg` announcement selected by its case word.
 ///
 /// The case is a signed 16-bit selector and only four values carry a body; any
@@ -9462,6 +9538,50 @@ mod tests {
                 2, 0, 0, 0, // channel id
                 41, 35, 0, 0, // monster id (9001)
                 3, 0, 0, 0, // created count
+            ]
+        );
+    }
+
+    #[test]
+    fn msg_scope_notices_write_their_bodies() {
+        for (frame, opcode) in [
+            (encode_dungeon_match_end(), game::MSG_DUNGEON_MATCH_END),
+            (encode_dungeon_match_cancel(), game::MSG_DUNGEON_MATCH_CANCEL),
+        ] {
+            let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+            assert_eq!(raw.packet_type, opcode);
+            assert!(raw.payload.is_empty());
+        }
+
+        let re_enter = DungeonReEnterResultPacket { result: 1 }.encode();
+        let raw = PacketReader::from_frame(&re_enter).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::MSG_DUNGEON_RE_ENTER_RESULT);
+        assert_eq!(raw.payload, [1]);
+
+        let progress = RankingPlayProgressPacket {
+            dungeon_id: 4001,
+            fixed: [7, 9, 11, 13, 15, 17],
+            stages: vec![RankingPlayProgressStage {
+                stage: 1,
+                wave: 2,
+                value: 3,
+            }],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&progress).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::MSG_RANKING_PLAY_PROGRESS);
+        assert_eq!(
+            raw.payload,
+            vec![
+                161, 15, // dungeon id 4001
+                7, 0, 0, 0, // u4
+                9, // u1
+                11, 0, 0, 0, // u4
+                13, 0, // u2
+                15, 0, 0, 0, // u4
+                17, 0, // u2
+                1, 0, // stage count
+                1, 0, 2, 0, 3, 0, 0, 0, // stage row
             ]
         );
     }

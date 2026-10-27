@@ -800,4 +800,14 @@ pub mod game {
     pub const MSG_ALL_FAILURE: i16 = 1071;
     pub const INCUBATER_ERROR: i16 = 3228;
     pub const FRIENDLY_INFO: i16 = 3129;
+    // Msg-scope notices with an empty payload: 14005 and 14015 both notify
+    // without reading a single byte, so the frame is header only.
+    pub const MSG_DUNGEON_MATCH_END: i16 = 14005;
+    pub const MSG_DUNGEON_MATCH_CANCEL: i16 = 14015;    // Dungeon re-entry result {u1 result}; the client stores it and notifies
+    // once per frame.
+    pub const MSG_DUNGEON_RE_ENTER_RESULT: i16 = 14016;
+    // Ranking play progress {u2 dungeon; u4 value; u1 flag; u4 value; u2 value;
+    // u4 value; u2 value; u4 value; u2 count; count x {u2 stage; u2 wave;
+    // u4 value}}.
+    pub const MSG_RANKING_PLAY_PROGRESS: i16 = 14057;
 }

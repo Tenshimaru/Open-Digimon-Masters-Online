@@ -77,6 +77,7 @@ pub use game::{
     SvrSelectPortalFailurePacket, MonsterNatualExpPacket,
     EventHotTimePacket, EventItemTypePacket, MsgRaidRankingRow,
     MsgRaidRankingListPacket,
+    DungeonReEnterResultPacket, RankingPlayProgressPacket, RankingPlayProgressStage,
     GameTwoAllMsgPacket, GameTwoAllMsgBody,
     GameTwoMonsterAreaAttackPacket, MonsterAreaBody, MonsterAreaTarget,
     GameTwoDoorObjectOpenPacket, GameGuardRow, GameTwoGameGuardCheckPacket,
