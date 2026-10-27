@@ -3027,6 +3027,79 @@ impl SingleWordNoticePacket {
     }
 }
 
+/// `Item::FlagWordNotice` — opcode 4138: {u1 flag; u4 value}.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FlagWordNoticePacket {
+    pub flag: u8,
+    pub value: u32,
+}
+
+impl FlagWordNoticePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::NOTICE_4138);
+        writer.write_u8(self.flag);
+        writer.write_u32(self.value);
+        writer.finalize()
+    }
+}
+
+/// `Item::FlagTwoWordNotice` — opcode 4137: {u1 flag; u4 value; u4 second}.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FlagTwoWordNoticePacket {
+    pub flag: u8,
+    pub value: u32,
+    pub second_value: u32,
+}
+
+impl FlagTwoWordNoticePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::NOTICE_4137);
+        writer.write_u8(self.flag);
+        writer.write_u32(self.value);
+        writer.write_u32(self.second_value);
+        writer.finalize()
+    }
+}
+
+/// `Game::TwoWordPair` — opcodes 3501 and 3514: {u4 value; u4 second}.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TwoWordPairPacket {
+    pub opcode: i16,
+    pub value: u32,
+    pub second_value: u32,
+}
+
+impl TwoWordPairPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            matches!(self.opcode, game::RESPONSE_3501 | game::RESPONSE_3514),
+            "the two-word pair belongs to opcodes 3501 and 3514"
+        );
+        let mut writer = PacketWriter::new(self.opcode);
+        writer.write_u32(self.value);
+        writer.write_u32(self.second_value);
+        writer.finalize()
+    }
+}
+
+/// `Game::FixedBlockNotice` — opcode 16035: {1024-byte block; u4 value}.
+///
+/// The block is a fixed-size payload the client copies whole, so it stays opaque.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FixedBlockNoticePacket {
+    pub block: [u8; 1024],
+    pub value: u32,
+}
+
+impl FixedBlockNoticePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::NOTICE_16035);
+        writer.write_bytes(&self.block);
+        writer.write_u32(self.value);
+        writer.finalize()
+    }
+}
+
 /// `Game::TwoWordReply` — opcode 3603: {u4 value; u4 second value}.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TwoWordReplyPacket {
@@ -10428,6 +10501,47 @@ mod tests {
         .encode();
         let raw = PacketReader::from_frame(&scene).expect("frame should decode");
         assert_eq!(raw.payload, [3, 9, 0, 0, 0, 10, 0, 0, 0]);
+    }
+
+    #[test]
+    fn item_flag_notices_keep_their_widths() {
+        let frame = FlagWordNoticePacket { flag: 1, value: 2 }.encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NOTICE_4138);
+        assert_eq!(raw.payload, [1, 2, 0, 0, 0]);
+
+        let frame = FlagTwoWordNoticePacket {
+            flag: 3,
+            value: 4,
+            second_value: 5,
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NOTICE_4137);
+        assert_eq!(raw.payload, [3, 4, 0, 0, 0, 5, 0, 0, 0]);
+
+        for opcode in [game::RESPONSE_3501, game::RESPONSE_3514] {
+            let frame = TwoWordPairPacket {
+                opcode,
+                value: 6,
+                second_value: 7,
+            }
+            .encode();
+            let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+            assert_eq!(raw.packet_type, opcode);
+            assert_eq!(raw.payload, [6, 0, 0, 0, 7, 0, 0, 0]);
+        }
+
+        let frame = FixedBlockNoticePacket {
+            block: [9; 1024],
+            value: 10,
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NOTICE_16035);
+        assert_eq!(raw.payload.len(), 1028);
+        assert_eq!(&raw.payload[..1024], &[9u8; 1024]);
+        assert_eq!(&raw.payload[1024..], &[10, 0, 0, 0]);
     }
 
     #[test]

@@ -918,6 +918,13 @@ pub mod game {
     // Two more replies: 2513 reads one word; 3603 reads two words.
     pub const REPLY_2513: i16 = 2513;
     pub const RESPONSE_3603: i16 = 3603;
+    // Item notices: 4138 reads {u1; u4}; 4137 reads {u1; u4; u4}; 3501 and 3514
+    // each read {u4; u4}. 16035 reads a fixed 1024-byte run then one word.
+    pub const NOTICE_4138: i16 = 4138;
+    pub const NOTICE_4137: i16 = 4137;
+    pub const RESPONSE_3501: i16 = 3501;
+    pub const RESPONSE_3514: i16 = 3514;
+    pub const NOTICE_16035: i16 = 16035;
     // Ranking play progress {u2 dungeon; u4 value; u1 flag; u4 value; u2 value;
     // u4 value; u2 value; u4 value; u2 count; count x {u2 stage; u2 wave;
     // u4 value}}.
