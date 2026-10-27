@@ -911,6 +911,10 @@ pub mod game {
     pub const PARTY_RECRUIT_CREATE_PARTY: i16 = 2514;
     // Recruiter leave notice {u1 type; u4 member}.
     pub const PARTY_RECRUIT_LEAVE_MEMBER: i16 = 2512;
+    // Recruiter member notices, each reading exactly one member row: 2506 is the
+    // new-member notice and 2517 the sync-member notice.
+    pub const PARTY_RECRUIT_NEW_MEMBER: i16 = 2506;
+    pub const PARTY_RECRUIT_SYNC_MEMBER: i16 = 2517;
     // Change-skin result {u1 result}.
     pub const RES_CHANGE_SKIN_RESULT: i16 = 3154;
     // Skin acquisition notice {u1 flag; u4 skin}.

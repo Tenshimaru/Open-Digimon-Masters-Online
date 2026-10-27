@@ -88,6 +88,7 @@ pub use game::{
     RefreshMacroProtectorResultPacket, ItemSmallNoticePacket, ItemNoticeBody,
     HalfWordNoticePacket, RawNoticePacket, RawNoticeBody,
     PartyRecruitReplyPacket, PartyRecruitLeaveMemberPacket,
+    PartyRecruitMemberNoticePacket, PartyRecruitMember,
     ChangeSkinResultPacket, AcquireSkinPacket, TwoWordReplyPacket,
     FlagWordNoticePacket, FlagTwoWordNoticePacket, TwoWordPairPacket, FixedBlockNoticePacket,
     MixedWidthNoticePacket, FlagDoubleWordNoticePacket, ExItemMoveResultPacket,

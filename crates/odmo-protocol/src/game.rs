@@ -3244,6 +3244,53 @@ impl AcquireSkinPacket {
     }
 }
 
+/// `Party::RecruitMember` — one recruiter member row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PartyRecruitMember {
+    pub flag: u8,
+    pub tamer: u32,
+    pub level: u32,
+    pub digimon: u32,
+    pub icon: u16,
+    pub name: String,
+}
+
+impl PartyRecruitMember {
+    fn encode_into(&self, writer: &mut PacketWriter) {
+        writer.write_u8(self.flag);
+        writer.write_u32(self.tamer);
+        writer.write_u32(self.level);
+        writer.write_u32(self.digimon);
+        writer.write_u16(self.icon);
+        writer.write_modern_utf8_string(&self.name);
+    }
+}
+
+/// `Party::RecruitMemberNotice` — opcodes 2506 and 2517: one member row.
+///
+/// Both notices read exactly one member, not a counted list, so a server that
+/// prefixed a count would push every field one byte out of place.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PartyRecruitMemberNoticePacket {
+    pub opcode: i16,
+    pub member: PartyRecruitMember,
+}
+
+impl PartyRecruitMemberNoticePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            matches!(
+                self.opcode,
+                game::PARTY_RECRUIT_NEW_MEMBER | game::PARTY_RECRUIT_SYNC_MEMBER
+            ),
+            "the single-member body belongs to opcodes 2506 and 2517"
+        );
+        let mut writer = PacketWriter::new(self.opcode);
+        self.member.encode_into(&mut writer);
+        writer.finalize()
+    }
+}
+
 /// `Party::RecruitReply` — opcodes 2501, 2503, 2508, 2510, 2511 and 2514:
 /// {u4 result}.
 ///
@@ -10724,6 +10771,40 @@ mod tests {
         let raw = PacketReader::from_frame(&frame).expect("frame should decode");
         assert_eq!(raw.packet_type, game::RESPONSE_3603);
         assert_eq!(raw.payload, [5, 0, 0, 0, 6, 0, 0, 0]);
+    }
+
+    #[test]
+    fn recruiter_member_notices_read_exactly_one_member() {
+        for opcode in [
+            game::PARTY_RECRUIT_NEW_MEMBER,
+            game::PARTY_RECRUIT_SYNC_MEMBER,
+        ] {
+            let frame = PartyRecruitMemberNoticePacket {
+                opcode,
+                member: PartyRecruitMember {
+                    flag: 1,
+                    tamer: 2,
+                    level: 3,
+                    digimon: 4,
+                    icon: 5,
+                    name: "ab".to_string(),
+                },
+            }
+            .encode();
+            let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+            assert_eq!(raw.packet_type, opcode);
+            assert_eq!(
+                raw.payload,
+                [
+                    1, // flag
+                    2, 0, 0, 0, // tamer
+                    3, 0, 0, 0, // level
+                    4, 0, 0, 0, // digimon
+                    5, 0, // icon
+                    2, 0, b'a', b'b', // name: u2 byte length then bytes
+                ]
+            );
+        }
     }
 
     #[test]
