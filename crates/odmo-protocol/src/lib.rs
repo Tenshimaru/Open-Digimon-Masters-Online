@@ -104,7 +104,7 @@ pub use game::{
     ExtraInventoryInfoPacket, ExtraInventoryUsePacket,
     ExtraInventoryBatchMovePacket, ExtendedItemInfo,
     PartyRecruitApplyPacket, PartyRecruitMessagePacket,
-    MailWithdrawPacket, MailListPacket, MailInfoRow,
+    MailWithdrawPacket, MailListPacket, MailInfoRow, MailRecvPacket,
     InitDigimonExploreDataPacket, ExploreSlot, ExploreSlotPair,
     ChangeSkinResultPacket, AcquireSkinPacket, TwoWordReplyPacket,
     FlagWordNoticePacket, FlagTwoWordNoticePacket, TwoWordPairPacket, FixedBlockNoticePacket,

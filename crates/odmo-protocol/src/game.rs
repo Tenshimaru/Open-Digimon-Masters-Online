@@ -3772,6 +3772,43 @@ pub struct MailInfoRow {
     pub second_word_tail: u32,
 }
 
+/// `Mail::Recv` — opcode 16049: {u2 count; count x mail row}.
+///
+/// Same rows as the list result but with no leading value, so the two bodies are
+/// not interchangeable.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MailRecvPacket {
+    pub rows: Vec<MailInfoRow>,
+}
+
+impl MailRecvPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.rows.len() <= u16::MAX as usize,
+            "mail recv row count overflows u2"
+        );
+        let mut writer = PacketWriter::new(game::NTF_MAIL_RECV);
+        write_mail_rows(&mut writer, &self.rows);
+        writer.finalize()
+    }
+}
+
+fn write_mail_rows(writer: &mut PacketWriter, rows: &[MailInfoRow]) {
+    writer.write_u16(rows.len() as u16);
+    for row in rows {
+        writer.write_u32(row.mailbox as u32);
+        writer.write_u32((row.mailbox >> 32) as u32);
+        writer.write_u16(row.first_word);
+        writer.write_u8(row.first_flag);
+        writer.write_u8(row.second_flag);
+        writer.write_u8(row.third_flag);
+        writer.write_modern_utf8_string(&row.sender);
+        writer.write_modern_utf8_string(&row.title);
+        writer.write_u32(row.first_word_tail);
+        writer.write_u32(row.second_word_tail);
+    }
+}
+
 /// `Mail::List` — opcode 16050: {u4 value; u2 count; count x mail row}.
 ///
 /// Each row carries two texts and two trailing words, so the row length varies and
@@ -3790,19 +3827,7 @@ impl MailListPacket {
         );
         let mut writer = PacketWriter::new(game::RES_MAIL_LIST);
         writer.write_u32(self.value);
-        writer.write_u16(self.rows.len() as u16);
-        for row in &self.rows {
-            writer.write_u32(row.mailbox as u32);
-            writer.write_u32((row.mailbox >> 32) as u32);
-            writer.write_u16(row.first_word);
-            writer.write_u8(row.first_flag);
-            writer.write_u8(row.second_flag);
-            writer.write_u8(row.third_flag);
-            writer.write_modern_utf8_string(&row.sender);
-            writer.write_modern_utf8_string(&row.title);
-            writer.write_u32(row.first_word_tail);
-            writer.write_u32(row.second_word_tail);
-        }
+        write_mail_rows(&mut writer, &self.rows);
         writer.finalize()
     }
 }
@@ -12126,6 +12151,15 @@ mod tests {
                 13, 0, 0, 0, 14, 0, 0, 0, // second slot tail
             ]
         );
+    }
+
+    #[test]
+    fn mail_recv_starts_with_the_count() {
+        let frame = MailRecvPacket { rows: Vec::new() }.encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NTF_MAIL_RECV);
+        // No leading word: the count is the first thing on the wire.
+        assert_eq!(raw.payload, [0u8, 0]);
     }
 
     #[test]
