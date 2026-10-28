@@ -3758,6 +3758,29 @@ pub struct ExtendedItemInfo {
     pub tail: u32,
 }
 
+/// `PartyRecruit::Message` — opcode 2509: {u8 value; modern string;
+/// modern string}.
+///
+/// Two texts with no field between them, so the second can only be reached once
+/// the first length is consumed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PartyRecruitMessagePacket {
+    pub wide_value: u64,
+    pub first_text: String,
+    pub second_text: String,
+}
+
+impl PartyRecruitMessagePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::NTF_PARTY_RECRUIT_MESSAGE);
+        writer.write_u32(self.wide_value as u32);
+        writer.write_u32((self.wide_value >> 32) as u32);
+        writer.write_modern_utf8_string(&self.first_text);
+        writer.write_modern_utf8_string(&self.second_text);
+        writer.finalize()
+    }
+}
+
 /// `PartyRecruit::Apply` — opcode 2504: {u8 value; modern string; u2 value;
 /// u4 value}.
 ///
@@ -12018,6 +12041,26 @@ mod tests {
                 9, 0, 0, 0, 10, 11, 0, 0, 0, 12, 0, 0, 0, // second slot head
                 0, 0, // second slot has no pairs
                 13, 0, 0, 0, 14, 0, 0, 0, // second slot tail
+            ]
+        );
+    }
+
+    #[test]
+    fn party_recruit_message_carries_two_texts() {
+        let frame = PartyRecruitMessagePacket {
+            wide_value: 1,
+            first_text: "a".to_string(),
+            second_text: "bc".to_string(),
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NTF_PARTY_RECRUIT_MESSAGE);
+        assert_eq!(
+            raw.payload,
+            [
+                1u8, 0, 0, 0, 0, 0, 0, 0, // wide value
+                1, 0, b'a', // first text
+                2, 0, b'b', b'c', // second text starts right after the first
             ]
         );
     }
