@@ -1009,6 +1009,8 @@ pub mod game {
     pub const RES_MAIL_LIST: i16 = 16050;
     // Mail received: {u2 count; count x mail row}, with no leading value.
     pub const NTF_MAIL_RECV: i16 = 16049;
+    // Notice 3509: {u4; u8; u2; u8; u4; u4; u1; ten-byte tail}.
+    pub const NOTICE_3509: i16 = 3509;
     // Login-stage notice {u4 value; u4 value; modern string; u4 value}.
     pub const NOTICE_901: i16 = 901;
     // Union hack chip results: 3173 reads {u4 x5; u2; u1; item list; u8},

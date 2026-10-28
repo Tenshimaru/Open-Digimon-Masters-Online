@@ -3809,6 +3809,40 @@ fn write_mail_rows(writer: &mut PacketWriter, rows: &[MailInfoRow]) {
     }
 }
 
+/// Opcode 3509: {u4 value; u8 value; u2 value; u8 value; u4 value; u4 value;
+/// u1 flag; ten-byte tail}.
+///
+/// Every field is fixed width, so the body has no count and the tail is reached by
+/// walking the fields in order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FixedTailNoticePacket {
+    pub first: u32,
+    pub second: u64,
+    pub third: u16,
+    pub fourth: u64,
+    pub fifth: u32,
+    pub sixth: u32,
+    pub flag: u8,
+    pub tail: [u8; 10],
+}
+
+impl FixedTailNoticePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::NOTICE_3509);
+        writer.write_u32(self.first);
+        writer.write_u32(self.second as u32);
+        writer.write_u32((self.second >> 32) as u32);
+        writer.write_u16(self.third);
+        writer.write_u32(self.fourth as u32);
+        writer.write_u32((self.fourth >> 32) as u32);
+        writer.write_u32(self.fifth);
+        writer.write_u32(self.sixth);
+        writer.write_u8(self.flag);
+        writer.write_bytes(&self.tail);
+        writer.finalize()
+    }
+}
+
 /// `Mail::List` — opcode 16050: {u4 value; u2 count; count x mail row}.
 ///
 /// Each row carries two texts and two trailing words, so the row length varies and
@@ -12151,6 +12185,28 @@ mod tests {
                 13, 0, 0, 0, 14, 0, 0, 0, // second slot tail
             ]
         );
+    }
+
+    #[test]
+    fn fixed_tail_notice_is_all_fixed_width() {
+        let frame = FixedTailNoticePacket {
+            first: 1,
+            second: 2,
+            third: 3,
+            fourth: 4,
+            fifth: 5,
+            sixth: 6,
+            flag: 7,
+            tail: [8; 10],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NOTICE_3509);
+        // 4 + 8 + 2 + 8 + 4 + 4 + 1 + 10 = 41, with no count anywhere.
+        assert_eq!(raw.payload.len(), 41);
+        assert_eq!(&raw.payload[..2], &[1, 0]);
+        assert_eq!(raw.payload[30], 7); // the flag sits right after the sixth word
+        assert_eq!(&raw.payload[31..], &[8u8; 10]);
     }
 
     #[test]
