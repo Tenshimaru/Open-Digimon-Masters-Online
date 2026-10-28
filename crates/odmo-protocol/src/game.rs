@@ -3317,6 +3317,42 @@ impl PartyRecruitMember {
     }
 }
 
+/// `Party::RecruitCreate` — opcode 2502: {u8 value; u4 value; u4 value;
+/// modern string; u1 flag; u2 count; count x member}.
+///
+/// The flag sits after the text, and the counted run sits after the flag, so
+/// nothing beyond the first two words can be placed at a fixed offset.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PartyRecruitCreatePacket {
+    pub wide_value: u64,
+    pub first_value: u32,
+    pub second_value: u32,
+    pub message: String,
+    pub flag: u8,
+    pub members: Vec<PartyRecruitMember>,
+}
+
+impl PartyRecruitCreatePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.members.len() <= u16::MAX as usize,
+            "party recruit member count overflows u2"
+        );
+        let mut writer = PacketWriter::new(game::NTF_PARTY_RECRUIT_CREATE);
+        writer.write_u32(self.wide_value as u32);
+        writer.write_u32((self.wide_value >> 32) as u32);
+        writer.write_u32(self.first_value);
+        writer.write_u32(self.second_value);
+        writer.write_modern_utf8_string(&self.message);
+        writer.write_u8(self.flag);
+        writer.write_u16(self.members.len() as u16);
+        for member in &self.members {
+            member.encode_into(&mut writer);
+        }
+        writer.finalize()
+    }
+}
+
 /// `Party::RecruitMemberNotice` — opcodes 2506 and 2517: one member row.
 ///
 /// Both notices read exactly one member, not a counted list, so a server that
@@ -12188,6 +12224,32 @@ mod tests {
                 9, 0, 0, 0, 10, 11, 0, 0, 0, 12, 0, 0, 0, // second slot head
                 0, 0, // second slot has no pairs
                 13, 0, 0, 0, 14, 0, 0, 0, // second slot tail
+            ]
+        );
+    }
+
+    #[test]
+    fn party_recruit_create_puts_the_flag_after_the_text() {
+        let frame = PartyRecruitCreatePacket {
+            wide_value: 1,
+            first_value: 2,
+            second_value: 3,
+            message: "m".to_string(),
+            flag: 4,
+            members: Vec::new(),
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NTF_PARTY_RECRUIT_CREATE);
+        assert_eq!(
+            raw.payload,
+            [
+                1u8, 0, 0, 0, 0, 0, 0, 0, // wide value
+                2, 0, 0, 0, // first word
+                3, 0, 0, 0, // second word
+                1, 0, b'm', // text
+                4, // flag, after the text rather than before it
+                0, 0, // empty member count
             ]
         );
     }

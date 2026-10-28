@@ -103,7 +103,7 @@ pub use game::{
     CircuitCombineRewardPacket, CircuitItemInfo,
     ExtraInventoryInfoPacket, ExtraInventoryUsePacket,
     ExtraInventoryBatchMovePacket, ExtendedItemInfo,
-    PartyRecruitApplyPacket, PartyRecruitMessagePacket,
+    PartyRecruitApplyPacket, PartyRecruitMessagePacket, PartyRecruitCreatePacket,
     MailWithdrawPacket, MailListPacket, MailInfoRow, MailRecvPacket,
     FixedTailNoticePacket,
     InitDigimonExploreDataPacket, ExploreSlot, ExploreSlotPair,
