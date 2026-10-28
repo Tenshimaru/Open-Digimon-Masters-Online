@@ -3291,12 +3291,17 @@ impl AcquireSkinPacket {
 }
 
 /// `Party::RecruitMember` — one recruiter member row.
+///
+/// The wire order is the flag and the two words belonging to the member itself,
+/// then the pair belonging to its embedded tamer record. `digimon` therefore
+/// precedes `level`; both are four bytes, so swapping them leaves the frame length
+/// unchanged and only a field-level check catches it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PartyRecruitMember {
     pub flag: u8,
     pub tamer: u32,
-    pub level: u32,
     pub digimon: u32,
+    pub level: u32,
     pub icon: u16,
     pub name: String,
 }
@@ -3305,8 +3310,8 @@ impl PartyRecruitMember {
     fn encode_into(&self, writer: &mut PacketWriter) {
         writer.write_u8(self.flag);
         writer.write_u32(self.tamer);
-        writer.write_u32(self.level);
         writer.write_u32(self.digimon);
+        writer.write_u32(self.level);
         writer.write_u16(self.icon);
         writer.write_modern_utf8_string(&self.name);
     }
@@ -12848,8 +12853,8 @@ mod tests {
                 member: PartyRecruitMember {
                     flag: 1,
                     tamer: 2,
-                    level: 3,
-                    digimon: 4,
+                    level: 4,
+                    digimon: 3,
                     icon: 5,
                     name: "ab".to_string(),
                 },
@@ -12862,8 +12867,8 @@ mod tests {
                 [
                     1, // flag
                     2, 0, 0, 0, // tamer
-                    3, 0, 0, 0, // level
-                    4, 0, 0, 0, // digimon
+                    3, 0, 0, 0, // digimon
+                    4, 0, 0, 0, // level
                     5, 0, // icon
                     2, 0, b'a', b'b', // name: u2 byte length then bytes
                 ]
