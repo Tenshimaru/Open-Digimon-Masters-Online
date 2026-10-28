@@ -1013,6 +1013,10 @@ pub mod game {
     pub const NOTICE_3509: i16 = 3509;
     // Party recruit create: {u8; u4; u4; modern string; u1 flag; u2 count; count x member}.
     pub const NTF_PARTY_RECRUIT_CREATE: i16 = 2502;
+    // Party recruit join: {u1 value; the stored recruit record}.
+    pub const NTF_PARTY_RECRUIT_JOIN: i16 = 2507;
+    // Party recruit query info: {u4 value; the stored recruit record}.
+    pub const RES_PARTY_RECRUIT_QUERY_INFO: i16 = 2519;
     // Login-stage notice {u4 value; u4 value; modern string; u4 value}.
     pub const NOTICE_901: i16 = 901;
     // Union hack chip results: 3173 reads {u4 x5; u2; u1; item list; u8},

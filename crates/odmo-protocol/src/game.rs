@@ -3317,13 +3317,12 @@ impl PartyRecruitMember {
     }
 }
 
-/// `Party::RecruitCreate` — opcode 2502: {u8 value; u4 value; u4 value;
-/// modern string; u1 flag; u2 count; count x member}.
+/// The stored recruit record several party recruit bodies carry.
 ///
-/// The flag sits after the text, and the counted run sits after the flag, so
-/// nothing beyond the first two words can be placed at a fixed offset.
+/// The flag sits after the text and the counted run after the flag, so nothing
+/// beyond the first two words can be placed at a fixed offset.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PartyRecruitCreatePacket {
+pub struct PartyRecruitBody {
     pub wide_value: u64,
     pub first_value: u32,
     pub second_value: u32,
@@ -3332,13 +3331,12 @@ pub struct PartyRecruitCreatePacket {
     pub members: Vec<PartyRecruitMember>,
 }
 
-impl PartyRecruitCreatePacket {
-    pub fn encode(&self) -> Vec<u8> {
+impl PartyRecruitBody {
+    fn encode_into(&self, writer: &mut PacketWriter) {
         assert!(
             self.members.len() <= u16::MAX as usize,
             "party recruit member count overflows u2"
         );
-        let mut writer = PacketWriter::new(game::NTF_PARTY_RECRUIT_CREATE);
         writer.write_u32(self.wide_value as u32);
         writer.write_u32((self.wide_value >> 32) as u32);
         writer.write_u32(self.first_value);
@@ -3347,8 +3345,54 @@ impl PartyRecruitCreatePacket {
         writer.write_u8(self.flag);
         writer.write_u16(self.members.len() as u16);
         for member in &self.members {
-            member.encode_into(&mut writer);
+            member.encode_into(writer);
         }
+    }
+}
+
+/// `Party::RecruitCreate` — opcode 2502: {u8 value; u4 value; u4 value;
+/// modern string; u1 flag; u2 count; count x member}.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PartyRecruitCreatePacket {
+    pub body: PartyRecruitBody,
+}
+
+impl PartyRecruitCreatePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::NTF_PARTY_RECRUIT_CREATE);
+        self.body.encode_into(&mut writer);
+        writer.finalize()
+    }
+}
+
+/// `Party::RecruitJoin` — opcode 2507: {u1 value; the stored recruit record}.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PartyRecruitJoinPacket {
+    pub value: u8,
+    pub body: PartyRecruitBody,
+}
+
+impl PartyRecruitJoinPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::NTF_PARTY_RECRUIT_JOIN);
+        writer.write_u8(self.value);
+        self.body.encode_into(&mut writer);
+        writer.finalize()
+    }
+}
+
+/// `Party::RecruitQueryInfo` — opcode 2519: {u4 value; the stored recruit record}.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PartyRecruitQueryInfoPacket {
+    pub value: u32,
+    pub body: PartyRecruitBody,
+}
+
+impl PartyRecruitQueryInfoPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::RES_PARTY_RECRUIT_QUERY_INFO);
+        writer.write_u32(self.value);
+        self.body.encode_into(&mut writer);
         writer.finalize()
     }
 }
@@ -12230,15 +12274,15 @@ mod tests {
 
     #[test]
     fn party_recruit_create_puts_the_flag_after_the_text() {
-        let frame = PartyRecruitCreatePacket {
+        let body = || PartyRecruitBody {
             wide_value: 1,
             first_value: 2,
             second_value: 3,
             message: "m".to_string(),
             flag: 4,
             members: Vec::new(),
-        }
-        .encode();
+        };
+        let frame = PartyRecruitCreatePacket { body: body() }.encode();
         let raw = PacketReader::from_frame(&frame).expect("frame should decode");
         assert_eq!(raw.packet_type, game::NTF_PARTY_RECRUIT_CREATE);
         assert_eq!(
@@ -12251,6 +12295,33 @@ mod tests {
                 4, // flag, after the text rather than before it
                 0, 0, // empty member count
             ]
+        );
+
+        let join = PartyRecruitJoinPacket {
+            value: 9,
+            body: body(),
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&join).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NTF_PARTY_RECRUIT_JOIN);
+        assert_eq!(raw.payload[0], 9, "the inline byte leads the body");
+        assert_eq!(raw.payload[1..9], [1u8, 0, 0, 0, 0, 0, 0, 0]);
+
+        let query = PartyRecruitQueryInfoPacket {
+            value: 10,
+            body: body(),
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&query).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_PARTY_RECRUIT_QUERY_INFO);
+        assert_eq!(raw.payload[..4], [10, 0, 0, 0], "the word leads the body");
+        let join_payload = PacketReader::from_frame(&join)
+            .expect("frame should decode")
+            .payload;
+        assert_eq!(
+            raw.payload[4..],
+            join_payload[1..],
+            "both bodies carry the same record after their own inline field"
         );
     }
 
