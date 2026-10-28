@@ -3812,8 +3812,8 @@ fn write_mail_rows(writer: &mut PacketWriter, rows: &[MailInfoRow]) {
 /// Opcode 3509: {u4 value; u8 value; u2 value; u8 value; u4 value; u4 value;
 /// u1 flag; ten-byte tail}.
 ///
-/// Every field is fixed width, so the body has no count and the tail is reached by
-/// walking the fields in order.
+/// Every field is fixed width and nothing is counted, so the body is walked in
+/// order and the tail closes it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FixedTailNoticePacket {
     pub first: u32,
