@@ -3381,6 +3381,28 @@ impl PartyRecruitJoinPacket {
     }
 }
 
+/// `Party::RecruitSync` — opcode 2516: {u1 value; u1 value; the stored recruit
+/// record}.
+///
+/// Two single bytes lead the record rather than one, so the byte count is what
+/// separates this body from the join notice.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PartyRecruitSyncPacket {
+    pub first: u8,
+    pub second: u8,
+    pub body: PartyRecruitBody,
+}
+
+impl PartyRecruitSyncPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::NTF_PARTY_RECRUIT_SYNC);
+        writer.write_u8(self.first);
+        writer.write_u8(self.second);
+        self.body.encode_into(&mut writer);
+        writer.finalize()
+    }
+}
+
 /// `Party::RecruitQueryInfo` — opcode 2519: {u4 value; the stored recruit record}.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PartyRecruitQueryInfoPacket {
@@ -12269,6 +12291,37 @@ mod tests {
                 0, 0, // second slot has no pairs
                 13, 0, 0, 0, 14, 0, 0, 0, // second slot tail
             ]
+        );
+    }
+
+    #[test]
+    fn party_recruit_sync_leads_with_two_bytes() {
+        let body = PartyRecruitBody {
+            wide_value: 1,
+            first_value: 2,
+            second_value: 3,
+            message: "m".to_string(),
+            flag: 4,
+            members: Vec::new(),
+        };
+        let sync = PartyRecruitSyncPacket {
+            first: 7,
+            second: 8,
+            body: body.clone(),
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&sync).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NTF_PARTY_RECRUIT_SYNC);
+        assert_eq!(raw.payload[..2], [7, 8], "both bytes lead the record");
+
+        let join = PartyRecruitJoinPacket { value: 7, body }.encode();
+        let join_payload = PacketReader::from_frame(&join)
+            .expect("frame should decode")
+            .payload;
+        assert_eq!(
+            raw.payload[2..],
+            join_payload[1..],
+            "the record matches the join notice once its own field is skipped"
         );
     }
 

@@ -105,6 +105,7 @@ pub use game::{
     ExtraInventoryBatchMovePacket, ExtendedItemInfo,
     PartyRecruitApplyPacket, PartyRecruitMessagePacket, PartyRecruitCreatePacket,
     PartyRecruitBody, PartyRecruitJoinPacket, PartyRecruitQueryInfoPacket,
+    PartyRecruitSyncPacket,
     MailWithdrawPacket, MailListPacket, MailInfoRow, MailRecvPacket,
     FixedTailNoticePacket,
     InitDigimonExploreDataPacket, ExploreSlot, ExploreSlotPair,

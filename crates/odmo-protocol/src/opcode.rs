@@ -1017,6 +1017,8 @@ pub mod game {
     pub const NTF_PARTY_RECRUIT_JOIN: i16 = 2507;
     // Party recruit query info: {u4 value; the stored recruit record}.
     pub const RES_PARTY_RECRUIT_QUERY_INFO: i16 = 2519;
+    // Party recruit sync: {u1 value; u1 value; the stored recruit record}.
+    pub const NTF_PARTY_RECRUIT_SYNC: i16 = 2516;
     // Login-stage notice {u4 value; u4 value; modern string; u4 value}.
     pub const NOTICE_901: i16 = 901;
     // Union hack chip results: 3173 reads {u4 x5; u2; u1; item list; u8},
