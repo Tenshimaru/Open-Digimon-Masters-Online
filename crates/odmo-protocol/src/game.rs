@@ -3758,6 +3758,40 @@ pub struct ExtendedItemInfo {
     pub tail: u32,
 }
 
+/// `Mail::Withdraw` — opcode 16053: {u4 value; u8 value; u8 value; u8 value;
+/// u2 count; count x item row}.
+///
+/// Three doubles in a row before the item list, so a reader that expected the list
+/// after the first double would read the second double as its count.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MailWithdrawPacket {
+    pub value: u32,
+    pub gold: u64,
+    pub first_wide: u64,
+    pub second_wide: u64,
+    pub items: Vec<SerializedItemRow>,
+}
+
+impl MailWithdrawPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.items.len() <= u16::MAX as usize,
+            "mail withdraw item count overflows u2"
+        );
+        let mut writer = PacketWriter::new(game::RES_MAIL_WITHDRAW);
+        writer.write_u32(self.value);
+        for wide in [self.gold, self.first_wide, self.second_wide] {
+            writer.write_u32(wide as u32);
+            writer.write_u32((wide >> 32) as u32);
+        }
+        writer.write_u16(self.items.len() as u16);
+        for item in &self.items {
+            item.encode_into(&mut writer);
+        }
+        writer.finalize()
+    }
+}
+
 /// `PartyRecruit::Message` — opcode 2509: {u8 value; modern string;
 /// modern string}.
 ///
@@ -12041,6 +12075,30 @@ mod tests {
                 9, 0, 0, 0, 10, 11, 0, 0, 0, 12, 0, 0, 0, // second slot head
                 0, 0, // second slot has no pairs
                 13, 0, 0, 0, 14, 0, 0, 0, // second slot tail
+            ]
+        );
+    }
+
+    #[test]
+    fn mail_withdraw_puts_three_doubles_before_the_list() {
+        let frame = MailWithdrawPacket {
+            value: 1,
+            gold: 2,
+            first_wide: 3,
+            second_wide: 4,
+            items: Vec::new(),
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_MAIL_WITHDRAW);
+        assert_eq!(
+            raw.payload,
+            [
+                1u8, 0, 0, 0, // word
+                2, 0, 0, 0, 0, 0, 0, 0, // first double
+                3, 0, 0, 0, 0, 0, 0, 0, // second double
+                4, 0, 0, 0, 0, 0, 0, 0, // third double
+                0, 0, // empty item count
             ]
         );
     }
