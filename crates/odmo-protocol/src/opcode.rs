@@ -1005,6 +1005,8 @@ pub mod game {
     pub const NTF_PARTY_RECRUIT_MESSAGE: i16 = 2509;
     // Mail withdraw: {u4; u8; u8; u8; u2 count; count x item row}.
     pub const RES_MAIL_WITHDRAW: i16 = 16053;
+    // Mail list: {u4 value; u2 count; count x mail row}.
+    pub const RES_MAIL_LIST: i16 = 16050;
     // Login-stage notice {u4 value; u4 value; modern string; u4 value}.
     pub const NOTICE_901: i16 = 901;
     // Union hack chip results: 3173 reads {u4 x5; u2; u1; item list; u8},

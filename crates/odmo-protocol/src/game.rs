@@ -3758,6 +3758,55 @@ pub struct ExtendedItemInfo {
     pub tail: u32,
 }
 
+/// One mail entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MailInfoRow {
+    pub mailbox: u64,
+    pub first_word: u16,
+    pub first_flag: u8,
+    pub second_flag: u8,
+    pub third_flag: u8,
+    pub sender: String,
+    pub title: String,
+    pub first_word_tail: u32,
+    pub second_word_tail: u32,
+}
+
+/// `Mail::List` — opcode 16050: {u4 value; u2 count; count x mail row}.
+///
+/// Each row carries two texts and two trailing words, so the row length varies and
+/// the count alone is not enough to locate the next row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MailListPacket {
+    pub value: u32,
+    pub rows: Vec<MailInfoRow>,
+}
+
+impl MailListPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.rows.len() <= u16::MAX as usize,
+            "mail list row count overflows u2"
+        );
+        let mut writer = PacketWriter::new(game::RES_MAIL_LIST);
+        writer.write_u32(self.value);
+        writer.write_u16(self.rows.len() as u16);
+        for row in &self.rows {
+            writer.write_u32(row.mailbox as u32);
+            writer.write_u32((row.mailbox >> 32) as u32);
+            writer.write_u16(row.first_word);
+            writer.write_u8(row.first_flag);
+            writer.write_u8(row.second_flag);
+            writer.write_u8(row.third_flag);
+            writer.write_modern_utf8_string(&row.sender);
+            writer.write_modern_utf8_string(&row.title);
+            writer.write_u32(row.first_word_tail);
+            writer.write_u32(row.second_word_tail);
+        }
+        writer.finalize()
+    }
+}
+
 /// `Mail::Withdraw` — opcode 16053: {u4 value; u8 value; u8 value; u8 value;
 /// u2 count; count x item row}.
 ///
@@ -12075,6 +12124,42 @@ mod tests {
                 9, 0, 0, 0, 10, 11, 0, 0, 0, 12, 0, 0, 0, // second slot head
                 0, 0, // second slot has no pairs
                 13, 0, 0, 0, 14, 0, 0, 0, // second slot tail
+            ]
+        );
+    }
+
+    #[test]
+    fn mail_list_rows_carry_two_texts_each() {
+        let row = MailInfoRow {
+            mailbox: 1,
+            first_word: 2,
+            first_flag: 3,
+            second_flag: 4,
+            third_flag: 5,
+            sender: "s".to_string(),
+            title: "t".to_string(),
+            first_word_tail: 6,
+            second_word_tail: 7,
+        };
+        let frame = MailListPacket {
+            value: 8,
+            rows: vec![row],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_MAIL_LIST);
+        assert_eq!(
+            raw.payload,
+            [
+                8u8, 0, 0, 0, // word
+                1, 0, // one row
+                1, 0, 0, 0, 0, 0, 0, 0, // mailbox
+                2, 0, // short
+                3, 4, 5, // three flags
+                1, 0, b's', // sender
+                1, 0, b't', // title
+                6, 0, 0, 0, // first tail
+                7, 0, 0, 0, // second tail
             ]
         );
     }
