@@ -3758,6 +3758,31 @@ pub struct ExtendedItemInfo {
     pub tail: u32,
 }
 
+/// `PartyRecruit::Apply` — opcode 2504: {u8 value; modern string; u2 value;
+/// u4 value}.
+///
+/// The text sits between the wide value and the trailing pair, so both trailing
+/// fields can only be placed after the text length is consumed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PartyRecruitApplyPacket {
+    pub wide_value: u64,
+    pub text: String,
+    pub short_value: u16,
+    pub value: u32,
+}
+
+impl PartyRecruitApplyPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::NTF_PARTY_RECRUIT_APPLY);
+        writer.write_u32(self.wide_value as u32);
+        writer.write_u32((self.wide_value >> 32) as u32);
+        writer.write_modern_utf8_string(&self.text);
+        writer.write_u16(self.short_value);
+        writer.write_u32(self.value);
+        writer.finalize()
+    }
+}
+
 /// `ExtraInventory::BatchMove` — opcode 3802: {u4 value; u1 flag;
 /// u2 count; count x extended item; u1 flag; u2 count; count x extended item}.
 ///
@@ -11993,6 +12018,28 @@ mod tests {
                 9, 0, 0, 0, 10, 11, 0, 0, 0, 12, 0, 0, 0, // second slot head
                 0, 0, // second slot has no pairs
                 13, 0, 0, 0, 14, 0, 0, 0, // second slot tail
+            ]
+        );
+    }
+
+    #[test]
+    fn party_recruit_apply_places_the_tail_after_the_text() {
+        let frame = PartyRecruitApplyPacket {
+            wide_value: 1,
+            text: "ab".to_string(),
+            short_value: 2,
+            value: 3,
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NTF_PARTY_RECRUIT_APPLY);
+        assert_eq!(
+            raw.payload,
+            [
+                1u8, 0, 0, 0, 0, 0, 0, 0, // wide value
+                2, 0, b'a', b'b', // text
+                2, 0, // short value
+                3, 0, 0, 0, // trailing word
             ]
         );
     }

@@ -999,6 +999,8 @@ pub mod game {
     pub const RES_EXITEM_USE: i16 = 3803;
     // Extra inventory batch move: {u4; u1; sItemInfoEx run; u1; sItemInfoEx run}.
     pub const RES_EXITEM_BATCH_MOVE: i16 = 3802;
+    // Party recruit apply: {u8 value; modern string; u2 value; u4 value}.
+    pub const NTF_PARTY_RECRUIT_APPLY: i16 = 2504;
     // Login-stage notice {u4 value; u4 value; modern string; u4 value}.
     pub const NOTICE_901: i16 = 901;
     // Union hack chip results: 3173 reads {u4 x5; u2; u1; item list; u8},
