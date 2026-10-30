@@ -3818,9 +3818,11 @@ pub struct CircuitModuleRow {
     pub item: SerializedItemRow,
 }
 
-/// One circuit item reference: eight bytes on the wire.
+/// One eight-byte item reference: {u4 id; u2; u2}. The reader that owns this
+/// row reads it inline and the owning object keeps a vtable in front of it, so
+/// the twelve in-memory bytes collapse to these eight on the wire.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CircuitItemInfo {
+pub struct ItemInfoRow {
     pub id: u32,
     pub first_word: u16,
     pub second_word: u16,
@@ -3946,6 +3948,136 @@ impl FixedTailNoticePacket {
         writer.write_u32(self.sixth);
         writer.write_u8(self.flag);
         writer.write_bytes(&self.tail);
+        writer.finalize()
+    }
+}
+
+/// One 3505 tail run: ten bytes each {u8; u2}.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NoticeWideRow {
+    pub value: u64,
+    pub word: u16,
+}
+
+/// Opcode 3505: {u4; u8; u2; u8; u4; u4; u1; u8; u2; u2 count; count x {u8; u2}}.
+///
+/// The ten-byte run between the flag and the count is a second instance of the
+/// wide-row shape, so the count alone cannot be used to find the start of the
+/// counted run.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Notice3505Packet {
+    pub first: u32,
+    pub second: u64,
+    pub third: u16,
+    pub fourth: u64,
+    pub fifth: u32,
+    pub sixth: u32,
+    pub flag: u8,
+    pub lead_row: NoticeWideRow,
+    pub rows: Vec<NoticeWideRow>,
+}
+
+impl Notice3505Packet {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.rows.len() <= u16::MAX as usize,
+            "3505 row count overflows u2"
+        );
+        let write_row = |writer: &mut PacketWriter, row: &NoticeWideRow| {
+            writer.write_u32(row.value as u32);
+            writer.write_u32((row.value >> 32) as u32);
+            writer.write_u16(row.word);
+        };
+        let mut writer = PacketWriter::new(game::NOTICE_3505);
+        writer.write_u32(self.first);
+        writer.write_u32(self.second as u32);
+        writer.write_u32((self.second >> 32) as u32);
+        writer.write_u16(self.third);
+        writer.write_u32(self.fourth as u32);
+        writer.write_u32((self.fourth >> 32) as u32);
+        writer.write_u32(self.fifth);
+        writer.write_u32(self.sixth);
+        writer.write_u8(self.flag);
+        write_row(&mut writer, &self.lead_row);
+        writer.write_u16(self.rows.len() as u16);
+        for row in &self.rows {
+            write_row(&mut writer, row);
+        }
+        writer.finalize()
+    }
+}
+
+/// One 3511 slot record: thirty-seven bytes {u8; u2; u8; u4; u4; u1; u8; u2}.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NoticeSlotRow {
+    pub first_eight: u64,
+    pub first_word: u16,
+    pub second_eight: u64,
+    pub first_tail: u32,
+    pub second_tail: u32,
+    pub flag: u8,
+    pub third_eight: u64,
+    pub second_word: u16,
+}
+
+/// Opcode 3511: {u4 value; u1 flag; u1 flag; u2 count; count x slot record}.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Notice3511Packet {
+    pub value: u32,
+    pub first_flag: u8,
+    pub second_flag: u8,
+    pub rows: Vec<NoticeSlotRow>,
+}
+
+impl Notice3511Packet {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.rows.len() <= u16::MAX as usize,
+            "3511 row count overflows u2"
+        );
+        let mut writer = PacketWriter::new(game::NOTICE_3511);
+        writer.write_u32(self.value);
+        writer.write_u8(self.first_flag);
+        writer.write_u8(self.second_flag);
+        writer.write_u16(self.rows.len() as u16);
+        for row in &self.rows {
+            writer.write_u32(row.first_eight as u32);
+            writer.write_u32((row.first_eight >> 32) as u32);
+            writer.write_u16(row.first_word);
+            writer.write_u32(row.second_eight as u32);
+            writer.write_u32((row.second_eight >> 32) as u32);
+            writer.write_u32(row.first_tail);
+            writer.write_u32(row.second_tail);
+            writer.write_u8(row.flag);
+            writer.write_u32(row.third_eight as u32);
+            writer.write_u32((row.third_eight >> 32) as u32);
+            writer.write_u16(row.second_word);
+        }
+        writer.finalize()
+    }
+}
+
+/// Server message notice {u4 value; modern string}, shared by 9923 and 9939:
+/// the shapes are identical and the client formats the leading dword twice as
+/// differently as a duration versus a connection limit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServerMessageNoticePacket {
+    pub value: u32,
+    pub message: String,
+}
+
+impl ServerMessageNoticePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::NOTICE_9923);
+        writer.write_u32(self.value);
+        writer.write_modern_utf8_string(&self.message);
+        writer.finalize()
+    }
+
+    pub fn encode_connection_limit(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::NOTICE_9939);
+        writer.write_u32(self.value);
+        writer.write_modern_utf8_string(&self.message);
         writer.finalize()
     }
 }
@@ -4100,27 +4232,60 @@ fn write_extended_run(writer: &mut PacketWriter, rows: &[ExtendedItemInfo]) {
     }
 }
 
-/// `ExtraInventory::Use` — opcode 3803: {u4 value; u1 flag; u2 count;
+/// `ExtraInventory::Sort` - opcode 3803: {u4 status; u1 sort kind; u2 count;
 /// count x item row}.
+///
+/// The reader gates the listener tables on the kind (route table changes at 0,
+/// 2, 9 and 11-15 and any other kind publishes nothing), so the kind is the
+/// field a server must fill in, not padding.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExtraInventoryUsePacket {
-    pub value: u32,
-    pub flag: u8,
+pub struct ExtraInventorySortPacket {
+    pub status: u32,
+    pub kind: u8,
     pub items: Vec<SerializedItemRow>,
 }
 
-impl ExtraInventoryUsePacket {
+impl ExtraInventorySortPacket {
     pub fn encode(&self) -> Vec<u8> {
         assert!(
             self.items.len() <= u16::MAX as usize,
             "extra inventory item count overflows u2"
         );
-        let mut writer = PacketWriter::new(game::RES_EXITEM_USE);
-        writer.write_u32(self.value);
-        writer.write_u8(self.flag);
+        let mut writer = PacketWriter::new(game::RES_EXITEM_SORT);
+        writer.write_u32(self.status);
+        writer.write_u8(self.kind);
         writer.write_u16(self.items.len() as u16);
         for item in &self.items {
             item.encode_into(&mut writer);
+        }
+        writer.finalize()
+    }
+}
+
+/// `ExtraInventory::Use` - opcode 3804: {u4 status; u2 count; count x item
+/// reference}.
+///
+/// The use reply carries the eight-byte item references, not the seventy-one
+/// byte rows the sibling sort reply carries.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExtraInventoryUsePacket {
+    pub status: u32,
+    pub refs: Vec<ItemInfoRow>,
+}
+
+impl ExtraInventoryUsePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.refs.len() <= u16::MAX as usize,
+            "extra inventory reference count overflows u2"
+        );
+        let mut writer = PacketWriter::new(game::RES_EXITEM_USE);
+        writer.write_u32(self.status);
+        writer.write_u16(self.refs.len() as u16);
+        for reference in &self.refs {
+            writer.write_u32(reference.id);
+            writer.write_u16(reference.first_word);
+            writer.write_u16(reference.second_word);
         }
         writer.finalize()
     }
@@ -4135,7 +4300,7 @@ impl ExtraInventoryUsePacket {
 pub struct CircuitCombineRewardPacket {
     pub flag: u8,
     pub bytes: Vec<u8>,
-    pub infos: Vec<CircuitItemInfo>,
+    pub infos: Vec<ItemInfoRow>,
     pub items: Vec<SerializedItemRow>,
 }
 
@@ -4525,7 +4690,7 @@ impl CircuitModuleNoticePacket {
     }
 }
 
-/// `Item::CreateBreakthroughData` — opcode 3672: {u4 item; u4 flag;
+/// `Item::CreateBreakthroughData` - opcode 3672: {u4 item; u4 flag;
 /// {u2 count; count x u4 value}}.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreateBreakthroughDataPacket {
@@ -4546,6 +4711,129 @@ impl CreateBreakthroughDataPacket {
         writer.write_u16(self.options.len() as u16);
         for option in &self.options {
             writer.write_u32(*option);
+        }
+        writer.finalize()
+    }
+}
+
+/// One breakthrough ability slot: {u4 id; u4 value; u2 length; length x u1}.
+///
+/// The slot object carries a vtable in memory, yet the writer walks the blob
+/// byte by byte after an u2 length, so the blob is variable width and the two
+/// words before it never align to a fixed stride.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BreakthroughAbilitySlot {
+    pub id: u32,
+    pub value: u32,
+    pub tail: Vec<u8>,
+}
+
+/// One breakthrough-in-digimon row: {u4 digimon; u2 count; count x ability
+/// slot; u4 level; u4 exp}.
+///
+/// The two trailing words follow the variable-width ability run, so neither the
+/// digimon id nor the slots can be read past the slot list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BreakthroughDigimonRow {
+    pub digimon: u32,
+    pub slots: Vec<BreakthroughAbilitySlot>,
+    pub level: u32,
+    pub exp: u32,
+}
+
+/// `Item::InitBreakthroughData` - opcode 3671: {u2 count; count x digimon row}.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BreakthroughInitNoticePacket {
+    pub rows: Vec<BreakthroughDigimonRow>,
+}
+
+impl BreakthroughInitNoticePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.rows.len() <= u16::MAX as usize,
+            "breakthrough digimon count overflows u2"
+        );
+        for row in &self.rows {
+            assert!(
+                row.slots.len() <= u16::MAX as usize,
+                "breakthrough slot count overflows u2"
+            );
+        }
+        let mut writer = PacketWriter::new(game::NTF_INIT_BREAKTHROUGH_DATA);
+        writer.write_u16(self.rows.len() as u16);
+        for row in &self.rows {
+            writer.write_u32(row.digimon);
+            writer.write_u16(row.slots.len() as u16);
+            for slot in &row.slots {
+                assert!(
+                    slot.tail.len() <= u16::MAX as usize,
+                    "breakthrough blob length overflows u2"
+                );
+                writer.write_u32(slot.id);
+                writer.write_u32(slot.value);
+                writer.write_u16(slot.tail.len() as u16);
+                writer.write_bytes(&slot.tail);
+            }
+            writer.write_u32(row.level);
+            writer.write_u32(row.exp);
+        }
+        writer.finalize()
+    }
+}
+
+/// `Inventory::ProcessResult` sub-record: {u2 count; count x item row; u4 value;
+/// u4 value}.
+///
+/// Both trailing words belong to this record, not to the packets that embed it;
+/// the record writer writes its second pair of dwords after the rows and every
+/// embedding packet reads one more dword after that pair.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProcessResult {
+    pub rows: Vec<SerializedItemRow>,
+    pub first_value: u32,
+    pub second_value: u32,
+}
+
+fn write_process_result(writer: &mut PacketWriter, result: &ProcessResult) {
+    assert!(
+        result.rows.len() <= u16::MAX as usize,
+        "process result row count overflows u2"
+    );
+    writer.write_u16(result.rows.len() as u16);
+    for row in &result.rows {
+        row.encode_into(writer);
+    }
+    writer.write_u32(result.first_value);
+    writer.write_u32(result.second_value);
+}
+
+/// `Item::RerollBreakthroughAbility` - opcode 3675: {u4 result; process result;
+/// u4 value; u2 count; count x u4}.
+///
+/// Three dwords trail the rows in total: two inside the process result record
+/// and one after it, so a reader that stopped after the record eats the packet's
+/// own trailing value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BreakthroughRerollPacket {
+    pub result: u32,
+    pub processed: ProcessResult,
+    pub trailing: u32,
+    pub abilities: Vec<u32>,
+}
+
+impl BreakthroughRerollPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.abilities.len() <= u16::MAX as usize,
+            "ability count overflows u2"
+        );
+        let mut writer = PacketWriter::new(game::RES_REROLL_BREAKTHROUGH_ABILITY);
+        writer.write_u32(self.result);
+        write_process_result(&mut writer, &self.processed);
+        writer.write_u32(self.trailing);
+        writer.write_u16(self.abilities.len() as u16);
+        for ability in &self.abilities {
+            writer.write_u32(*ability);
         }
         writer.finalize()
     }
@@ -12556,15 +12844,32 @@ mod tests {
             [1u8, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0] // eight-byte value, flag, empty count
         );
 
-        let used = ExtraInventoryUsePacket {
-            value: 3,
-            flag: 4,
+        let sort = ExtraInventorySortPacket {
+            status: 3,
+            kind: 4,
             items: Vec::new(),
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&sort).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_EXITEM_SORT);
+        assert_eq!(raw.payload, [3u8, 0, 0, 0, 4, 0, 0]);
+
+        let used = ExtraInventoryUsePacket {
+            status: 3,
+            refs: vec![ItemInfoRow {
+                id: 9,
+                first_word: 4,
+                second_word: 5,
+            }],
         }
         .encode();
         let raw = PacketReader::from_frame(&used).expect("frame should decode");
         assert_eq!(raw.packet_type, game::RES_EXITEM_USE);
-        assert_eq!(raw.payload, [3u8, 0, 0, 0, 4, 0, 0]);
+        // The use reply carries references, not rows: eight bytes each.
+        assert_eq!(
+            raw.payload,
+            [3u8, 0, 0, 0, 1, 0, 9, 0, 0, 0, 4, 0, 5, 0]
+        );
     }
 
     #[test]
@@ -12572,7 +12877,7 @@ mod tests {
         let frame = CircuitCombineRewardPacket {
             flag: 1,
             bytes: vec![2],
-            infos: vec![CircuitItemInfo {
+            infos: vec![ItemInfoRow {
                 id: 3,
                 first_word: 4,
                 second_word: 5,
@@ -19648,5 +19953,194 @@ mod sync_1006_preservation {
         assert_eq!(item1.len(), 69);
         let item2 = reader.read_bytes(69).unwrap();
         assert_eq!(item2.len(), 69);
+    }
+
+    #[test]
+    fn breakthrough_init_notice_streams_variable_width_slots() {
+        let frame = BreakthroughInitNoticePacket {
+            rows: vec![BreakthroughDigimonRow {
+                digimon: 7,
+                slots: vec![
+                    BreakthroughAbilitySlot {
+                        id: 1,
+                        value: 2,
+                        tail: vec![3, 4],
+                    },
+                    BreakthroughAbilitySlot {
+                        id: 5,
+                        value: 6,
+                        tail: Vec::new(),
+                    },
+                ],
+                level: 9,
+                exp: 10,
+            }],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NTF_INIT_BREAKTHROUGH_DATA);
+        assert_eq!(
+            raw.payload,
+            [
+                1, 0, // row count
+                7, 0, 0, 0, // digimon
+                2, 0, // slot count
+                1, 0, 0, 0, 2, 0, 0, 0, 2, 0, 3, 4, // slot one: id, value, blob
+                5, 0, 0, 0, 6, 0, 0, 0, 0, 0, // slot two: empty blob
+                9, 0, 0, 0, 10, 0, 0, 0, // level, exp
+            ]
+        );
+    }
+
+    #[test]
+    fn breakthrough_reroll_flanks_the_process_result_with_dwords() {
+        let frame = BreakthroughRerollPacket {
+            result: 1,
+            processed: ProcessResult {
+                rows: vec![SerializedItemRow {
+                    item: 999,
+                    first_word: 0,
+                    second_word: 0,
+                    first_flag: 0,
+                    second_flag: 0,
+                    third_flag: 0,
+                    fourth_flag: 0,
+                    packed_six: [0; 6],
+                    packed_three: [0; 3],
+                    first_block: [0; 16],
+                    second_block: [0; 16],
+                    wide_value: 0,
+                    third_word: 0,
+                    fourth_word: 0,
+                    fifth_flag: 0,
+                    sixth_flag: 0,
+                }],
+                first_value: 2,
+                second_value: 3,
+            },
+            trailing: 4,
+            abilities: vec![5, 6],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_REROLL_BREAKTHROUGH_ABILITY);
+        let mut reader = PacketReader::new(raw.payload);
+        assert_eq!(reader.read_u32().unwrap(), 1); // result
+        assert_eq!(reader.read_u16().unwrap(), 1); // process rows
+        let row = reader.read_bytes(SerializedItemRow::WIRE_LEN).unwrap();
+        assert_eq!(&row[..4], &999u32.to_le_bytes());
+        assert_eq!(reader.read_u32().unwrap(), 2); // process first value
+        assert_eq!(reader.read_u32().unwrap(), 3); // process second value
+        assert_eq!(reader.read_u32().unwrap(), 4); // packet trailing dword
+        assert_eq!(reader.read_u16().unwrap(), 2); // ability count
+        assert_eq!(reader.read_u32().unwrap(), 5);
+        assert_eq!(reader.read_u32().unwrap(), 6);
+        assert_eq!(reader.remaining_len(), 0);
+    }
+
+    #[test]
+    fn notice_3505_carries_a_wide_row_lead_and_counted_wide_rows() {
+        let frame = Notice3505Packet {
+            first: 1,
+            second: 2,
+            third: 3,
+            fourth: 4,
+            fifth: 5,
+            sixth: 6,
+            flag: 7,
+            lead_row: NoticeWideRow {
+                value: 8,
+                word: 9,
+            },
+            rows: vec![NoticeWideRow {
+                value: 10,
+                word: 11,
+            }],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NOTICE_3505);
+        // 4 + 8 + 2 + 8 + 4 + 4 + 1 + 10 + 2 + 10 = 53.
+        assert_eq!(raw.payload.len(), 53);
+        let mut reader = PacketReader::new(raw.payload);
+        assert_eq!(reader.read_u32().unwrap(), 1);
+        assert_eq!(reader.read_u32().unwrap(), 2);
+        assert_eq!(reader.read_u32().unwrap(), 0);
+        assert_eq!(reader.read_u16().unwrap(), 3);
+        assert_eq!(reader.read_u32().unwrap(), 4);
+        assert_eq!(reader.read_u32().unwrap(), 0);
+        assert_eq!(reader.read_u32().unwrap(), 5);
+        assert_eq!(reader.read_u32().unwrap(), 6);
+        assert_eq!(reader.read_u8().unwrap(), 7);
+        assert_eq!(reader.read_u32().unwrap(), 8); // lead row value
+        assert_eq!(reader.read_u32().unwrap(), 0);
+        assert_eq!(reader.read_u16().unwrap(), 9); // lead row word
+        assert_eq!(reader.read_u16().unwrap(), 1); // counted row count
+        assert_eq!(reader.read_u32().unwrap(), 10);
+        assert_eq!(reader.read_u32().unwrap(), 0);
+        assert_eq!(reader.read_u16().unwrap(), 11);
+        assert_eq!(reader.remaining_len(), 0);
+    }
+
+    #[test]
+    fn notice_3511_counts_thirty_seven_byte_slot_records() {
+        let frame = Notice3511Packet {
+            value: 1,
+            first_flag: 2,
+            second_flag: 3,
+            rows: vec![NoticeSlotRow {
+                first_eight: 4,
+                first_word: 5,
+                second_eight: 6,
+                first_tail: 7,
+                second_tail: 8,
+                flag: 9,
+                third_eight: 10,
+                second_word: 11,
+            }],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NOTICE_3511);
+        // 4 + 1 + 1 + 2 + 37 = 45.
+        assert_eq!(raw.payload.len(), 45);
+        let mut reader = PacketReader::new(raw.payload);
+        assert_eq!(reader.read_u32().unwrap(), 1);
+        assert_eq!(reader.read_u8().unwrap(), 2);
+        assert_eq!(reader.read_u8().unwrap(), 3);
+        assert_eq!(reader.read_u16().unwrap(), 1);
+        assert_eq!(reader.read_u32().unwrap(), 4); // first eight
+        assert_eq!(reader.read_u32().unwrap(), 0);
+        assert_eq!(reader.read_u16().unwrap(), 5);
+        assert_eq!(reader.read_u32().unwrap(), 6); // second eight
+        assert_eq!(reader.read_u32().unwrap(), 0);
+        assert_eq!(reader.read_u32().unwrap(), 7);
+        assert_eq!(reader.read_u32().unwrap(), 8);
+        assert_eq!(reader.read_u8().unwrap(), 9);
+        assert_eq!(reader.read_u32().unwrap(), 10); // third eight
+        assert_eq!(reader.read_u32().unwrap(), 0);
+        assert_eq!(reader.read_u16().unwrap(), 11);
+        assert_eq!(reader.remaining_len(), 0);
+    }
+
+    #[test]
+    fn server_message_notice_shares_its_shape_between_9923_and_9939() {
+        let duration = ServerMessageNoticePacket {
+            value: 30,
+            message: "done".to_string(),
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&duration).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NOTICE_9923);
+        assert_eq!(raw.payload, [30u8, 0, 0, 0, 4, 0, b'd', b'o', b'n', b'e']);
+
+        let limit = ServerMessageNoticePacket {
+            value: 30,
+            message: "done".to_string(),
+        }
+        .encode_connection_limit();
+        let raw = PacketReader::from_frame(&limit).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NOTICE_9939);
+        assert_eq!(raw.payload, [30u8, 0, 0, 0, 4, 0, b'd', b'o', b'n', b'e']);
     }
 }

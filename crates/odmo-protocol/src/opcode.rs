@@ -995,8 +995,10 @@ pub mod game {
     pub const RES_CIRCUIT_COMBINE_REWARD: i16 = 4603;
     // Extra inventory info: {u8 value; u1 flag; u2 count; count x item row}.
     pub const NTF_EXTRAINVEN_INFO: i16 = 3701;
-    // Extra inventory use: {u4 value; u1 flag; u2 count; count x item row}.
-    pub const RES_EXITEM_USE: i16 = 3803;
+    // Extra inventory sort reply: {u4 status; u1 kind; u2 count; count x item row}.
+    pub const RES_EXITEM_SORT: i16 = 3803;
+    // Extra inventory use reply: {u4 status; u2 count; count x eight-byte item ref}.
+    pub const RES_EXITEM_USE: i16 = 3804;
     // Extra inventory batch move: {u4; u1; sItemInfoEx run; u1; sItemInfoEx run}.
     pub const RES_EXITEM_BATCH_MOVE: i16 = 3802;
     // Party recruit apply: {u8 value; modern string; u2 value; u4 value}.
@@ -1011,6 +1013,14 @@ pub mod game {
     pub const NTF_MAIL_RECV: i16 = 16049;
     // Notice 3509: {u4; u8; u2; u8; u4; u4; u1; ten-byte tail}.
     pub const NOTICE_3509: i16 = 3509;
+    // Notice 3505: {u4; u8; u2; u8; u4; u4; u1; u8; u2; u2 count; count x {u8; u2}}.
+    pub const NOTICE_3505: i16 = 3505;
+    // Notice 3511: {u4; u1; u1; u2 count; count x slot record}.
+    pub const NOTICE_3511: i16 = 3511;
+    // Breakthrough init: {u2 count; count x {u4 digimon; ability slots; u4; u4}}.
+    pub const NTF_INIT_BREAKTHROUGH_DATA: i16 = 3671;
+    // Breakthrough reroll: {u4; process result; u4; u2 count; count x u4}.
+    pub const RES_REROLL_BREAKTHROUGH_ABILITY: i16 = 3675;
     // Party recruit create: {u8; u4; u4; modern string; u1 flag; u2 count; count x member}.
     pub const NTF_PARTY_RECRUIT_CREATE: i16 = 2502;
     // Party recruit join: {u1 value; the stored recruit record}.
@@ -1021,6 +1031,10 @@ pub mod game {
     pub const NTF_PARTY_RECRUIT_SYNC: i16 = 2516;
     // Login-stage notice {u4 value; u4 value; modern string; u4 value}.
     pub const NOTICE_901: i16 = 901;
+    // Server message notices, both {u4 value; modern string}: 9923 formats the
+    // leading value as a wall-clock duration, 9939 as a connection limit.
+    pub const NOTICE_9923: i16 = 9923;
+    pub const NOTICE_9939: i16 = 9939;
     // Union hack chip results: 3173 reads {u4 x5; u2; u1; item list; u8},
     // 3174 reads {u4 x4; u2; u1; u4; item list; u8}.
     pub const RES_UNION_HACK_OPEN: i16 = 3173;
