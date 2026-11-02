@@ -4423,6 +4423,243 @@ impl SeasonRewardPacket {
     }
 }
 
+/// One season pass mission condition: forty-four bytes {u4; u8; u8; u8; u8; u8}.
+///
+/// The reader type embeds a condition object behind a vtable, but the vtable is
+/// never written; the reader walks the data fields directly, so the leading
+/// dword plus five pairs of dwords are all that reach the wire.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeasonPassConditionRow {
+    pub lead: u32,
+    pub second: u64,
+    pub third: u64,
+    pub fourth: u64,
+    pub fifth: u64,
+    pub sixth: u64,
+}
+
+/// One season pass mission: {u4 value; u1 flag; u1 flag; u2 count;
+/// count x condition; u1 tail}.
+///
+/// The mission is the value half of a keyed map entry; the key travels one
+/// dword in front of this body and is not part of the record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeasonPassMission {
+    pub value: u32,
+    pub first_flag: u8,
+    pub second_flag: u8,
+    pub conditions: Vec<SeasonPassConditionRow>,
+    pub tail: u8,
+}
+
+/// One mission row: {u1 kind; u2 count; count x {u4 key; mission}}.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeasonPassMissionRow {
+    pub kind: u8,
+    pub missions: Vec<(u32, SeasonPassMission)>,
+}
+
+/// One exp/reward row of the details tail: {u2 id; u2 value; u1; u1; u1}.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeasonPassRewardRow {
+    pub id: u16,
+    pub value: u16,
+    pub first_flag: u8,
+    pub second_flag: u8,
+    pub third_flag: u8,
+}
+
+/// `nsSeasonPass::stExpLevel` — {u2 level; u4 exp}.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SeasonPassExpLevel {
+    pub level: u16,
+    pub exp: u32,
+}
+
+/// The mission block both the details record and 3553 embed: {u2 count;
+/// count x mission row}.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeasonPassMissions {
+    pub rows: Vec<SeasonPassMissionRow>,
+}
+
+/// `nsSeasonPass::stDetails` — {u2; u1 flag; exp level; missions; rewards}.
+///
+/// The flag is optional strictly at read time: the reader skips it only when
+/// the payload has already run out, so a well-formed body always carries it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeasonPassDetails {
+    pub word: u16,
+    pub flag: u8,
+    pub exp_level: SeasonPassExpLevel,
+    pub missions: SeasonPassMissions,
+    pub rewards: Vec<SeasonPassRewardRow>,
+}
+
+/// `SeasonPass::Details` - opcode 3551: {u2; u1 flag; {u2; u4};
+/// {u2 count; …}; {u2 count; …}; u4; u4}.
+///
+/// The details record embeds the mission block and the reward list; the two
+/// trailing dwords follow the reward list, so they belong to the packet and
+/// not to the record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeasonPassDetailsPacket {
+    pub details: SeasonPassDetails,
+    pub first: u32,
+    pub second: u32,
+}
+
+/// `SeasonPass::PurchaseExp` - opcode 3552: {u2 result; u1 flag; {u2; u4};
+/// {u2 count; count x item ref}}.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeasonPassPurchaseExpPacket {
+    pub result: u16,
+    pub flag: u8,
+    pub exp_level: SeasonPassExpLevel,
+    pub items: Vec<ItemInfoRow>,
+}
+
+/// `SeasonPass::UpdateMission` - opcode 3553: {u2 count; count x {u1 kind;
+/// u2 count; count x {u4 key; {u4; u1; u1; u2 count; count x condition; u1}}}
+/// }; u4.
+///
+/// The record nests two counts deep, so a reader that stops after the first
+/// count would attach the mission keys to the wrong nesting level.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeasonPassUpdateMissionPacket {
+    pub missions: SeasonPassMissions,
+    pub trailing: u32,
+}
+
+/// `SeasonPass::GetMissionRewards` - opcode 3554: {u2 result; u1 flag; u4
+/// value; {u2; u4}}.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeasonPassMissionRewardsPacket {
+    pub result: u16,
+    pub flag: u8,
+    pub value: u32,
+    pub exp_level: SeasonPassExpLevel,
+}
+
+fn write_season_pass_mission(writer: &mut PacketWriter, mission: &SeasonPassMission) {
+    assert!(
+        mission.conditions.len() <= u16::MAX as usize,
+        "season pass condition count overflows u2"
+    );
+    writer.write_u8(mission.first_flag);
+    writer.write_u8(mission.second_flag);
+    writer.write_u16(mission.conditions.len() as u16);
+    for condition in &mission.conditions {
+        writer.write_u32(condition.lead);
+        writer.write_u32(condition.second as u32);
+        writer.write_u32((condition.second >> 32) as u32);
+        writer.write_u32(condition.third as u32);
+        writer.write_u32((condition.third >> 32) as u32);
+        writer.write_u32(condition.fourth as u32);
+        writer.write_u32((condition.fourth >> 32) as u32);
+        writer.write_u32(condition.fifth as u32);
+        writer.write_u32((condition.fifth >> 32) as u32);
+        writer.write_u32(condition.sixth as u32);
+        writer.write_u32((condition.sixth >> 32) as u32);
+    }
+    writer.write_u8(mission.tail);
+}
+
+fn write_season_pass_missions(writer: &mut PacketWriter, missions: &SeasonPassMissions) {
+    assert!(
+        missions.rows.len() <= u16::MAX as usize,
+        "season pass mission row count overflows u2"
+    );
+    writer.write_u16(missions.rows.len() as u16);
+    for row in &missions.rows {
+        assert!(
+            row.missions.len() <= u16::MAX as usize,
+            "season pass mission count overflows u2"
+        );
+        writer.write_u8(row.kind);
+        writer.write_u16(row.missions.len() as u16);
+        for (key, mission) in &row.missions {
+            writer.write_u32(*key);
+            writer.write_u32(mission.value);
+            write_season_pass_mission(writer, mission);
+        }
+    }
+}
+
+impl SeasonPassDetails {
+    fn write_into(&self, writer: &mut PacketWriter) {
+        writer.write_u16(self.word);
+        writer.write_u8(self.flag);
+        writer.write_u16(self.exp_level.level);
+        writer.write_u32(self.exp_level.exp);
+        write_season_pass_missions(writer, &self.missions);
+        assert!(
+            self.rewards.len() <= u16::MAX as usize,
+            "season pass reward count overflows u2"
+        );
+        writer.write_u16(self.rewards.len() as u16);
+        for reward in &self.rewards {
+            writer.write_u16(reward.id);
+            writer.write_u16(reward.value);
+            writer.write_u8(reward.first_flag);
+            writer.write_u8(reward.second_flag);
+            writer.write_u8(reward.third_flag);
+        }
+    }
+}
+
+impl SeasonPassDetailsPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::NTF_SEASON_PASS_DETAILS);
+        self.details.write_into(&mut writer);
+        writer.write_u32(self.first);
+        writer.write_u32(self.second);
+        writer.finalize()
+    }
+}
+
+impl SeasonPassPurchaseExpPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.items.len() <= u16::MAX as usize,
+            "season pass item count overflows u2"
+        );
+        let mut writer = PacketWriter::new(game::RES_SEASON_PASS_PURCHASE_EXP);
+        writer.write_u16(self.result);
+        writer.write_u8(self.flag);
+        writer.write_u16(self.exp_level.level);
+        writer.write_u32(self.exp_level.exp);
+        writer.write_u16(self.items.len() as u16);
+        for reference in &self.items {
+            writer.write_u32(reference.id);
+            writer.write_u16(reference.first_word);
+            writer.write_u16(reference.second_word);
+        }
+        writer.finalize()
+    }
+}
+
+impl SeasonPassUpdateMissionPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::NTF_SEASON_PASS_UPDATE_MISSION);
+        write_season_pass_missions(&mut writer, &self.missions);
+        writer.write_u32(self.trailing);
+        writer.finalize()
+    }
+}
+
+impl SeasonPassMissionRewardsPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::RES_SEASON_PASS_GET_MISSION_REWARDS);
+        writer.write_u16(self.result);
+        writer.write_u8(self.flag);
+        writer.write_u32(self.value);
+        writer.write_u16(self.exp_level.level);
+        writer.write_u32(self.exp_level.exp);
+        writer.finalize()
+    }
+}
+
 /// `Advert::BossCreate` — opcode 1060: {u4 value; u4 value; u4 value; u4 value}.
 ///
 /// Four words with no count and no trailing data; a reader expecting a counted
@@ -20142,5 +20379,134 @@ mod sync_1006_preservation {
         let raw = PacketReader::from_frame(&limit).expect("frame should decode");
         assert_eq!(raw.packet_type, game::NOTICE_9939);
         assert_eq!(raw.payload, [30u8, 0, 0, 0, 4, 0, b'd', b'o', b'n', b'e']);
+    }
+
+    fn season_pass_mission(key: u32) -> (u32, SeasonPassMission) {
+        (
+            key,
+            SeasonPassMission {
+                value: 100,
+                first_flag: 1,
+                second_flag: 2,
+                conditions: vec![SeasonPassConditionRow {
+                    lead: 7,
+                    second: 8,
+                    third: 9,
+                    fourth: 10,
+                    fifth: 11,
+                    sixth: 12,
+                }],
+                tail: 3,
+            },
+        )
+    }
+
+    #[test]
+    fn season_pass_details_flanks_record_with_two_dwords() {
+        let frame = SeasonPassDetailsPacket {
+            details: SeasonPassDetails {
+                word: 5,
+                flag: 6,
+                exp_level: SeasonPassExpLevel { level: 7, exp: 8 },
+                missions: SeasonPassMissions {
+                    rows: vec![SeasonPassMissionRow {
+                        kind: 1,
+                        missions: vec![season_pass_mission(2)],
+                    }],
+                },
+                rewards: vec![SeasonPassRewardRow {
+                    id: 13,
+                    value: 14,
+                    first_flag: 1,
+                    second_flag: 2,
+                    third_flag: 3,
+                }],
+            },
+            first: 15,
+            second: 16,
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NTF_SEASON_PASS_DETAILS);
+        // 2 + 1 + 6 + (2 + 1 + 2 + 4 + 4 + 1 + 1 + 2 + 44 + 1) + (2 + 7) + 8 = 88.
+        assert_eq!(raw.payload.len(), 88);
+        assert_eq!(&raw.payload[..13], &[5, 0, 6, 7, 0, 8, 0, 0, 0, 1, 0, 1, 1]);
+        // Mission body: key, value, flags, condition count, condition lead dword.
+        assert_eq!(
+            &raw.payload[14..30],
+            &[2, 0, 0, 0, 100, 0, 0, 0, 1, 2, 1, 0, 7, 0, 0, 0]
+        );
+        // Details tail: reward id, value, three flags, packet dwords.
+        let tail = &raw.payload[73..];
+        assert_eq!(
+            tail,
+            [13, 0, 14, 0, 1, 2, 3, 15, 0, 0, 0, 16, 0, 0, 0]
+        );
+    }
+
+    #[test]
+    fn season_pass_purchase_exp_closes_with_item_refs() {
+        let frame = SeasonPassPurchaseExpPacket {
+            result: 1,
+            flag: 2,
+            exp_level: SeasonPassExpLevel { level: 3, exp: 4 },
+            items: vec![ItemInfoRow {
+                id: 5,
+                first_word: 6,
+                second_word: 7,
+            }],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_SEASON_PASS_PURCHASE_EXP);
+        assert_eq!(raw.payload.len(), 2 + 1 + 6 + 2 + 8);
+        assert_eq!(raw.payload[9], 1); // item count
+        assert_eq!(
+            &raw.payload[11..],
+            [5, 0, 0, 0, 6, 0, 7, 0]
+        );
+    }
+
+    #[test]
+    fn season_pass_update_mission_keeps_two_count_levels() {
+        let frame = SeasonPassUpdateMissionPacket {
+            missions: SeasonPassMissions {
+                rows: vec![
+                    SeasonPassMissionRow {
+                        kind: 9,
+                        missions: Vec::new(),
+                    },
+                    SeasonPassMissionRow {
+                        kind: 1,
+                        missions: vec![season_pass_mission(2)],
+                    },
+                ],
+            },
+            trailing: 17,
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NTF_SEASON_PASS_UPDATE_MISSION);
+        // 2 + (1 + 2) + (1 + 2 + 4 + 4 + 1 + 1 + 2 + 44 + 1) + 4 = 69.
+        assert_eq!(raw.payload.len(), 69);
+        assert_eq!(&raw.payload[..6], &[2, 0, 9, 0, 0, 1]);
+        // Second row: mission count, key, value, flags, condition count.
+        assert_eq!(&raw.payload[6..18], &[1, 0, 2, 0, 0, 0, 100, 0, 0, 0, 1, 2]);
+        let trail = &raw.payload[65..69];
+        assert_eq!(trail, [17, 0, 0, 0]);
+    }
+
+    #[test]
+    fn season_pass_mission_rewards_leaves_nothing_after_exp_level() {
+        let frame = SeasonPassMissionRewardsPacket {
+            result: 1,
+            flag: 2,
+            value: 3,
+            exp_level: SeasonPassExpLevel { level: 4, exp: 5 },
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_SEASON_PASS_GET_MISSION_REWARDS);
+        assert_eq!(raw.payload, [1, 0, 2, 3, 0, 0, 0, 4, 0, 5, 0, 0, 0]);
     }
 }

@@ -984,7 +984,14 @@ pub mod game {
     // Season mission alert {u2 count; count x u4 value}.
     pub const NTF_SEASON_MISSION_ALERT: i16 = 4401;
     // Season rewards claim: {u1 flag; {u2 count; count x {u2; u1; u1; u1}}}.
+    // Season pass family: 3551 details {details; u4; u4}; 3552 purchase exp
+    // {u2; u1; exp level; item refs}; 3553 update mission {mission rows; u4};
+    // 3554 mission rewards {u2; u1; u4; exp level}.
     pub const RES_SEASON_PASS_GET_SEASON_REWARDS: i16 = 3555;
+    pub const NTF_SEASON_PASS_DETAILS: i16 = 3551;
+    pub const RES_SEASON_PASS_PURCHASE_EXP: i16 = 3552;
+    pub const NTF_SEASON_PASS_UPDATE_MISSION: i16 = 3553;
+    pub const RES_SEASON_PASS_GET_MISSION_REWARDS: i16 = 3554;
     // Circuit module extract: {u1 flag; u4 value; counted item list}.
     pub const RES_CIRCUIT_MODULE_EXTRACT: i16 = 4502;
     // Circuit module sync: {u1 flag; {u2 count; count x {u4; u1; item row}};
