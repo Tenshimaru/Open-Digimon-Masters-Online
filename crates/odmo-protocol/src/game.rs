@@ -4393,6 +4393,115 @@ impl CircuitModuleExtractPacket {
     }
 }
 
+/// One `nsDS_Circuit::stModuleInfo` node: {u4 word; u1 flag; item row}.
+///
+/// The register reply carries one such node standing alone, so the same
+/// seventy-six-byte record serves both the single node and the module-sync
+/// counted run.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CircuitModuleNode {
+    pub word: u32,
+    pub flag: u8,
+    pub item: SerializedItemRow,
+}
+
+impl CircuitModuleNode {
+    fn write_into(&self, writer: &mut PacketWriter) {
+        writer.write_u32(self.word);
+        writer.write_u8(self.flag);
+        self.item.encode_into(writer);
+    }
+}
+
+/// `DS_Circuit::ModuleRegister` — opcode 4501: {u1 result; module node;
+/// u2 count; count x item row}.
+///
+/// The node is the seventy-six-byte record {u4; u1; 71-byte item row}; the
+/// reader's fixed word at +4 is the packet-id echo, so the body opens with the
+/// result byte (pinned by the fork's RecvDsCircuitModuleRegister).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CircuitModuleRegisterPacket {
+    pub result: u8,
+    pub node: CircuitModuleNode,
+    pub items: Vec<SerializedItemRow>,
+}
+
+impl CircuitModuleRegisterPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.items.len() <= u16::MAX as usize,
+            "circuit register item count overflows u2"
+        );
+        let mut writer = PacketWriter::new(game::RES_DS_CIRCUIT_MODULE_REGISTER);
+        writer.write_u8(self.result);
+        self.node.write_into(&mut writer);
+        writer.write_u16(self.items.len() as u16);
+        for item in &self.items {
+            item.encode_into(&mut writer);
+        }
+        writer.finalize()
+    }
+}
+
+/// One combine-map ceiling entry: {u1 key; u1 value byte; u2 value word}.
+///
+/// Four wire bytes per entry; the fork's RecvDsCircuitModuleMap consumes the
+/// same order (key, value byte, value word).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CircuitCombineEntry {
+    pub key: u8,
+    pub value_byte: u8,
+    pub value_word: u16,
+}
+
+/// `DS_Circuit::Combine` — opcode 4602: {u1 result; u2 count;
+/// count x ceiling entry; u2 count; count x item ref; u2 count;
+/// count x item row; u8 value}.
+///
+/// Three counted runs close before the empty-run patterns differ: the eight
+/// byte references are the sItemInfo rows, the seventy-one byte rows are
+/// sItemData, and the trailing wide value belongs to the packet.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CircuitCombinePacket {
+    pub result: u8,
+    pub ceilings: Vec<CircuitCombineEntry>,
+    pub refs: Vec<ItemInfoRow>,
+    pub items: Vec<SerializedItemRow>,
+    pub value: u64,
+}
+
+impl CircuitCombinePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        for (len, what) in [
+            (self.ceilings.len(), "ceiling entry count"),
+            (self.refs.len(), "item reference count"),
+            (self.items.len(), "item row count"),
+        ] {
+            assert!(len <= u16::MAX as usize, "{what} overflows u2");
+        }
+        let mut writer = PacketWriter::new(game::RES_DS_CIRCUIT_COMBINE);
+        writer.write_u8(self.result);
+        writer.write_u16(self.ceilings.len() as u16);
+        for entry in &self.ceilings {
+            writer.write_u8(entry.key);
+            writer.write_u8(entry.value_byte);
+            writer.write_u16(entry.value_word);
+        }
+        writer.write_u16(self.refs.len() as u16);
+        for info in &self.refs {
+            writer.write_u32(info.id);
+            writer.write_u16(info.first_word);
+            writer.write_u16(info.second_word);
+        }
+        writer.write_u16(self.items.len() as u16);
+        for item in &self.items {
+            item.encode_into(&mut writer);
+        }
+        writer.write_u64(self.value);
+        writer.finalize()
+    }
+}
+
 /// `SeasonPass::GetSeasonRewards` — opcode 3555: {u1 flag; u2 count;
 /// count x {u2 id; u1; u1; u1}}.
 ///
@@ -5202,44 +5311,44 @@ fn write_season_mission_list(writer: &mut PacketWriter, list: &SeasonMissionList
     }
 }
 
-/// `SeasonMission::Init` - opcode 4402: {u2; u4; missions; conditions; u4;
-/// u1; u1; pairs; u2}.
+/// `SeasonMission::Init` - opcode 4402: {u4 season id; missions; rewards;
+/// u4 timer; u1 state flag; u1 premium purchased; keyed flag pairs; u2 tail}.
 ///
-/// The pairs and tail word close the body, so a reader that stopped after the
-/// conditions would miss five trailing fields.
+/// The reader's fixed word at +4 is the packet-id echo, not a body field, so
+/// the body opens with the season dword; a reader that encoded the echo as a
+/// body word shifts every later field by two bytes (caught by the fork's
+/// RecvSeasonMissionInit cross-check).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SeasonMissionInitPacket {
-    pub word: u16,
-    pub value: u32,
+    pub season_id: u32,
     pub missions: SeasonMissionList,
-    pub conditions: Vec<SeasonMissionCondition>,
-    pub second_value: u32,
-    pub first_flag: u8,
-    pub second_flag: u8,
-    pub pairs: Vec<SeasonQuestPair>,
-    pub tail_word: u16,
+    pub rewards: Vec<SeasonMissionCondition>,
+    pub timer_value: u32,
+    pub state_flag: u8,
+    pub premium_purchased: u8,
+    pub mission_flags: Vec<SeasonQuestPair>,
+    pub tail_value: u16,
 }
 
 impl SeasonMissionInitPacket {
     pub fn encode(&self) -> Vec<u8> {
         assert!(
-            self.pairs.len() <= u16::MAX as usize,
+            self.mission_flags.len() <= u16::MAX as usize,
             "season quest pair count overflows u2"
         );
         let mut writer = PacketWriter::new(game::NTF_SEASON_MISSION_INIT);
-        writer.write_u16(self.word);
-        writer.write_u32(self.value);
+        writer.write_u32(self.season_id);
         write_season_mission_list(&mut writer, &self.missions);
-        write_season_mission_conditions(&mut writer, &self.conditions);
-        writer.write_u32(self.second_value);
-        writer.write_u8(self.first_flag);
-        writer.write_u8(self.second_flag);
-        writer.write_u16(self.pairs.len() as u16);
-        for pair in &self.pairs {
+        write_season_mission_conditions(&mut writer, &self.rewards);
+        writer.write_u32(self.timer_value);
+        writer.write_u8(self.state_flag);
+        writer.write_u8(self.premium_purchased);
+        writer.write_u16(self.mission_flags.len() as u16);
+        for pair in &self.mission_flags {
             writer.write_u16(pair.id);
             writer.write_u8(pair.flag);
         }
-        writer.write_u16(self.tail_word);
+        writer.write_u16(self.tail_value);
         writer.finalize()
     }
 }
@@ -5301,23 +5410,24 @@ impl SeasonMissionMultiRewardPacket {
     }
 }
 
-/// `SeasonMission::PurchasePremium` - opcode 4406: {u2 result; u1 flag;
-/// process result; conditions}.
+/// `SeasonMission::PurchasePremium` - opcode 4406: {u1 result; process
+/// result; rewards}.
+///
+/// The result is one byte, not the u8/u16 opening every other reply family
+/// uses; the fork's RecvSeasonMissionPurchaseResult pins the width.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SeasonMissionPurchasePremiumPacket {
-    pub result: u16,
-    pub flag: u8,
+    pub result: u8,
     pub processed: ProcessResult,
-    pub conditions: Vec<SeasonMissionCondition>,
+    pub rewards: Vec<SeasonMissionCondition>,
 }
 
 impl SeasonMissionPurchasePremiumPacket {
     pub fn encode(&self) -> Vec<u8> {
         let mut writer = PacketWriter::new(game::RES_SEASON_MISSION_PURCHASE_PREMIUM);
-        writer.write_u16(self.result);
-        writer.write_u8(self.flag);
+        writer.write_u8(self.result);
         write_process_result(&mut writer, &self.processed);
-        write_season_mission_conditions(&mut writer, &self.conditions);
+        write_season_mission_conditions(&mut writer, &self.rewards);
         writer.finalize()
     }
 }
@@ -20748,32 +20858,32 @@ mod sync_1006_preservation {
     #[test]
     fn season_mission_init_carries_pairs_and_tail_word() {
         let frame = SeasonMissionInitPacket {
-            word: 5,
-            value: 6,
+            season_id: 6,
             missions: SeasonMissionList {
                 missions: vec![season_mission_fixture()],
             },
-            conditions: vec![season_mission_condition_fixture()],
-            second_value: 31,
-            first_flag: 1,
-            second_flag: 2,
-            pairs: vec![SeasonQuestPair { id: 3, flag: 4 }],
-            tail_word: 5,
+            rewards: vec![season_mission_condition_fixture()],
+            timer_value: 31,
+            state_flag: 1,
+            premium_purchased: 2,
+            mission_flags: vec![SeasonQuestPair { id: 3, flag: 4 }],
+            tail_value: 5,
         }
         .encode();
         let raw = PacketReader::from_frame(&frame).expect("frame should decode");
         assert_eq!(raw.packet_type, game::NTF_SEASON_MISSION_INIT);
-        // 2 + 4 + (2 + 57) + (2 + 28) + 4 + 2 + (2 + 3) + 2 = 108.
-        assert_eq!(raw.payload.len(), 108);
-        assert_eq!(&raw.payload[0..8], &[5, 0, 6, 0, 0, 0, 1, 0]);
+        // 4 + (2 + 57) + (2 + 28) + 4 + 2 + (2 + 3) + 2 = 106.
+        assert_eq!(raw.payload.len(), 106);
+        assert_eq!(&raw.payload[0..8], &[6, 0, 0, 0, 1, 0, 1, 0]);
         // Mission head values then the inline condition lead dword.
-        assert_eq!(&raw.payload[8..28], &[1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 4, 0, 0, 0, 5, 0, 0, 0]);
-        assert_eq!(&raw.payload[28..32], &[6, 0, 0, 0]);
-        assert_eq!(&raw.payload[32..60], &[7, 0, 0, 0, 0, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 9, 0, 0, 0, 0, 0, 0, 0, 10, 0, 0, 0]);
-        // Mission tail values, flag, then the standalone condition run.
-        assert_eq!(&raw.payload[60..69], &[11, 0, 0, 0, 12, 1, 0, 21, 0]);
-        assert_eq!(&raw.payload[95..103], &[31, 0, 0, 0, 1, 2, 1, 0]);
-        assert_eq!(&raw.payload[103..108], &[3, 0, 4, 5, 0]);
+        assert_eq!(&raw.payload[10..26], &[2, 0, 0, 0, 3, 0, 0, 0, 4, 0, 0, 0, 5, 0, 0, 0]);
+        assert_eq!(&raw.payload[26..30], &[6, 0, 0, 0]);
+        assert_eq!(&raw.payload[30..62], &[7, 0, 0, 0, 0, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 9, 0, 0, 0, 0, 0, 0, 0, 10, 0, 0, 0, 11, 0, 0, 0]);
+        // Mission flag then the reward-row run: count, lead dword, tail dwords.
+        assert_eq!(&raw.payload[62..65], &[12, 1, 0]);
+        assert_eq!(&raw.payload[65..69], &[21, 0, 0, 0]);
+        assert_eq!(&raw.payload[93..101], &[31, 0, 0, 0, 1, 2, 1, 0]);
+        assert_eq!(&raw.payload[101..106], &[3, 0, 4, 5, 0]);
     }
 
     #[test]
@@ -20832,23 +20942,98 @@ mod sync_1006_preservation {
     }
 
     #[test]
-    fn season_mission_purchase_premium_wraps_process_result_before_conditions() {
+    fn season_mission_purchase_premium_wraps_process_result_before_rewards() {
         let frame = SeasonMissionPurchasePremiumPacket {
             result: 1,
-            flag: 2,
             processed: ProcessResult {
                 rows: Vec::new(),
                 first_value: 3,
                 second_value: 4,
             },
-            conditions: vec![season_mission_condition_fixture()],
+            rewards: vec![season_mission_condition_fixture()],
         }
         .encode();
         let raw = PacketReader::from_frame(&frame).expect("frame should decode");
         assert_eq!(raw.packet_type, game::RES_SEASON_MISSION_PURCHASE_PREMIUM);
-        // 2 + 1 + (2 + 8) + (2 + 28) = 43.
-        assert_eq!(raw.payload.len(), 43);
-        assert_eq!(&raw.payload[..13], &[1, 0, 2, 0, 0, 3, 0, 0, 0, 4, 0, 0, 0]);
-        assert_eq!(&raw.payload[13..15], &[1, 0]);
+        // 1 + (2 + 8) + (2 + 28) = 41.
+        assert_eq!(raw.payload.len(), 41);
+        assert_eq!(&raw.payload[..12], &[1, 0, 0, 3, 0, 0, 0, 4, 0, 0, 0, 1]);
+        assert_eq!(raw.payload[12], 0);
+    }
+
+    fn serialized_row_fixture(seed: u32) -> SerializedItemRow {
+        SerializedItemRow {
+            item: seed,
+            first_word: 1,
+            second_word: 2,
+            first_flag: 3,
+            second_flag: 4,
+            third_flag: 5,
+            fourth_flag: 6,
+            packed_six: [7; 6],
+            packed_three: [8; 3],
+            first_block: [9; 16],
+            second_block: [10; 16],
+            wide_value: 11,
+            third_word: 12,
+            fourth_word: 13,
+            fifth_flag: 14,
+            sixth_flag: 15,
+        }
+    }
+
+    #[test]
+    fn circuit_module_register_opens_with_node_and_closes_with_rows() {
+        let frame = CircuitModuleRegisterPacket {
+            result: 1,
+            node: CircuitModuleNode {
+                word: 2,
+                flag: 3,
+                item: serialized_row_fixture(4),
+            },
+            items: vec![serialized_row_fixture(5)],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_DS_CIRCUIT_MODULE_REGISTER);
+        // 1 + 76 + 2 + 71 = 150.
+        assert_eq!(raw.payload.len(), 150);
+        assert_eq!(&raw.payload[0..6], &[1, 2, 0, 0, 0, 3]);
+        // Row lead dword of the node item comes after the node word, flag and
+        // 71-byte row (the row run's own count follows).
+        assert_eq!(raw.payload[6..11], [4, 0, 0, 0, 1]);
+        assert_eq!(raw.payload[76], 15); // last node-row byte, sixth flag
+        assert_eq!(&raw.payload[77..80], &[1, 0, 5]);
+    }
+
+    #[test]
+    fn circuit_combine_closes_after_three_runs_and_wide_value() {
+        let frame = CircuitCombinePacket {
+            result: 1,
+            ceilings: vec![CircuitCombineEntry {
+                key: 2,
+                value_byte: 3,
+                value_word: 4,
+            }],
+            refs: vec![ItemInfoRow {
+                id: 5,
+                first_word: 6,
+                second_word: 7,
+            }],
+            items: vec![serialized_row_fixture(8)],
+            value: 9,
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_DS_CIRCUIT_COMBINE);
+        // 1 + (2 + 4) + (2 + 8) + (2 + 71) + 8 = 98.
+        assert_eq!(raw.payload.len(), 98);
+        assert_eq!(&raw.payload[0..8], &[1, 1, 0, 2, 3, 4, 0, 1]);
+        // Item ref count followed by the ref row, then item run count.
+        assert_eq!(&raw.payload[8..16], &[0, 5, 0, 0, 0, 6, 0, 7]);
+        assert_eq!(&raw.payload[16..19], &[0, 1, 0]);
+        assert_eq!(&raw.payload[19..24], &[8, 0, 0, 0, 1]);
+        // Trailing wide value is the last eight bytes.
+        assert_eq!(raw.payload[90..=97], [9, 0, 0, 0, 0, 0, 0, 0]);
     }
 }

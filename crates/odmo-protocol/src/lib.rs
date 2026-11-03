@@ -117,6 +117,7 @@ pub use game::{
     SeasonMissionCondition, SeasonMission, SeasonMissionList, SeasonQuestPair, SeasonMissionReward,
     SeasonMissionInitPacket, SeasonMissionUpdatePacket, SeasonMissionSingleRewardPacket,
     SeasonMissionMultiRewardPacket, SeasonMissionPurchasePremiumPacket,
+    CircuitModuleNode, CircuitModuleRegisterPacket, CircuitCombineEntry, CircuitCombinePacket,
     InitDigimonExploreDataPacket, ExploreSlot, ExploreSlotPair,
     ChangeSkinResultPacket, AcquireSkinPacket, TwoWordReplyPacket,
     FlagWordNoticePacket, FlagTwoWordNoticePacket, TwoWordPairPacket, FixedBlockNoticePacket,

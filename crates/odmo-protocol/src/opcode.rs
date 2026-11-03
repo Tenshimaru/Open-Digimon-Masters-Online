@@ -964,6 +964,8 @@ pub mod game {
     pub const RES_DS_CIRCUIT_MODULE_EQUIP: i16 = 4504;
     pub const RES_DS_CIRCUIT_MODULE_MOVE: i16 = 4505;
     pub const RES_DS_CIRCUIT_MODULE_UNEQUIP: i16 = 4506;
+    pub const RES_DS_CIRCUIT_COMBINE: i16 = 4602;
+    pub const RES_DS_CIRCUIT_MODULE_REGISTER: i16 = 4501;
     // Seasonal notices 3507 and 3508 share {u4 value; u8 value; u4 value;
     // u2 value; u8 value; u2 count; count x {u8 value; u2 value}}.
     pub const NTF_SEASON_3507: i16 = 3507;
@@ -983,10 +985,10 @@ pub mod game {
     pub const NOTICE_3308: i16 = 3308;
     // Season mission alert {u2 count; count x u4 value}.
     pub const NTF_SEASON_MISSION_ALERT: i16 = 4401;
-    // Season mission family: 4402 init {init body}; 4403 update {missions;
-    // conditions}; 4404 single reward {24-byte reward row; u1}; 4405 multi
-    // reward {conditions; u1}; 4406 purchase premium {u2; u1; process result;
-    // conditions}.
+    // Season mission family: 4402 init {u4 season; missions; rewards; u4
+    // timer; u1; u1; pairs; u2}; 4403 update {missions; rewards}; 4404 single
+    // reward {24-byte reward row; u1}; 4405 multi reward {rewards; u1}; 4406
+    // purchase premium {u1 result; process result; rewards}.
     pub const NTF_SEASON_MISSION_INIT: i16 = 4402;
     pub const NTF_SEASON_MISSION_UPDATE: i16 = 4403;
     pub const RES_SEASON_MISSION_CLEAR_SINGLE_REWARD: i16 = 4404;
