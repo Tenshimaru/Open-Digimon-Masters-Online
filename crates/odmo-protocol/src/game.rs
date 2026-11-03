@@ -5110,6 +5110,218 @@ impl CountedWordNoticePacket {
     }
 }
 
+/// One season mission condition: twenty-eight bytes {u4; u8; u8; u8}.
+///
+/// The season pass family carries a wider forty-four byte condition; this is
+/// the narrower season mission record and reusing it there would shift every
+/// later field by sixteen bytes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeasonMissionCondition {
+    pub condition: u32,
+    pub first: u64,
+    pub second: u64,
+    pub third: u64,
+}
+
+/// One season mission: {u4 x5; condition; u4 x2; u1 flag}.
+///
+/// The mission reader embeds the twenty-eight byte condition inline; the
+/// surrounding list element is fifty-seven bytes on the wire.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeasonMission {
+    pub head: [u32; 5],
+    pub condition: SeasonMissionCondition,
+    pub tail: [u32; 2],
+    pub flag: u8,
+}
+
+/// The counted mission run shared by 4402 and 4403: {u2 count; count x mission}.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeasonMissionList {
+    pub missions: Vec<SeasonMission>,
+}
+
+/// One keyed quest pair of the 4402 tail: {u2 id; u1 flag}.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeasonQuestPair {
+    pub id: u16,
+    pub flag: u8,
+}
+
+/// One cleared season mission reward: {u4 x3; u1; u1; u4; u4; u1; u1}.
+///
+/// Two dwords sit between the flag pairs, so a reader that assumed all eight
+/// words lead would swap the middle flags with the trailing values.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeasonMissionReward {
+    pub values: [u32; 3],
+    pub first_flag: u8,
+    pub second_flag: u8,
+    pub tail_values: [u32; 2],
+    pub third_flag: u8,
+    pub fourth_flag: u8,
+}
+
+/// Write the counted condition run both 4403 and 4405 embed.
+fn write_season_mission_conditions(writer: &mut PacketWriter, conditions: &[SeasonMissionCondition]) {
+    assert!(
+        conditions.len() <= u16::MAX as usize,
+        "season mission condition count overflows u2"
+    );
+    writer.write_u16(conditions.len() as u16);
+    for condition in conditions {
+        writer.write_u32(condition.condition);
+        writer.write_u64(condition.first);
+        writer.write_u64(condition.second);
+        writer.write_u64(condition.third);
+    }
+}
+
+fn write_season_mission(writer: &mut PacketWriter, mission: &SeasonMission) {
+    for value in &mission.head {
+        writer.write_u32(*value);
+    }
+    writer.write_u32(mission.condition.condition);
+    writer.write_u64(mission.condition.first);
+    writer.write_u64(mission.condition.second);
+    writer.write_u64(mission.condition.third);
+    for value in &mission.tail {
+        writer.write_u32(*value);
+    }
+    writer.write_u8(mission.flag);
+}
+
+fn write_season_mission_list(writer: &mut PacketWriter, list: &SeasonMissionList) {
+    assert!(
+        list.missions.len() <= u16::MAX as usize,
+        "season mission count overflows u2"
+    );
+    writer.write_u16(list.missions.len() as u16);
+    for mission in &list.missions {
+        write_season_mission(writer, mission);
+    }
+}
+
+/// `SeasonMission::Init` - opcode 4402: {u2; u4; missions; conditions; u4;
+/// u1; u1; pairs; u2}.
+///
+/// The pairs and tail word close the body, so a reader that stopped after the
+/// conditions would miss five trailing fields.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeasonMissionInitPacket {
+    pub word: u16,
+    pub value: u32,
+    pub missions: SeasonMissionList,
+    pub conditions: Vec<SeasonMissionCondition>,
+    pub second_value: u32,
+    pub first_flag: u8,
+    pub second_flag: u8,
+    pub pairs: Vec<SeasonQuestPair>,
+    pub tail_word: u16,
+}
+
+impl SeasonMissionInitPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.pairs.len() <= u16::MAX as usize,
+            "season quest pair count overflows u2"
+        );
+        let mut writer = PacketWriter::new(game::NTF_SEASON_MISSION_INIT);
+        writer.write_u16(self.word);
+        writer.write_u32(self.value);
+        write_season_mission_list(&mut writer, &self.missions);
+        write_season_mission_conditions(&mut writer, &self.conditions);
+        writer.write_u32(self.second_value);
+        writer.write_u8(self.first_flag);
+        writer.write_u8(self.second_flag);
+        writer.write_u16(self.pairs.len() as u16);
+        for pair in &self.pairs {
+            writer.write_u16(pair.id);
+            writer.write_u8(pair.flag);
+        }
+        writer.write_u16(self.tail_word);
+        writer.finalize()
+    }
+}
+
+/// `SeasonMission::Update` - opcode 4403: {missions; conditions}.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeasonMissionUpdatePacket {
+    pub missions: SeasonMissionList,
+    pub conditions: Vec<SeasonMissionCondition>,
+}
+
+impl SeasonMissionUpdatePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::NTF_SEASON_MISSION_UPDATE);
+        write_season_mission_list(&mut writer, &self.missions);
+        write_season_mission_conditions(&mut writer, &self.conditions);
+        writer.finalize()
+    }
+}
+
+/// `SeasonMission::ClearSingleReward` - opcode 4404: {reward; u1 flag}.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeasonMissionSingleRewardPacket {
+    pub reward: SeasonMissionReward,
+    pub flag: u8,
+}
+
+impl SeasonMissionSingleRewardPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::RES_SEASON_MISSION_CLEAR_SINGLE_REWARD);
+        for value in &self.reward.values {
+            writer.write_u32(*value);
+        }
+        writer.write_u8(self.reward.first_flag);
+        writer.write_u8(self.reward.second_flag);
+        for value in &self.reward.tail_values {
+            writer.write_u32(*value);
+        }
+        writer.write_u8(self.reward.third_flag);
+        writer.write_u8(self.reward.fourth_flag);
+        writer.write_u8(self.flag);
+        writer.finalize()
+    }
+}
+
+/// `SeasonMission::ClearMultiReward` - opcode 4405: {conditions; u1 flag}.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeasonMissionMultiRewardPacket {
+    pub conditions: Vec<SeasonMissionCondition>,
+    pub flag: u8,
+}
+
+impl SeasonMissionMultiRewardPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::RES_SEASON_MISSION_CLEAR_MULTI_REWARD);
+        write_season_mission_conditions(&mut writer, &self.conditions);
+        writer.write_u8(self.flag);
+        writer.finalize()
+    }
+}
+
+/// `SeasonMission::PurchasePremium` - opcode 4406: {u2 result; u1 flag;
+/// process result; conditions}.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeasonMissionPurchasePremiumPacket {
+    pub result: u16,
+    pub flag: u8,
+    pub processed: ProcessResult,
+    pub conditions: Vec<SeasonMissionCondition>,
+}
+
+impl SeasonMissionPurchasePremiumPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::RES_SEASON_MISSION_PURCHASE_PREMIUM);
+        writer.write_u16(self.result);
+        writer.write_u8(self.flag);
+        write_process_result(&mut writer, &self.processed);
+        write_season_mission_conditions(&mut writer, &self.conditions);
+        writer.finalize()
+    }
+}
+
 /// `Mail::DeleteRun` — one counted run of mail references.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MailDeleteRun {
@@ -20508,5 +20720,135 @@ mod sync_1006_preservation {
         let raw = PacketReader::from_frame(&frame).expect("frame should decode");
         assert_eq!(raw.packet_type, game::RES_SEASON_PASS_GET_MISSION_REWARDS);
         assert_eq!(raw.payload, [1, 0, 2, 3, 0, 0, 0, 4, 0, 5, 0, 0, 0]);
+    }
+
+    fn season_mission_fixture() -> SeasonMission {
+        SeasonMission {
+            head: [1, 2, 3, 4, 5],
+            condition: SeasonMissionCondition {
+                condition: 6,
+                first: 7,
+                second: 8,
+                third: 9,
+            },
+            tail: [10, 11],
+            flag: 12,
+        }
+    }
+
+    fn season_mission_condition_fixture() -> SeasonMissionCondition {
+        SeasonMissionCondition {
+            condition: 21,
+            first: 22,
+            second: 23,
+            third: 24,
+        }
+    }
+
+    #[test]
+    fn season_mission_init_carries_pairs_and_tail_word() {
+        let frame = SeasonMissionInitPacket {
+            word: 5,
+            value: 6,
+            missions: SeasonMissionList {
+                missions: vec![season_mission_fixture()],
+            },
+            conditions: vec![season_mission_condition_fixture()],
+            second_value: 31,
+            first_flag: 1,
+            second_flag: 2,
+            pairs: vec![SeasonQuestPair { id: 3, flag: 4 }],
+            tail_word: 5,
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NTF_SEASON_MISSION_INIT);
+        // 2 + 4 + (2 + 57) + (2 + 28) + 4 + 2 + (2 + 3) + 2 = 108.
+        assert_eq!(raw.payload.len(), 108);
+        assert_eq!(&raw.payload[0..8], &[5, 0, 6, 0, 0, 0, 1, 0]);
+        // Mission head values then the inline condition lead dword.
+        assert_eq!(&raw.payload[8..28], &[1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 4, 0, 0, 0, 5, 0, 0, 0]);
+        assert_eq!(&raw.payload[28..32], &[6, 0, 0, 0]);
+        assert_eq!(&raw.payload[32..60], &[7, 0, 0, 0, 0, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 9, 0, 0, 0, 0, 0, 0, 0, 10, 0, 0, 0]);
+        // Mission tail values, flag, then the standalone condition run.
+        assert_eq!(&raw.payload[60..69], &[11, 0, 0, 0, 12, 1, 0, 21, 0]);
+        assert_eq!(&raw.payload[95..103], &[31, 0, 0, 0, 1, 2, 1, 0]);
+        assert_eq!(&raw.payload[103..108], &[3, 0, 4, 5, 0]);
+    }
+
+    #[test]
+    fn season_mission_update_is_two_counted_runs() {
+        let frame = SeasonMissionUpdatePacket {
+            missions: SeasonMissionList {
+                missions: vec![season_mission_fixture()],
+            },
+            conditions: vec![season_mission_condition_fixture()],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NTF_SEASON_MISSION_UPDATE);
+        // 2 + 57 + 2 + 28 = 89.
+        assert_eq!(raw.payload.len(), 89);
+        assert_eq!(&raw.payload[0..3], &[1, 0, 1]);
+        // Condition run starts after the fifty-seven byte mission row.
+        assert_eq!(&raw.payload[59..65], &[1, 0, 21, 0, 0, 0]);
+    }
+
+    #[test]
+    fn season_mission_single_reward_keeps_flags_nested_between_dwords() {
+        let frame = SeasonMissionSingleRewardPacket {
+            reward: SeasonMissionReward {
+                values: [1, 2, 3],
+                first_flag: 4,
+                second_flag: 5,
+                tail_values: [6, 7],
+                third_flag: 8,
+                fourth_flag: 9,
+            },
+            flag: 10,
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_SEASON_MISSION_CLEAR_SINGLE_REWARD);
+        assert_eq!(
+            raw.payload,
+            [1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 4, 5, 6, 0, 0, 0, 7, 0, 0, 0, 8, 9, 10]
+        );
+    }
+
+    #[test]
+    fn season_mission_multi_reward_is_condition_run_plus_flag() {
+        let frame = SeasonMissionMultiRewardPacket {
+            conditions: vec![season_mission_condition_fixture()],
+            flag: 2,
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_SEASON_MISSION_CLEAR_MULTI_REWARD);
+        // 2 + 28 + 1 = 31.
+        assert_eq!(raw.payload.len(), 31);
+        assert_eq!(&raw.payload[0..2], &[1, 0]);
+        assert_eq!(raw.payload[30], 2);
+    }
+
+    #[test]
+    fn season_mission_purchase_premium_wraps_process_result_before_conditions() {
+        let frame = SeasonMissionPurchasePremiumPacket {
+            result: 1,
+            flag: 2,
+            processed: ProcessResult {
+                rows: Vec::new(),
+                first_value: 3,
+                second_value: 4,
+            },
+            conditions: vec![season_mission_condition_fixture()],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_SEASON_MISSION_PURCHASE_PREMIUM);
+        // 2 + 1 + (2 + 8) + (2 + 28) = 43.
+        assert_eq!(raw.payload.len(), 43);
+        assert_eq!(&raw.payload[..13], &[1, 0, 2, 0, 0, 3, 0, 0, 0, 4, 0, 0, 0]);
+        assert_eq!(&raw.payload[13..15], &[1, 0]);
     }
 }

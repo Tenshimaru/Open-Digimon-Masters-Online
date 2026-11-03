@@ -983,6 +983,15 @@ pub mod game {
     pub const NOTICE_3308: i16 = 3308;
     // Season mission alert {u2 count; count x u4 value}.
     pub const NTF_SEASON_MISSION_ALERT: i16 = 4401;
+    // Season mission family: 4402 init {init body}; 4403 update {missions;
+    // conditions}; 4404 single reward {24-byte reward row; u1}; 4405 multi
+    // reward {conditions; u1}; 4406 purchase premium {u2; u1; process result;
+    // conditions}.
+    pub const NTF_SEASON_MISSION_INIT: i16 = 4402;
+    pub const NTF_SEASON_MISSION_UPDATE: i16 = 4403;
+    pub const RES_SEASON_MISSION_CLEAR_SINGLE_REWARD: i16 = 4404;
+    pub const RES_SEASON_MISSION_CLEAR_MULTI_REWARD: i16 = 4405;
+    pub const RES_SEASON_MISSION_PURCHASE_PREMIUM: i16 = 4406;
     // Season rewards claim: {u1 flag; {u2 count; count x {u2; u1; u1; u1}}}.
     // Season pass family: 3551 details {details; u4; u4}; 3552 purchase exp
     // {u2; u1; exp level; item refs}; 3553 update mission {mission rows; u4};
