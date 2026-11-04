@@ -4846,6 +4846,219 @@ impl PresetDataSavePacket {
     }
 }
 
+/// One save slot trait (`nsPreset::stTraits` reader sub_D19210): {u1 flag;
+/// u2 word; u4 value}.
+///
+/// Seven wire bytes with no padding, so a reader that word-aligned the rows
+/// would land two bytes past every following row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PresetTraitRow {
+    pub flag: u8,
+    pub word: u16,
+    pub value: u32,
+}
+
+/// One equip change (`nsPreset::stEquipChange` reader sub_D18170): {u2 word;
+/// u4; u4; u4; u1 flag}.
+///
+/// Fifteen wire bytes; the trailing flag follows three dwords, so a reader
+/// that grouped the fields as words first would swap flags with values.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PresetEquipChangeRow {
+    pub word: u16,
+    pub item: u32,
+    pub second_value: u32,
+    pub third_value: u32,
+    pub tail_flag: u8,
+}
+
+/// A preset slot record (`nsPreset` record reader sub_D18F60, shared by the
+/// init and sync lists and by the slot-open row): {u1; u1; u1; u4; name
+/// text; trait list}.
+///
+/// The three leading bytes are separate one-byte flags: the reader steps the
+/// cursor once per byte, and although the wire holds the same seven bytes as
+/// `{u2; u1; u4}`, the byte-by-byte split is semantic. The name blob is
+/// {u2 length; bytes} capped at 0x200, and the trait run closes the record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PresetSlotRecord {
+    pub flags: [u8; 3],
+    pub value: u32,
+    pub name: String,
+    pub traits: Vec<PresetTraitRow>,
+}
+
+fn write_preset_trait_rows(writer: &mut PacketWriter, rows: &[PresetTraitRow]) {
+    assert!(
+        rows.len() <= u16::MAX as usize,
+        "preset trait count overflows u2"
+    );
+    writer.write_u16(rows.len() as u16);
+    for row in rows {
+        writer.write_u8(row.flag);
+        writer.write_u16(row.word);
+        writer.write_u32(row.value);
+    }
+}
+
+fn write_preset_equip_change_rows(writer: &mut PacketWriter, rows: &[PresetEquipChangeRow]) {
+    assert!(
+        rows.len() <= u16::MAX as usize,
+        "preset equip change count overflows u2"
+    );
+    writer.write_u16(rows.len() as u16);
+    for row in rows {
+        writer.write_u16(row.word);
+        writer.write_u32(row.item);
+        writer.write_u32(row.second_value);
+        writer.write_u32(row.third_value);
+        writer.write_u8(row.tail_flag);
+    }
+}
+
+fn write_preset_slot_record(writer: &mut PacketWriter, record: &PresetSlotRecord) {
+    assert!(
+        record.traits.len() <= u16::MAX as usize,
+        "preset slot trait count overflows u2"
+    );
+    writer.write_u8(record.flags[0]);
+    writer.write_u8(record.flags[1]);
+    writer.write_u8(record.flags[2]);
+    writer.write_u32(record.value);
+    writer.write_modern_utf8_string(&record.name);
+    write_preset_trait_rows(writer, &record.traits);
+}
+
+/// `Preset::InitData` — opcode 4201: {u2 count; count x slot record}.
+///
+/// The notification carries the slot list and nothing else: no flag precedes
+/// it, unlike the slot-sync reply (fork `RecvPresetInitData` agrees).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PresetInitDataPacket {
+    pub slots: Vec<PresetSlotRecord>,
+}
+
+impl PresetInitDataPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.slots.len() <= u16::MAX as usize,
+            "preset slot count overflows u2"
+        );
+        let mut writer = PacketWriter::new(game::NTF_PRESET_INIT_DATA);
+        writer.write_u16(self.slots.len() as u16);
+        for slot in &self.slots {
+            write_preset_slot_record(&mut writer, slot);
+        }
+        writer.finalize()
+    }
+}
+
+/// `Preset::SlotSync` — opcode 4202: {u1 flag; u2 count; count x slot
+/// record}.
+///
+/// The sync flag opens the body and the empty-list case still carries it,
+/// which is how the reply distinguishes a clear from a refresh.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PresetSlotSyncPacket {
+    pub flag: u8,
+    pub slots: Vec<PresetSlotRecord>,
+}
+
+impl PresetSlotSyncPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.slots.len() <= u16::MAX as usize,
+            "preset slot count overflows u2"
+        );
+        let mut writer = PacketWriter::new(game::RES_PRESET_SLOT_SYNC);
+        writer.write_u8(self.flag);
+        writer.write_u16(self.slots.len() as u16);
+        for slot in &self.slots {
+            write_preset_slot_record(&mut writer, slot);
+        }
+        writer.finalize()
+    }
+}
+
+/// `Preset::SlotOpen` — opcode 4203: {u1 result; slot record; process
+/// result}.
+///
+/// The opened slot record closes with its own trait run before the process
+/// result begins, so the run count belongs to the record, not to the packet.
+/// The fork has no reader for this reply; the shape comes from the dump
+/// parser sub_D17430 alone.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PresetSlotOpenPacket {
+    pub result: u8,
+    pub slot: PresetSlotRecord,
+    pub processed: ProcessResult,
+}
+
+impl PresetSlotOpenPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::RES_PRESET_SLOT_OPEN);
+        writer.write_u8(self.result);
+        write_preset_slot_record(&mut writer, &self.slot);
+        write_process_result(&mut writer, &self.processed);
+        writer.finalize()
+    }
+}
+
+/// `Preset::DataApply` — opcode 4205: {u1 flag; u1 flag; u2 count;
+/// count x item row; trait run; equip-change run}.
+///
+/// The two counted runs trailing the item rows belong to different record
+/// widths (7 and 15 bytes), so a single opaque width would misread both.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PresetDataApplyPacket {
+    pub flag: u8,
+    pub second_flag: u8,
+    pub items: Vec<SerializedItemRow>,
+    pub traits: Vec<PresetTraitRow>,
+    pub equip_changes: Vec<PresetEquipChangeRow>,
+}
+
+impl PresetDataApplyPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.items.len() <= u16::MAX as usize,
+            "preset apply item count overflows u2"
+        );
+        let mut writer = PacketWriter::new(game::RES_PRESET_DATA_APPLY);
+        writer.write_u8(self.flag);
+        writer.write_u8(self.second_flag);
+        writer.write_u16(self.items.len() as u16);
+        for item in &self.items {
+            item.encode_into(&mut writer);
+        }
+        write_preset_trait_rows(&mut writer, &self.traits);
+        write_preset_equip_change_rows(&mut writer, &self.equip_changes);
+        writer.finalize()
+    }
+}
+
+/// `OtherTamer::EquipsUpdatePreset` — opcode 4206: {u8 tamer id; u1 flag;
+/// u2 count; count x equip-change row}.
+///
+/// The wide tamer id opens the body; the fork's consumer reads the same
+/// order and the fifteen-byte rows close it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OtherTamerEquipsUpdatePresetPacket {
+    pub tamer_uid: u64,
+    pub flag: u8,
+    pub equip_changes: Vec<PresetEquipChangeRow>,
+}
+
+impl OtherTamerEquipsUpdatePresetPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::NTF_OTHER_TAMER_EQUIPS_UPDATE_PRESET);
+        writer.write_u64(self.tamer_uid);
+        writer.write_u8(self.flag);
+        write_preset_equip_change_rows(&mut writer, &self.equip_changes);
+        writer.finalize()
+    }
+}
+
 /// `Breakthrough::Result` — opcodes 3673 and 3674: {u4 value; u2 count;
 /// count x item row; u4 tail[0..2]}.
 ///
@@ -13544,6 +13757,147 @@ mod tests {
         let raw = PacketReader::from_frame(&frame).expect("frame should decode");
         assert_eq!(raw.packet_type, game::RES_PRESET_DATA_SAVE);
         assert_eq!(raw.payload, [1u8, 2, 0, 0]);
+    }
+
+    fn preset_item_row_fixture() -> SerializedItemRow {
+        SerializedItemRow {
+            item: 4,
+            first_word: 1,
+            second_word: 2,
+            first_flag: 3,
+            second_flag: 4,
+            third_flag: 5,
+            fourth_flag: 6,
+            packed_six: [7; 6],
+            packed_three: [8; 3],
+            first_block: [9; 16],
+            second_block: [10; 16],
+            wide_value: 11,
+            third_word: 12,
+            fourth_word: 13,
+            fifth_flag: 14,
+            sixth_flag: 15,
+        }
+    }
+
+    fn preset_equip_change_fixture() -> PresetEquipChangeRow {
+        PresetEquipChangeRow {
+            word: 5,
+            item: 6,
+            second_value: 7,
+            third_value: 8,
+            tail_flag: 9,
+        }
+    }
+
+    fn preset_record_fixture() -> PresetSlotRecord {
+        PresetSlotRecord {
+            flags: [1, 2, 3],
+            value: 4,
+            name: "abc".to_string(),
+            traits: vec![PresetTraitRow {
+                flag: 6,
+                word: 7,
+                value: 8,
+            }],
+        }
+    }
+
+    #[test]
+    fn preset_init_data_carries_bare_slot_record_list() {
+        let frame = PresetInitDataPacket {
+            slots: vec![preset_record_fixture()],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NTF_PRESET_INIT_DATA);
+        // 2 + (3 + 4 + 5 + 2 + 7) = 23.
+        assert_eq!(raw.payload.len(), 23);
+        assert_eq!(raw.payload[0..2], [1, 0]);
+        assert_eq!(raw.payload[2..17], [1, 2, 3, 4, 0, 0, 0, 3, 0, b'a', b'b', b'c', 1, 0, 6]);
+        assert_eq!(raw.payload[17..23], [7, 0, 8, 0, 0, 0]);
+    }
+
+    #[test]
+    fn preset_slot_sync_leads_with_flag_before_records() {
+        let frame = PresetSlotSyncPacket {
+            flag: 2,
+            slots: vec![preset_record_fixture()],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_PRESET_SLOT_SYNC);
+        assert_eq!(raw.payload.len(), 24);
+        assert_eq!(raw.payload[0..3], [2, 1, 0]);
+    }
+
+    #[test]
+    fn preset_slot_open_closes_with_process_result_after_trait_run() {
+        let frame = PresetSlotOpenPacket {
+            result: 7,
+            slot: preset_record_fixture(),
+            processed: ProcessResult {
+                rows: Vec::new(),
+                first_value: 3,
+                second_value: 4,
+            },
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_PRESET_SLOT_OPEN);
+        // 1 + 21 + (2 + 8) = 32.
+        assert_eq!(raw.payload.len(), 32);
+        assert_eq!(raw.payload[0], 7);
+        assert_eq!(raw.payload[1..16], [1, 2, 3, 4, 0, 0, 0, 3, 0, b'a', b'b', b'c', 1, 0, 6]);
+        // The trait run finishes the record; the process result word pair follows.
+        assert_eq!(raw.payload[16..22], [7, 0, 8, 0, 0, 0]);
+        assert_eq!(raw.payload[22..32], [0, 0, 3, 0, 0, 0, 4, 0, 0, 0]);
+    }
+
+    #[test]
+    fn preset_data_apply_orders_items_traits_then_equip_changes() {
+        let frame = PresetDataApplyPacket {
+            flag: 1,
+            second_flag: 2,
+            items: vec![preset_item_row_fixture()],
+            traits: vec![PresetTraitRow {
+                flag: 6,
+                word: 7,
+                value: 8,
+            }],
+            equip_changes: vec![preset_equip_change_fixture()],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_PRESET_DATA_APPLY);
+        // 1 + 1 + 2 + 71 + (2 + 7) + (2 + 15) = 101.
+        assert_eq!(raw.payload.len(), 101);
+        assert_eq!(raw.payload[0..4], [1, 2, 1, 0]);
+        assert_eq!(raw.payload[4], 4); // item row lead dword
+        // The trait run count sits right behind the 71-byte item row.
+        assert_eq!(raw.payload[75..79], [1, 0, 6, 7]);
+        // Then the equip-change run closes.
+        assert_eq!(raw.payload[84..88], [1, 0, 5, 0]);
+        assert_eq!(raw.payload[86..101], [5, 0, 6, 0, 0, 0, 7, 0, 0, 0, 8, 0, 0, 0, 9]);
+    }
+
+    #[test]
+    fn other_tamer_equips_update_leads_with_wide_uid() {
+        let frame = OtherTamerEquipsUpdatePresetPacket {
+            tamer_uid: 1,
+            flag: 2,
+            equip_changes: vec![preset_equip_change_fixture()],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NTF_OTHER_TAMER_EQUIPS_UPDATE_PRESET);
+        // 8 + 1 + 2 + 15 = 26.
+        assert_eq!(raw.payload.len(), 26);
+        assert_eq!(
+            raw.payload[0..11],
+            [1, 0, 0, 0, 0, 0, 0, 0, 2, 1, 0]
+        );
+        assert_eq!(raw.payload[11..26], [5, 0, 6, 0, 0, 0, 7, 0, 0, 0, 8, 0, 0, 0, 9]);
     }
 
     #[test]

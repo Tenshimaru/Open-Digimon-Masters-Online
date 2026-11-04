@@ -1065,6 +1065,15 @@ pub mod game {
     pub const NTF_STRING_3309: i16 = 3309;
     // Preset data save result: {u1 flag; u1 flag; counted item list}.
     pub const RES_PRESET_DATA_SAVE: i16 = 4204;
+    // Preset family: init {slot records}; sync {u1 flag; slot records};
+    // slot open {u1 result; record + traits; process result}; apply {u1; u1;
+    // item rows; traits; equip changes}; other tamer equip update {u8; u1;
+    // equip changes}.
+    pub const NTF_PRESET_INIT_DATA: i16 = 4201;
+    pub const RES_PRESET_SLOT_SYNC: i16 = 4202;
+    pub const RES_PRESET_SLOT_OPEN: i16 = 4203;
+    pub const RES_PRESET_DATA_APPLY: i16 = 4205;
+    pub const NTF_OTHER_TAMER_EQUIPS_UPDATE_PRESET: i16 = 4206;
     // {u4 value; u8 value; u1 flag; u2 count; count x 69-byte row}.
     pub const NOTICE_16038: i16 = 16038;
     pub const RES_REDUCE_DIGIMON_EXPLORE_TIME: i16 = 5357;
