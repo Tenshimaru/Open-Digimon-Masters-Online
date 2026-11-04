@@ -5059,6 +5059,73 @@ impl OtherTamerEquipsUpdatePresetPacket {
     }
 }
 
+/// `Mail::Detail` — opcode 16051: {u4 result; u8 mail id; u2 type; title
+/// text; u8 value; u2 count; count x item row}.
+///
+/// The item rows are the shared seventy-one-byte `SerializedItemRow` wire,
+/// not a mail-specific record: the fork's `nsMail::sItemData` pops the same
+/// byte offsets field-for-field.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MailDetailPacket {
+    pub result: u32,
+    pub mail_id: u64,
+    pub mail_type: u16,
+    pub title: String,
+    pub field_value: u64,
+    pub items: Vec<SerializedItemRow>,
+}
+
+impl MailDetailPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.items.len() <= u16::MAX as usize,
+            "mail detail item count overflows u2"
+        );
+        let mut writer = PacketWriter::new(game::RES_MAIL_DETAIL);
+        writer.write_u32(self.result);
+        writer.write_u64(self.mail_id);
+        writer.write_u16(self.mail_type);
+        writer.write_modern_utf8_string(&self.title);
+        writer.write_u64(self.field_value);
+        writer.write_u16(self.items.len() as u16);
+        for item in &self.items {
+            item.encode_into(&mut writer);
+        }
+        writer.finalize()
+    }
+}
+
+/// `Mail::Send` — opcode 16052: {u4 result; u8 purse; u2 count; count x
+/// item reference}.
+///
+/// The eight-byte reference row is the same `ItemInfoRow` the circuit
+/// combine reply carries, so the mail reply must not grow a fourth field.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MailSendPacket {
+    pub result: u32,
+    pub money: u64,
+    pub refs: Vec<ItemInfoRow>,
+}
+
+impl MailSendPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.refs.len() <= u16::MAX as usize,
+            "mail send reference count overflows u2"
+        );
+        let mut writer = PacketWriter::new(game::RES_MAIL_SEND);
+        writer.write_u32(self.result);
+        writer.write_u64(self.money);
+        writer.write_u16(self.refs.len() as u16);
+        for info in &self.refs {
+            writer.write_u32(info.id);
+            writer.write_u16(info.first_word);
+            writer.write_u16(info.second_word);
+        }
+        writer.finalize()
+    }
+}
+
 /// `Breakthrough::Result` — opcodes 3673 and 3674: {u4 value; u2 count;
 /// count x item row; u4 tail[0..2]}.
 ///
@@ -13898,6 +13965,49 @@ mod tests {
             [1, 0, 0, 0, 0, 0, 0, 0, 2, 1, 0]
         );
         assert_eq!(raw.payload[11..26], [5, 0, 6, 0, 0, 0, 7, 0, 0, 0, 8, 0, 0, 0, 9]);
+    }
+
+    #[test]
+    fn mail_detail_interleaves_text_and_wide_values_before_rows() {
+        let frame = MailDetailPacket {
+            result: 1,
+            mail_id: 2,
+            mail_type: 3,
+            title: "abc".to_string(),
+            field_value: 7,
+            items: vec![preset_item_row_fixture()],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_MAIL_DETAIL);
+        // 4 + 8 + 2 + 5 + 8 + 2 + 71 = 100.
+        assert_eq!(raw.payload.len(), 100);
+        assert_eq!(raw.payload[0..14], [1, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 3, 0]);
+        assert_eq!(raw.payload[14..16], [3, 0]);
+        assert_eq!(raw.payload[16..19], [b'a', b'b', b'c']);
+        assert_eq!(raw.payload[19..30], [7, 0, 0, 0, 0, 0, 0, 0, 1, 0, 4]);
+        // The item row trails the record and counts.
+        assert_eq!(raw.payload[99], 15); // last item-row byte, sixth flag
+    }
+
+    #[test]
+    fn mail_send_closes_with_eight_byte_references() {
+        let frame = MailSendPacket {
+            result: 1,
+            money: 2,
+            refs: vec![ItemInfoRow {
+                id: 5,
+                first_word: 6,
+                second_word: 7,
+            }],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_MAIL_SEND);
+        // 4 + 8 + 2 + 8 = 22.
+        assert_eq!(raw.payload.len(), 22);
+        assert_eq!(raw.payload[0..14], [1, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 1, 0]);
+        assert_eq!(raw.payload[14..22], [5, 0, 0, 0, 6, 0, 7, 0]);
     }
 
     #[test]

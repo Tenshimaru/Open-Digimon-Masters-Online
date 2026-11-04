@@ -1074,6 +1074,10 @@ pub mod game {
     pub const RES_PRESET_SLOT_OPEN: i16 = 4203;
     pub const RES_PRESET_DATA_APPLY: i16 = 4205;
     pub const NTF_OTHER_TAMER_EQUIPS_UPDATE_PRESET: i16 = 4206;
+    // Mail replies: detail {u4; u8; u2; title; u8; 71B rows} and send
+    // {u4 result; u8 purse; 8B refs}.
+    pub const RES_MAIL_DETAIL: i16 = 16051;
+    pub const RES_MAIL_SEND: i16 = 16052;
     // {u4 value; u8 value; u1 flag; u2 count; count x 69-byte row}.
     pub const NOTICE_16038: i16 = 16038;
     pub const RES_REDUCE_DIGIMON_EXPLORE_TIME: i16 = 5357;

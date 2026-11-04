@@ -99,7 +99,7 @@ pub use game::{
     BreakthroughResultPacket, PresetDataSavePacket, FixedRowNoticePacket,
     PresetTraitRow, PresetEquipChangeRow, PresetSlotRecord, PresetInitDataPacket,
     PresetSlotSyncPacket, PresetSlotOpenPacket, PresetDataApplyPacket,
-    OtherTamerEquipsUpdatePresetPacket,
+    OtherTamerEquipsUpdatePresetPacket, MailDetailPacket, MailSendPacket,
     AdvertBossCreatePacket, SeasonRewardPacket, SeasonRewardRow,
     CircuitModuleExtractPacket,
     CircuitModuleSyncPacket, CircuitModuleRow,
