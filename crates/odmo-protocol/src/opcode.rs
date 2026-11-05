@@ -951,6 +951,14 @@ pub mod game {
     // Ranking stage clear notice {u2 stage; u1 flag; u4 value; u4 value;
     // u2 value}.
     pub const NTF_RANKING_STAGE_CLEAR: i16 = 14059;
+    // Dungeon ranking family: board open {u2 count; count x 25-byte
+    // schedule}; my score {u1 flag; u4 value; six dwords}; my record
+    // {u4 value; u2 count; count x {name; u4; u4}}; board list {u1 flag;
+    // u4; u4; six dwords; u2 count; count x {u1; text; text; u4; u1}}.
+    pub const RES_OPEN_RANKING_BOARD: i16 = 14050;
+    pub const RES_RANKING_MY_SCORE: i16 = 14051;
+    pub const NTF_MY_RANKING_RECORD: i16 = 14052;
+    pub const NTF_RANKING_LIST: i16 = 14053;
     // Mail delete result: two counted runs, each {u2 count; count x {u4; u4}}.
     pub const RES_MAIL_DELETE: i16 = 16054;
     // Sync verification result {u2 count; count x u4 value}.

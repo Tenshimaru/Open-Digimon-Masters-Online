@@ -100,6 +100,8 @@ pub use game::{
     PresetTraitRow, PresetEquipChangeRow, PresetSlotRecord, PresetInitDataPacket,
     PresetSlotSyncPacket, PresetSlotOpenPacket, PresetDataApplyPacket,
     OtherTamerEquipsUpdatePresetPacket, MailDetailPacket, MailSendPacket,
+    RankingScheduleRow, RankingScoreFrame, RankingBoardOpenPacket, RankingMyScorePacket,
+    RankingRecordRow, RankingMyRecordPacket, RankingListEntryRow, RankingListPacket,
     AdvertBossCreatePacket, SeasonRewardPacket, SeasonRewardRow,
     CircuitModuleExtractPacket,
     CircuitModuleSyncPacket, CircuitModuleRow,

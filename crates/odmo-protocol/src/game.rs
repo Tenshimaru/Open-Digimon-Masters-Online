@@ -5126,6 +5126,162 @@ impl MailSendPacket {
     }
 }
 
+/// One dungeon ranking schedule row — opcode 14050 body element:
+/// {u4 x6; u1 tail}, twenty-five wire bytes.
+///
+/// The six dwords ride as an opaque run: their scalar meanings are not
+/// resolved for this build, so they must not be split, reordered, or
+/// merged into wider values.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RankingScheduleRow {
+    pub fields: [u32; 6],
+    pub tail: u8,
+}
+
+/// One dungeon ranking score frame — the six-dword record carried
+/// inline by the my-score reply (14051) and the my-record and board list
+/// messages (14052 has none; 14053 embeds it).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RankingScoreFrame {
+    pub scores: [u32; 6],
+}
+
+fn write_ranking_score_frame(writer: &mut PacketWriter, frame: &RankingScoreFrame) {
+    for score in &frame.scores {
+        writer.write_u32(*score);
+    }
+}
+
+/// `Ranking::OpenBoard` — opcode 14050: {u2 count; count x schedule
+/// row}.
+///
+/// The count alone opens the body; an empty board is a bare zero word.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RankingBoardOpenPacket {
+    pub schedules: Vec<RankingScheduleRow>,
+}
+
+impl RankingBoardOpenPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.schedules.len() <= u16::MAX as usize,
+            "ranking schedule count overflows u2"
+        );
+        let mut writer = PacketWriter::new(game::RES_OPEN_RANKING_BOARD);
+        writer.write_u16(self.schedules.len() as u16);
+        for row in &self.schedules {
+            for field in &row.fields {
+                writer.write_u32(*field);
+            }
+            writer.write_u8(row.tail);
+        }
+        writer.finalize()
+    }
+}
+
+/// `Ranking::MyScore` — opcode 14051: {u1 flag; u4 value; score frame}.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RankingMyScorePacket {
+    pub flag: u8,
+    pub value: u32,
+    pub scores: RankingScoreFrame,
+}
+
+impl RankingMyScorePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::RES_RANKING_MY_SCORE);
+        writer.write_u8(self.flag);
+        writer.write_u32(self.value);
+        write_ranking_score_frame(&mut writer, &self.scores);
+        writer.finalize()
+    }
+}
+
+/// One my-record row — opcode 14052 list element: {name text; u4; u4}.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RankingRecordRow {
+    pub name: String,
+    pub first_value: u32,
+    pub second_value: u32,
+}
+
+/// `Ranking::MyRecord` — opcode 14052: {u4 value; u2 count; count x
+/// record row}.
+///
+/// The dword precedes the count, so a reader that jumped straight to the
+/// list would eat the value as a row-count word.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RankingMyRecordPacket {
+    pub value: u32,
+    pub records: Vec<RankingRecordRow>,
+}
+
+impl RankingMyRecordPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.records.len() <= u16::MAX as usize,
+            "ranking record count overflows u2"
+        );
+        let mut writer = PacketWriter::new(game::NTF_MY_RANKING_RECORD);
+        writer.write_u32(self.value);
+        writer.write_u16(self.records.len() as u16);
+        for row in &self.records {
+            writer.write_modern_utf8_string(&row.name);
+            writer.write_u32(row.first_value);
+            writer.write_u32(row.second_value);
+        }
+        writer.finalize()
+    }
+}
+
+/// One board entry row — opcode 14053 list element: {u1 head; text;
+/// text; u4 value; u1 tail}.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RankingListEntryRow {
+    pub head: u8,
+    pub first_text: String,
+    pub second_text: String,
+    pub value: u32,
+    pub tail: u8,
+}
+
+/// `Ranking::List` — opcode 14053: {u1 flag; u4; u4; score frame; u2
+/// count; count x entry row}.
+///
+/// The score frame closes the header before the counted entries, so the
+/// header bytes must not be merged with the list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RankingListPacket {
+    pub flag: u8,
+    pub first_value: u32,
+    pub second_value: u32,
+    pub scores: RankingScoreFrame,
+    pub entries: Vec<RankingListEntryRow>,
+}
+
+impl RankingListPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.entries.len() <= u16::MAX as usize,
+            "ranking list entry count overflows u2"
+        );
+        let mut writer = PacketWriter::new(game::NTF_RANKING_LIST);
+        writer.write_u8(self.flag);
+        writer.write_u32(self.first_value);
+        writer.write_u32(self.second_value);
+        write_ranking_score_frame(&mut writer, &self.scores);
+        writer.write_u16(self.entries.len() as u16);
+        for row in &self.entries {
+            writer.write_u8(row.head);
+            writer.write_modern_utf8_string(&row.first_text);
+            writer.write_modern_utf8_string(&row.second_text);
+            writer.write_u32(row.value);
+            writer.write_u8(row.tail);
+        }
+        writer.finalize()
+    }
+}
+
 /// `Breakthrough::Result` — opcodes 3673 and 3674: {u4 value; u2 count;
 /// count x item row; u4 tail[0..2]}.
 ///
@@ -14008,6 +14164,127 @@ mod tests {
         assert_eq!(raw.payload.len(), 22);
         assert_eq!(raw.payload[0..14], [1, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 1, 0]);
         assert_eq!(raw.payload[14..22], [5, 0, 0, 0, 6, 0, 7, 0]);
+    }
+
+    #[test]
+    fn ranking_board_open_walks_fixed_schedule_rows() {
+        let frame = RankingBoardOpenPacket {
+            schedules: vec![RankingScheduleRow {
+                fields: [1, 2, 3, 4, 5, 6],
+                tail: 7,
+            }],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_OPEN_RANKING_BOARD);
+        // 2 + 25 = 27.
+        assert_eq!(raw.payload.len(), 27);
+        assert_eq!(
+            raw.payload,
+            [
+                1u8, 0, // count
+                1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 4, 0, 0, 0, 5, 0, 0, 0,
+                6, 0, 0, 0, 7, // row
+            ]
+        );
+    }
+
+    #[test]
+    fn ranking_my_score_leads_with_flag_and_value() {
+        let frame = RankingMyScorePacket {
+            flag: 1,
+            value: 2,
+            scores: RankingScoreFrame {
+                scores: [3, 4, 5, 6, 7, 8],
+            },
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_RANKING_MY_SCORE);
+        // 1 + 4 + 24 = 29.
+        assert_eq!(raw.payload.len(), 29);
+        assert_eq!(
+            raw.payload,
+            [
+                1u8, 2, 0, 0, 0, 3, 0, 0, 0, 4, 0, 0, 0, 5, 0, 0, 0, 6, 0,
+                0, 0, 7, 0, 0, 0, 8, 0, 0, 0,
+            ]
+        );
+    }
+
+    #[test]
+    fn ranking_my_record_precedes_the_count_with_a_dword() {
+        let frame = RankingMyRecordPacket {
+            value: 1,
+            records: vec![
+                RankingRecordRow {
+                    name: "a".to_string(),
+                    first_value: 2,
+                    second_value: 3,
+                },
+                RankingRecordRow {
+                    name: "bc".to_string(),
+                    first_value: 4,
+                    second_value: 5,
+                },
+            ],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NTF_MY_RANKING_RECORD);
+        // 4 + 2 + (2 + 1 + 8) + (2 + 2 + 8) = 29.
+        assert_eq!(raw.payload.len(), 29);
+        assert_eq!(raw.payload[0..6], [1, 0, 0, 0, 2, 0]);
+        assert_eq!(raw.payload[6..17], [1, 0, b'a', 2, 0, 0, 0, 3, 0, 0, 0]);
+        assert_eq!(raw.payload[17..29], [2, 0, b'b', b'c', 4, 0, 0, 0, 5, 0, 0, 0]);
+    }
+
+    #[test]
+    fn ranking_list_header_carries_score_frame_before_entries() {
+        let frame = RankingListPacket {
+            flag: 1,
+            first_value: 2,
+            second_value: 3,
+            scores: RankingScoreFrame {
+                scores: [4, 5, 6, 7, 8, 9],
+            },
+            entries: vec![
+                RankingListEntryRow {
+                    head: 1,
+                    first_text: "ab".to_string(),
+                    second_text: "cd".to_string(),
+                    value: 2,
+                    tail: 3,
+                },
+                RankingListEntryRow {
+                    head: 4,
+                    first_text: "e".to_string(),
+                    second_text: "f".to_string(),
+                    value: 5,
+                    tail: 6,
+                },
+            ],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NTF_RANKING_LIST);
+        // (1 + 4 + 4 + 24) + 2 + (1 + 4 + 4 + 4 + 1) + (1 + 3 + 3 + 4 + 1) = 61.
+        assert_eq!(raw.payload.len(), 61);
+        assert_eq!(raw.payload[0], 1);
+        assert_eq!(raw.payload[1..9], [2, 0, 0, 0, 3, 0, 0, 0]);
+        assert_eq!(
+            raw.payload[9..33],
+            [4, 0, 0, 0, 5, 0, 0, 0, 6, 0, 0, 0, 7, 0, 0, 0, 8, 0, 0, 0, 9, 0, 0, 0]
+        );
+        assert_eq!(raw.payload[33..35], [2, 0]);
+        assert_eq!(
+            raw.payload[35..49],
+            [1, 2, 0, b'a', b'b', 2, 0, b'c', b'd', 2, 0, 0, 0, 3]
+        );
+        assert_eq!(
+            raw.payload[49..61],
+            [4, 1, 0, b'e', 1, 0, b'f', 5, 0, 0, 0, 6]
+        );
     }
 
     #[test]
