@@ -5282,6 +5282,68 @@ impl RankingListPacket {
     }
 }
 
+/// One dungeon enter count info — the twelve-byte element shared by the
+/// list notice (14100) and the update notice (14101): {u4 x3}.
+///
+/// The three dwords stay an opaque run: which one is the dungeon key and
+/// which is the consumed count is not resolved for this build, so the
+/// order must not be rearranged.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DungeonEnterCountRow {
+    pub fields: [u32; 3],
+}
+
+fn write_dungeon_enter_count_row(writer: &mut PacketWriter, row: &DungeonEnterCountRow) {
+    for field in &row.fields {
+        writer.write_u32(*field);
+    }
+}
+
+/// `Dungeon Renewal` enter count list — opcode 14100: {u2 count; count x
+/// info row}.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DungeonEnterCountListPacket {
+    pub rows: Vec<DungeonEnterCountRow>,
+}
+
+impl DungeonEnterCountListPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.rows.len() <= u16::MAX as usize,
+            "dungeon enter count list overflows u2"
+        );
+        let mut writer = PacketWriter::new(game::NTF_DUNGEON_ENTER_COUNT_LIST);
+        writer.write_u16(self.rows.len() as u16);
+        for row in &self.rows {
+            write_dungeon_enter_count_row(&mut writer, row);
+        }
+        writer.finalize()
+    }
+}
+
+/// `Dungeon Renewal` enter count update — opcode 14101: {u4; u4; info
+/// row}.
+///
+/// Two leading dwords precede the record; their use is not resolved, but
+/// both are wire fields and an implementation that skips either one
+/// misreads the whole body.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DungeonEnterCountUpdatePacket {
+    pub first_value: u32,
+    pub second_value: u32,
+    pub info: DungeonEnterCountRow,
+}
+
+impl DungeonEnterCountUpdatePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::NTF_DUNGEON_ENTER_COUNT_UPDATE);
+        writer.write_u32(self.first_value);
+        writer.write_u32(self.second_value);
+        write_dungeon_enter_count_row(&mut writer, &self.info);
+        writer.finalize()
+    }
+}
+
 /// `Breakthrough::Result` — opcodes 3673 and 3674: {u4 value; u2 count;
 /// count x item row; u4 tail[0..2]}.
 ///
@@ -14284,6 +14346,37 @@ mod tests {
         assert_eq!(
             raw.payload[49..61],
             [4, 1, 0, b'e', 1, 0, b'f', 5, 0, 0, 0, 6]
+        );
+    }
+
+    #[test]
+    fn dungeon_enter_count_list_walks_twelve_byte_rows() {
+        let frame = DungeonEnterCountListPacket {
+            rows: vec![DungeonEnterCountRow { fields: [1, 2, 3] }],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NTF_DUNGEON_ENTER_COUNT_LIST);
+        // 2 + 12 = 14.
+        assert_eq!(raw.payload, [1u8, 0, 1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0]);
+    }
+
+    #[test]
+    fn dungeon_enter_count_update_precedes_record_with_two_dwords() {
+        let frame = DungeonEnterCountUpdatePacket {
+            first_value: 1,
+            second_value: 2,
+            info: DungeonEnterCountRow { fields: [3, 4, 5] },
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NTF_DUNGEON_ENTER_COUNT_UPDATE);
+        // 4 + 4 + 12 = 20.
+        assert_eq!(
+            raw.payload,
+            [
+                1u8, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 4, 0, 0, 0, 5, 0, 0, 0
+            ]
         );
     }
 

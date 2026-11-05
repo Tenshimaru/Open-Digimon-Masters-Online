@@ -959,6 +959,10 @@ pub mod game {
     pub const RES_RANKING_MY_SCORE: i16 = 14051;
     pub const NTF_MY_RANKING_RECORD: i16 = 14052;
     pub const NTF_RANKING_LIST: i16 = 14053;
+    // Dungeon enter counts: list {u2 count; count x 12-byte info} and
+    // update {u4; u4; 12-byte info}.
+    pub const NTF_DUNGEON_ENTER_COUNT_LIST: i16 = 14100;
+    pub const NTF_DUNGEON_ENTER_COUNT_UPDATE: i16 = 14101;
     // Mail delete result: two counted runs, each {u2 count; count x {u4; u4}}.
     pub const RES_MAIL_DELETE: i16 = 16054;
     // Sync verification result {u2 count; count x u4 value}.

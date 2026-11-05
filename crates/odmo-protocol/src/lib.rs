@@ -102,6 +102,7 @@ pub use game::{
     OtherTamerEquipsUpdatePresetPacket, MailDetailPacket, MailSendPacket,
     RankingScheduleRow, RankingScoreFrame, RankingBoardOpenPacket, RankingMyScorePacket,
     RankingRecordRow, RankingMyRecordPacket, RankingListEntryRow, RankingListPacket,
+    DungeonEnterCountRow, DungeonEnterCountListPacket, DungeonEnterCountUpdatePacket,
     AdvertBossCreatePacket, SeasonRewardPacket, SeasonRewardRow,
     CircuitModuleExtractPacket,
     CircuitModuleSyncPacket, CircuitModuleRow,
