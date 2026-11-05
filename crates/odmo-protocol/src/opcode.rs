@@ -963,6 +963,10 @@ pub mod game {
     // update {u4; u4; 12-byte info}.
     pub const NTF_DUNGEON_ENTER_COUNT_LIST: i16 = 14100;
     pub const NTF_DUNGEON_ENTER_COUNT_UPDATE: i16 = 14101;
+    // Gotcha machine draw result: {u4 result; result==0 then {u8 money;
+    // u1 count; count x {u4; u2; u2; u1; u1}; u1 bonus flag; flag==1 then
+    // three u8 pairs}}.
+    pub const RES_GOTCHA_MACHINE_ITEM: i16 = 3989;
     // Mail delete result: two counted runs, each {u2 count; count x {u4; u4}}.
     pub const RES_MAIL_DELETE: i16 = 16054;
     // Sync verification result {u2 count; count x u4 value}.

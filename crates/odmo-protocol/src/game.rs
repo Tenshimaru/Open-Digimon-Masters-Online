@@ -5344,6 +5344,78 @@ impl DungeonEnterCountUpdatePacket {
     }
 }
 
+/// One gotcha machine item row — opcode 3989 list element: {u4 item;
+/// u2 slot; u2 count; u1 rate; u1 flag}, ten wire bytes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GotchaMachineRow {
+    pub item: u32,
+    pub slot: u16,
+    pub count: u16,
+    pub rate: u8,
+    pub flag: u8,
+}
+
+/// The body of a successful gotcha machine draw — opcode 3989 reads it
+/// whole when the leading result is zero.
+///
+/// The three bonus u8-pairs ride only behind a bonus flag of one; the
+/// empty pair case is the ordinary no-bonus draw.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GotchaMachineDetail {
+    pub money: u64,
+    pub rows: Vec<GotchaMachineRow>,
+    pub bonus_flag: u8,
+    pub bonuses: Option<[u64; 3]>,
+}
+
+/// `Gotcha` machine item result — opcode 3989: {u4 result; result == 0
+/// then detail}.
+///
+/// A nonzero result closes the body bare: no rows, money, or bonuses
+/// exist behind a failure word, and readers that walk the detail on a
+/// failure trail misaligned garbage.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GotchaMachineItemResultPacket {
+    pub result: u32,
+    pub detail: Option<GotchaMachineDetail>,
+}
+
+impl GotchaMachineItemResultPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        if let Some(detail) = &self.detail {
+            assert!(
+                detail.rows.len() <= u8::MAX as usize,
+                "gotcha machine row count overflows u1"
+            );
+            assert_eq!(
+                detail.bonuses.is_some(),
+                detail.bonus_flag == 1,
+                "gotcha machine bonus pair must match the bonus flag"
+            );
+        }
+        let mut writer = PacketWriter::new(game::RES_GOTCHA_MACHINE_ITEM);
+        writer.write_u32(self.result);
+        if let Some(detail) = &self.detail {
+            writer.write_u64(detail.money);
+            writer.write_u8(detail.rows.len() as u8);
+            for row in &detail.rows {
+                writer.write_u32(row.item);
+                writer.write_u16(row.slot);
+                writer.write_u16(row.count);
+                writer.write_u8(row.rate);
+                writer.write_u8(row.flag);
+            }
+            writer.write_u8(detail.bonus_flag);
+            if detail.bonus_flag == 1 {
+                for bonus in detail.bonuses.as_ref().expect("bonus pair checked above") {
+                    writer.write_u64(*bonus);
+                }
+            }
+        }
+        writer.finalize()
+    }
+}
+
 /// `Breakthrough::Result` — opcodes 3673 and 3674: {u4 value; u2 count;
 /// count x item row; u4 tail[0..2]}.
 ///
@@ -14376,6 +14448,56 @@ mod tests {
             raw.payload,
             [
                 1u8, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 4, 0, 0, 0, 5, 0, 0, 0
+            ]
+        );
+    }
+
+    #[test]
+    fn gotcha_machine_failure_closes_bare() {
+        let frame = GotchaMachineItemResultPacket {
+            result: 1,
+            detail: None,
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_GOTCHA_MACHINE_ITEM);
+        assert_eq!(raw.payload, [1u8, 0, 0, 0]);
+    }
+
+    #[test]
+    fn gotcha_machine_success_walks_rows_and_optional_bonus() {
+        let frame = GotchaMachineItemResultPacket {
+            result: 0,
+            detail: Some(GotchaMachineDetail {
+                money: 2,
+                rows: vec![GotchaMachineRow {
+                    item: 7,
+                    slot: 8,
+                    count: 9,
+                    rate: 10,
+                    flag: 11,
+                }],
+                bonus_flag: 1,
+                bonuses: Some([3, 4, 5]),
+            }),
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_GOTCHA_MACHINE_ITEM);
+        // 4 + (8 + 1 + 10 + 1 + 24) = 48.
+        assert_eq!(raw.payload.len(), 48);
+        assert_eq!(raw.payload[0..12], [0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(raw.payload[12], 1); // row count
+        assert_eq!(
+            raw.payload[13..23],
+            [7, 0, 0, 0, 8, 0, 9, 0, 10, 11] // one ten-byte row
+        );
+        assert_eq!(raw.payload[23], 1); // bonus flag
+        assert_eq!(
+            raw.payload[24..48],
+            [
+                3, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0,
+                0, 0, 0, 0
             ]
         );
     }

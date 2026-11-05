@@ -103,6 +103,7 @@ pub use game::{
     RankingScheduleRow, RankingScoreFrame, RankingBoardOpenPacket, RankingMyScorePacket,
     RankingRecordRow, RankingMyRecordPacket, RankingListEntryRow, RankingListPacket,
     DungeonEnterCountRow, DungeonEnterCountListPacket, DungeonEnterCountUpdatePacket,
+    GotchaMachineRow, GotchaMachineDetail, GotchaMachineItemResultPacket,
     AdvertBossCreatePacket, SeasonRewardPacket, SeasonRewardRow,
     CircuitModuleExtractPacket,
     CircuitModuleSyncPacket, CircuitModuleRow,
