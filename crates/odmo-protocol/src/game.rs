@@ -5416,6 +5416,31 @@ impl GotchaMachineItemResultPacket {
     }
 }
 
+/// `Sync` condition snapshot — opcode 16059: {raw condition run, 1432
+/// bytes}.
+///
+/// The body is one fixed-width raw run: no count, no header words, and
+/// no trailing string. A reader that decodes a leading id/condition word
+/// pair out of it misreads the whole body, and the per-object consumers
+/// walk the run themselves.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyncConditionSnapshotPacket {
+    pub blob: Vec<u8>,
+}
+
+impl SyncConditionSnapshotPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert_eq!(
+            self.blob.len(),
+            1432,
+            "sync condition snapshot must fill exactly 1432 bytes"
+        );
+        let mut writer = PacketWriter::new(game::NTF_SYNC_CONDITION);
+        writer.write_bytes(&self.blob);
+        writer.finalize()
+    }
+}
+
 /// `Breakthrough::Result` — opcodes 3673 and 3674: {u4 value; u2 count;
 /// count x item row; u4 tail[0..2]}.
 ///
@@ -14500,6 +14525,16 @@ mod tests {
                 0, 0, 0, 0
             ]
         );
+    }
+
+    #[test]
+    fn sync_condition_is_a_single_fixed_raw_run() {
+        let blob: Vec<u8> = (0..1432).map(|i| (i % 251) as u8).collect();
+        let frame = SyncConditionSnapshotPacket { blob: blob.clone() }.encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NTF_SYNC_CONDITION);
+        assert_eq!(raw.payload.len(), 1432);
+        assert_eq!(raw.payload, blob);
     }
 
     #[test]

@@ -967,6 +967,8 @@ pub mod game {
     // u1 count; count x {u4; u2; u2; u1; u1}; u1 bonus flag; flag==1 then
     // three u8 pairs}}.
     pub const RES_GOTCHA_MACHINE_ITEM: i16 = 3989;
+    // Condition snapshot: one fixed 1432-byte raw run.
+    pub const NTF_SYNC_CONDITION: i16 = 16059;
     // Mail delete result: two counted runs, each {u2 count; count x {u4; u4}}.
     pub const RES_MAIL_DELETE: i16 = 16054;
     // Sync verification result {u2 count; count x u4 value}.

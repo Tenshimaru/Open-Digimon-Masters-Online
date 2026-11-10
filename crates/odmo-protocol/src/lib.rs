@@ -104,7 +104,7 @@ pub use game::{
     RankingRecordRow, RankingMyRecordPacket, RankingListEntryRow, RankingListPacket,
     DungeonEnterCountRow, DungeonEnterCountListPacket, DungeonEnterCountUpdatePacket,
     GotchaMachineRow, GotchaMachineDetail, GotchaMachineItemResultPacket,
-    AdvertBossCreatePacket, SeasonRewardPacket, SeasonRewardRow,
+    SyncConditionSnapshotPacket, AdvertBossCreatePacket, SeasonRewardPacket, SeasonRewardRow,
     CircuitModuleExtractPacket,
     CircuitModuleSyncPacket, CircuitModuleRow,
     CircuitCombineRewardPacket, ItemInfoRow,
