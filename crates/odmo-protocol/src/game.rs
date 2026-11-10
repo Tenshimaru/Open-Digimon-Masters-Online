@@ -3745,6 +3745,79 @@ impl InitDigimonExploreDataPacket {
     }
 }
 
+/// One explore reward row — opcode 5355 list element: {u4; u4; u1}, nine
+/// wire bytes.
+///
+/// The two dwords and the byte stay an opaque run: the reward reading
+/// stops at the row boundary, so the order must not be rearranged.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExploreRewardRow {
+    pub first_value: u32,
+    pub second_value: u32,
+    pub tail: u8,
+}
+
+fn write_explore_reward_row(writer: &mut PacketWriter, row: &ExploreRewardRow) {
+    writer.write_u32(row.first_value);
+    writer.write_u32(row.second_value);
+    writer.write_u8(row.tail);
+}
+
+/// `Digimon::GetExploreReward` — opcode 5355: {u4 result; process result;
+/// u4 x3; {u2 count; count x reward row}}.
+///
+/// Only one of the three trailing dwords belongs to the reward body —
+/// the other two ride inside the process result record — so a reader that
+/// stopped after the rows still owes five dword-slot words before the list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GetDigimonExploreRewardPacket {
+    pub result: u32,
+    pub processed: ProcessResult,
+    pub first_value: u32,
+    pub second_value: u32,
+    pub third_value: u32,
+    pub rewards: Vec<ExploreRewardRow>,
+}
+
+impl GetDigimonExploreRewardPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.rewards.len() <= u16::MAX as usize,
+            "explore reward count overflows u2"
+        );
+        let mut writer = PacketWriter::new(game::RES_GET_DIGIMON_EXPLORE_REWARD);
+        writer.write_u32(self.result);
+        write_process_result(&mut writer, &self.processed);
+        writer.write_u32(self.first_value);
+        writer.write_u32(self.second_value);
+        writer.write_u32(self.third_value);
+        writer.write_u16(self.rewards.len() as u16);
+        for row in &self.rewards {
+            write_explore_reward_row(&mut writer, row);
+        }
+        writer.finalize()
+    }
+}
+
+/// `Error` message notice - opcode 1904: {u4 value; text}.
+///
+/// The leading dword is consumed on the read side but its use is not
+/// resolved, so it stays a plain wire word rather than being dropped.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ErrorMessageNoticePacket {
+    pub value: u32,
+    pub text: String,
+}
+
+impl ErrorMessageNoticePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::RES_ERROR_MESSAGE_NOTICE);
+        writer.write_u32(self.value);
+        writer.write_modern_utf8_string(&self.text);
+        writer.finalize()
+    }
+}
+
 /// `Union::HackResult` — opcodes 3173 and 3174.
 ///
 /// Modify carries one extra word before the item list; the list itself is the
@@ -6351,7 +6424,7 @@ pub struct UserSettingEntry {
     pub value: String,
 }
 
-/// `User::SettingData` — opcode 60001: {u2 count; count x {u2 prefix;
+/// `User::SettingData` - opcode 60001: {u2 count; count x {u2 prefix;
 /// modern string}}.
 ///
 /// The text is the length-prefixed UTF-8 form, so the row has no terminator and
@@ -13617,6 +13690,74 @@ mod tests {
         let raw = PacketReader::from_frame(&frame).expect("frame should decode");
         assert_eq!(raw.packet_type, game::RESPONSE_3603);
         assert_eq!(raw.payload, [5, 0, 0, 0, 6, 0, 0, 0]);
+    }
+
+    #[test]
+    fn explore_reward_closes_with_nine_byte_rows() {
+        let frame = GetDigimonExploreRewardPacket {
+            result: 1,
+            processed: ProcessResult {
+                rows: vec![SerializedItemRow {
+                    item: 4,
+                    first_word: 0,
+                    second_word: 0,
+                    first_flag: 0,
+                    second_flag: 0,
+                    third_flag: 0,
+                    fourth_flag: 0,
+                    packed_six: [0; 6],
+                    packed_three: [0; 3],
+                    first_block: [0; 16],
+                    second_block: [0; 16],
+                    wide_value: 0,
+                    third_word: 0,
+                    fourth_word: 0,
+                    fifth_flag: 0,
+                    sixth_flag: 0,
+                }],
+                first_value: 2,
+                second_value: 3,
+            },
+            first_value: 4,
+            second_value: 5,
+            third_value: 6,
+            rewards: vec![ExploreRewardRow {
+                first_value: 7,
+                second_value: 8,
+                tail: 9,
+            }],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_GET_DIGIMON_EXPLORE_REWARD);
+        // 4 + (2 + 71 + 4 + 4) + (4 x3) + 2 + 9 = 108.
+        assert_eq!(raw.payload.len(), 108);
+        assert_eq!(&raw.payload[..4], &[1, 0, 0, 0]);
+        assert_eq!(&raw.payload[4..6], &[1, 0]);
+        assert_eq!(&raw.payload[6..10], &[4, 0, 0, 0]); // item word of the row
+        assert_eq!(&raw.payload[77..85], &[2, 0, 0, 0, 3, 0, 0, 0]); // record tail
+        assert_eq!(
+            &raw.payload[85..97],
+            &[4, 0, 0, 0, 5, 0, 0, 0, 6, 0, 0, 0]
+        );
+        assert_eq!(&raw.payload[97..99], &[1, 0]);
+        assert_eq!(
+            &raw.payload[99..108],
+            &[7, 0, 0, 0, 8, 0, 0, 0, 9]
+        );
+    }
+
+    #[test]
+    fn error_message_notice_leads_with_a_plain_word() {
+        let frame = ErrorMessageNoticePacket {
+            value: 1,
+            text: "cd".to_string(),
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_ERROR_MESSAGE_NOTICE);
+        // 4 + 2 + 2 = 8.
+        assert_eq!(raw.payload, [1u8, 0, 0, 0, 2, 0, b'c', b'd']);
     }
 
     #[test]

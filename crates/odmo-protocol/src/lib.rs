@@ -106,6 +106,7 @@ pub use game::{
     GotchaMachineRow, GotchaMachineDetail, GotchaMachineItemResultPacket,
     SyncConditionSnapshotPacket, AdvertBossCreatePacket, SeasonRewardPacket, SeasonRewardRow,
     CircuitModuleExtractPacket,
+    ExploreRewardRow, GetDigimonExploreRewardPacket, ErrorMessageNoticePacket,
     CircuitModuleSyncPacket, CircuitModuleRow,
     CircuitCombineRewardPacket, ItemInfoRow,
     ExtraInventoryInfoPacket, ExtraInventorySortPacket, ExtraInventoryUsePacket,

@@ -847,6 +847,8 @@ pub mod game {
     // depending on whether the value is zero.
     pub const NOTICE_1309: i16 = 1309;
     pub const NOTICE_1315: i16 = 1315;
+    // Error message notice: {u4 value; modern string}.
+    pub const RES_ERROR_MESSAGE_NOTICE: i16 = 1904;
     // Notices the client registers with a handler that consumes nothing: the
     // frame is header only and the payload must stay empty. Sending a body would
     // leave those bytes to be read as the next frame's header. The numbers are
@@ -992,6 +994,9 @@ pub mod game {
     // item row being the 71-byte serialized form.
     pub const RES_START_DIGIMON_EXPLORE: i16 = 5353;
     pub const RES_OPEN_DIGIMON_EXPLORE_SLOT: i16 = 5356;
+    // Explore reward draw: {u4 result; process result; u4 x3; {u2 count;
+    // count x 9-byte reward row}}.
+    pub const RES_GET_DIGIMON_EXPLORE_REWARD: i16 = 5355;
     // Explore slot snapshot: {u2 count; count x slot row}, each slot row
     // carrying its own counted pair run.
     pub const NTF_INIT_DIGIMON_EXPLORE_DATA: i16 = 5351;
