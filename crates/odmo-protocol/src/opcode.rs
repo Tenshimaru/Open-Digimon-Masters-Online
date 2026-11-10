@@ -170,6 +170,10 @@ pub mod game {
     pub const EVENT_PINOCHI_VOTE: i16 = 3127;
     // Store-summon use {u1 count; count x {r4; r4}} -> ev466.
     pub const ITEM_STORE_SUMMON_USE: i16 = 3953;
+    // Wire-only staged detail {u1 gate; [gate] {u4; u4; u8; text; u2; u8; u8;
+    // u2; 144-byte block; u1 rows; rows x 28B; u2; 14B; 14B}}. No dump or fork
+    // name is bound to it; the read side turns the wide pair through tick math.
+    pub const NOTICE_3955: i16 = 3955;
     // Skill error {u1 kind; u2 code; dead u2 when kind = 255}: kind 95 resets only
     // on code 0, kind 100 closes the cast window on code 1 and other kinds fall
     // through to the digimon vtable reset.

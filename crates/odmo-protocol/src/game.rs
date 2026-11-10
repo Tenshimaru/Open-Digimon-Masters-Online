@@ -3092,7 +3092,74 @@ impl MixedWidthNoticePacket {
     }
 }
 
-/// `Game::ShortWordNotice` — opcode 3601: {u4 value; u2 first short;
+/// Wire-only staged detail — opcode 3955: {u1 gate; [gate != 0] {u4; u4; u8;
+/// text; u2; u8; u8; u2; 144-byte block; u1 row count; count x 28-byte rows;
+/// u2; {u8; u4; u2}; {u8; u4; u2}}}.
+///
+/// No dump or fork name is bound to this opcode: the reader is wire-derived
+/// (sub_D24AC0). The read side passes the second wide value through tick math
+/// and the word before it through a float scale, so those stay raw here. The
+/// 144-byte block and the fixed 28-byte rows are consumed whole by the reader's
+/// 18-slot table and keep their wire order; the two 14-byte tails narrow to
+/// {u8; u4; u2} on the read side but stay opaque until the semantics resolve.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FlaggedTextDetailPacket {
+    pub present: u8,
+    pub body: Option<FlaggedTextDetailBody>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FlaggedTextDetailBody {
+    pub first_value: u32,  // unresolved
+    pub second_value: u32, // unresolved
+    pub wide: u64,         // unresolved
+    pub text: String,
+    pub first_short: u16,  // unresolved (read side feeds a float scale)
+    pub second_wide: u64,  // unresolved (read side feeds tick math)
+    pub third_wide: u64,   // unresolved
+    pub second_short: u16, // unresolved
+    pub block: [u8; 144],
+    pub rows: Vec<[u8; 28]>,
+    pub third_short: u16, // unresolved
+    pub first_tail: [u8; 14],
+    pub second_tail: [u8; 14],
+}
+
+impl FlaggedTextDetailPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            (self.present != 0) == self.body.is_some(),
+            "the gate byte and the optional body must agree"
+        );
+        let mut writer = PacketWriter::new(game::NOTICE_3955);
+        writer.write_u8(self.present);
+        if let Some(body) = &self.body {
+            assert!(
+                body.rows.len() <= u8::MAX as usize,
+                "staged detail rows overflow u1"
+            );
+            writer.write_u32(body.first_value);
+            writer.write_u32(body.second_value);
+            writer.write_u64(body.wide);
+            writer.write_modern_utf8_string(&body.text);
+            writer.write_u16(body.first_short);
+            writer.write_u64(body.second_wide);
+            writer.write_u64(body.third_wide);
+            writer.write_u16(body.second_short);
+            writer.write_bytes(&body.block);
+            writer.write_u8(body.rows.len() as u8);
+            for row in &body.rows {
+                writer.write_bytes(row);
+            }
+            writer.write_u16(body.third_short);
+            writer.write_bytes(&body.first_tail);
+            writer.write_bytes(&body.second_tail);
+        }
+        writer.finalize()
+    }
+}
+
+/// `Game::ShortWordNotice` - opcode 3601: {u4 value; u2 first short;
 /// u4 second value; u4 third value; u4 fourth value}.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ShortWordNoticePacket {
@@ -13758,6 +13825,54 @@ mod tests {
         assert_eq!(raw.packet_type, game::RES_ERROR_MESSAGE_NOTICE);
         // 4 + 2 + 2 = 8.
         assert_eq!(raw.payload, [1u8, 0, 0, 0, 2, 0, b'c', b'd']);
+    }
+
+    #[test]
+    fn flagged_text_detail_opens_and_closes_with_the_gate_byte() {
+        let closed = FlaggedTextDetailPacket { present: 0, body: None }.encode();
+        let raw = PacketReader::from_frame(&closed).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NOTICE_3955);
+        assert_eq!(raw.payload, [0]);
+
+        let open = FlaggedTextDetailPacket {
+            present: 7,
+            body: Some(FlaggedTextDetailBody {
+                first_value: 1,
+                second_value: 2,
+                wide: 3,
+                text: "cd".to_string(),
+                first_short: 4,
+                second_wide: 5,
+                third_wide: 6,
+                second_short: 7,
+                block: [1; 144],
+                rows: vec![[2; 28], [3; 28]],
+                third_short: 8,
+                first_tail: [9; 14],
+                second_tail: [10; 14],
+            }),
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&open).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NOTICE_3955);
+        // 1 + 4 + 4 + 8 + (2 + 2) + 2 + 8 + 8 + 2 + 144 + 1 + 56 + 2 + 14 + 14
+        // = 272.
+        assert_eq!(raw.payload.len(), 272);
+        assert_eq!(raw.payload[0], 7);
+        assert_eq!(&raw.payload[1..9], &[1, 0, 0, 0, 2, 0, 0, 0]);
+        assert_eq!(&raw.payload[9..17], &[3, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(&raw.payload[17..21], &[2, 0, b'c', b'd']);
+        assert_eq!(&raw.payload[21..23], &[4, 0]);
+        assert_eq!(&raw.payload[23..31], &[5, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(&raw.payload[31..39], &[6, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(&raw.payload[39..41], &[7, 0]);
+        assert_eq!(&raw.payload[41..185], &[1u8; 144]);
+        assert_eq!(raw.payload[185], 2);
+        assert_eq!(&raw.payload[186..214], &[2u8; 28]);
+        assert_eq!(&raw.payload[214..242], &[3u8; 28]);
+        assert_eq!(&raw.payload[242..244], &[8, 0]);
+        assert_eq!(&raw.payload[244..258], &[9u8; 14]);
+        assert_eq!(&raw.payload[258..272], &[10u8; 14]);
     }
 
     #[test]

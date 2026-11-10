@@ -107,6 +107,7 @@ pub use game::{
     SyncConditionSnapshotPacket, AdvertBossCreatePacket, SeasonRewardPacket, SeasonRewardRow,
     CircuitModuleExtractPacket,
     ExploreRewardRow, GetDigimonExploreRewardPacket, ErrorMessageNoticePacket,
+    FlaggedTextDetailPacket, FlaggedTextDetailBody,
     CircuitModuleSyncPacket, CircuitModuleRow,
     CircuitCombineRewardPacket, ItemInfoRow,
     ExtraInventoryInfoPacket, ExtraInventorySortPacket, ExtraInventoryUsePacket,
