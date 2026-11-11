@@ -3959,6 +3959,174 @@ impl ItemUpgradePacket {
     }
 }
 
+/// One opcode 14153 clear-tamer row (dump `nsDungeonData::sClearTamerInfo`):
+/// {u1; u4; u2; text; u4; u2; text}.
+///
+/// The fields carry no resolved meaning, so they stay opaque in wire order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClearTamerRow {
+    pub flag: u8,          // unresolved
+    pub value: u32,        // unresolved
+    pub short: u16,        // unresolved
+    pub text: String,
+    pub second_value: u32, // unresolved
+    pub second_short: u16, // unresolved
+    pub second_text: String,
+}
+
+fn write_clear_tamer_row(writer: &mut PacketWriter, row: &ClearTamerRow) {
+    writer.write_u8(row.flag);
+    writer.write_u32(row.value);
+    writer.write_u16(row.short);
+    writer.write_modern_utf8_string(&row.text);
+    writer.write_u32(row.second_value);
+    writer.write_u16(row.second_short);
+    writer.write_modern_utf8_string(&row.second_text);
+}
+
+/// One opcode 14153 cur-clear row (dump `nsDungeonData::sCurClearInfo`):
+/// {u1; u4}.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CurClearRow {
+    pub flag: u8,   // unresolved
+    pub value: u32, // unresolved
+}
+
+/// One opcode 14153 contribution row (dump
+/// `nsDungeonData::sStatisticContributionInfo`): {u1; u8; text}.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContributionRow {
+    pub flag: u8,    // unresolved
+    pub wide: u64,   // unresolved
+    pub text: String,
+}
+
+/// One opcode 14153 changed-item row (dump
+/// `nsDungeonData::sChangedItemInfo`): {u2; u2; 71-byte item row}.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChangedItemRow {
+    pub first_short: u16, // unresolved
+    pub second_short: u16, // unresolved
+    pub row: SerializedItemRow,
+}
+
+/// One opcode 14153 gift row (dump `nsDungeonData::sGiftItemInfo`): {u4; u2}.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GiftItemRow {
+    pub value: u32, // unresolved
+    pub short: u16, // unresolved
+}
+
+/// `Dungeon::ClearSuccessContribution` - opcode 14153 (dump
+/// `GS2C_NTF_DUNGEON_CLEAR_SUCCESS_CONTRIBUTION`): {u4; u1; u8 x3; u1 x2;
+/// {u2 count; count x clear-tamer rows}; u1; {u2 count; count x cur-clear
+/// rows}; u1; {u2 count; count x contribution rows}; u1; {u2 count; count x
+/// changed-item rows}; u1; {u2 count; count x gift rows}}.
+///
+/// The five counted lists sit between single separator bytes, so the byte
+/// order must not be reordered around the counts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DungeonClearSuccessContributionPacket {
+    pub value: u32,       // unresolved
+    pub flag: u8,         // unresolved
+    pub first_wide: u64,  // unresolved
+    pub second_wide: u64, // unresolved
+    pub third_wide: u64,  // unresolved
+    pub first_tail: u8,   // unresolved
+    pub second_tail: u8,  // unresolved
+    pub tamers: Vec<ClearTamerRow>,
+    pub third_tail: u8, // unresolved
+    pub cur_clears: Vec<CurClearRow>,
+    pub fourth_tail: u8, // unresolved
+    pub contributions: Vec<ContributionRow>,
+    pub fifth_tail: u8, // unresolved
+    pub changed_items: Vec<ChangedItemRow>,
+    pub sixth_tail: u8, // unresolved
+    pub gift_items: Vec<GiftItemRow>,
+}
+
+impl DungeonClearSuccessContributionPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.tamers.len() <= u16::MAX as usize
+                && self.cur_clears.len() <= u16::MAX as usize
+                && self.contributions.len() <= u16::MAX as usize
+                && self.changed_items.len() <= u16::MAX as usize
+                && self.gift_items.len() <= u16::MAX as usize,
+            "dungeon contribution counts overflow u2"
+        );
+        let mut writer = PacketWriter::new(game::NTF_DUNGEON_CLEAR_SUCCESS_CONTRIBUTION);
+        writer.write_u32(self.value);
+        writer.write_u8(self.flag);
+        writer.write_u64(self.first_wide);
+        writer.write_u64(self.second_wide);
+        writer.write_u64(self.third_wide);
+        writer.write_u8(self.first_tail);
+        writer.write_u8(self.second_tail);
+        writer.write_u16(self.tamers.len() as u16);
+        for row in &self.tamers {
+            write_clear_tamer_row(&mut writer, row);
+        }
+        writer.write_u8(self.third_tail);
+        writer.write_u16(self.cur_clears.len() as u16);
+        for row in &self.cur_clears {
+            writer.write_u8(row.flag);
+            writer.write_u32(row.value);
+        }
+        writer.write_u8(self.fourth_tail);
+        writer.write_u16(self.contributions.len() as u16);
+        for row in &self.contributions {
+            writer.write_u8(row.flag);
+            writer.write_u64(row.wide);
+            writer.write_modern_utf8_string(&row.text);
+        }
+        writer.write_u8(self.fifth_tail);
+        writer.write_u16(self.changed_items.len() as u16);
+        for row in &self.changed_items {
+            writer.write_u16(row.first_short);
+            writer.write_u16(row.second_short);
+            row.row.encode_into(&mut writer);
+        }
+        writer.write_u8(self.sixth_tail);
+        writer.write_u16(self.gift_items.len() as u16);
+        for row in &self.gift_items {
+            writer.write_u32(row.value);
+            writer.write_u16(row.short);
+        }
+        writer.finalize()
+    }
+}
+
+/// Wire-only wide block — opcode 16066: {u4 x5; u1 gate; u2 short}.
+///
+/// No dump or fork name is bound to the opcode: the reader is wire-derived
+/// (sub_D23B60). The read side turns the gate's 1 into a pushed sentinel and
+/// widens the short into the same record, so both stay raw here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FiveWordFlagBlockPacket {
+    pub first_value: u32,  // unresolved
+    pub second_value: u32, // unresolved
+    pub third_value: u32,  // unresolved
+    pub fourth_value: u32, // unresolved
+    pub fifth_value: u32,  // unresolved
+    pub gate: u8,
+    pub short: u16, // unresolved
+}
+
+impl FiveWordFlagBlockPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::NOTICE_16066);
+        writer.write_u32(self.first_value);
+        writer.write_u32(self.second_value);
+        writer.write_u32(self.third_value);
+        writer.write_u32(self.fourth_value);
+        writer.write_u32(self.fifth_value);
+        writer.write_u8(self.gate);
+        writer.write_u16(self.short);
+        writer.finalize()
+    }
+}
+
 /// One 37-byte dated row shared by opcodes 3502 and 3510:
 /// {u8; u2; u8; u4; u4; u1; u8; u2}.
 ///
@@ -14268,6 +14436,112 @@ mod tests {
         assert_eq!(&raw.payload[41..44], &[11, 0, 12]);
         assert_eq!(&raw.payload[44..49], &[13, 0, 0, 0, 14]);
         assert_eq!(&raw.payload[49..57], &[15, 0, 0, 0, 16, 0, 0, 0]);
+    }
+
+    #[test]
+    fn dungeon_clear_contribution_interleaves_bytes_and_five_lists() {
+        let frame = DungeonClearSuccessContributionPacket {
+            value: 1,
+            flag: 2,
+            first_wide: 3,
+            second_wide: 4,
+            third_wide: 5,
+            first_tail: 6,
+            second_tail: 7,
+            tamers: vec![ClearTamerRow {
+                flag: 8,
+                value: 9,
+                short: 10,
+                text: "ab".to_string(),
+                second_value: 11,
+                second_short: 12,
+                second_text: "c".to_string(),
+            }],
+            third_tail: 13,
+            cur_clears: vec![CurClearRow { flag: 14, value: 15 }],
+            fourth_tail: 16,
+            contributions: vec![ContributionRow {
+                flag: 17,
+                wide: 18,
+                text: "d".to_string(),
+            }],
+            fifth_tail: 19,
+            changed_items: vec![ChangedItemRow {
+                first_short: 20,
+                second_short: 21,
+                row: SerializedItemRow {
+                    item: 22,
+                    first_word: 0,
+                    second_word: 0,
+                    first_flag: 0,
+                    second_flag: 0,
+                    third_flag: 0,
+                    fourth_flag: 0,
+                    packed_six: [0; 6],
+                    packed_three: [0; 3],
+                    first_block: [0; 16],
+                    second_block: [0; 16],
+                    wide_value: 0,
+                    third_word: 0,
+                    fourth_word: 0,
+                    fifth_flag: 0,
+                    sixth_flag: 0,
+                },
+            }],
+            sixth_tail: 23,
+            gift_items: vec![GiftItemRow { value: 24, short: 25 }],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NTF_DUNGEON_CLEAR_SUCCESS_CONTRIBUTION);
+        // head 4+1+8+8+8+1+1 = 31; tamers 2+20 = 22; byte 1; cur-clears 2+5 = 7;
+        // byte 1; contributions 2+12 = 14; byte 1; changed items 2+(2+2+71) =
+        // 77; byte 1; gifts 2+6 = 8. Total 163.
+        assert_eq!(raw.payload.len(), 163);
+        assert_eq!(&raw.payload[..4], &[1, 0, 0, 0]);
+        assert_eq!(&raw.payload[4..5], &[2]);
+        assert_eq!(&raw.payload[5..29], &[3, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(&raw.payload[29..31], &[6, 7]);
+        assert_eq!(&raw.payload[31..33], &[1, 0]); // tamer count
+        assert_eq!(&raw.payload[33..43], &[8, 9, 0, 0, 0, 10, 0, 2, 0, b'a']);
+        assert_eq!(&raw.payload[43..52], &[b'b', 11, 0, 0, 0, 12, 0, 1, 0]);
+        assert_eq!(&raw.payload[52..53], &[b'c']);
+        assert_eq!(&raw.payload[53..54], &[13]);
+        assert_eq!(&raw.payload[54..56], &[1, 0]); // cur-clear count
+        assert_eq!(&raw.payload[56..61], &[14, 15, 0, 0, 0]);
+        assert_eq!(&raw.payload[61..62], &[16]);
+        assert_eq!(&raw.payload[62..64], &[1, 0]); // contribution count
+        assert_eq!(&raw.payload[64..74], &[17, 18, 0, 0, 0, 0, 0, 0, 0, 1]);
+        assert_eq!(&raw.payload[74..76], &[0, b'd']);
+        assert_eq!(&raw.payload[76..77], &[19]);
+        assert_eq!(&raw.payload[77..79], &[1, 0]); // changed-item count
+        assert_eq!(&raw.payload[79..83], &[20, 0, 21, 0]);
+        assert_eq!(&raw.payload[83..87], &[22, 0, 0, 0]); // row item word
+        assert_eq!(&raw.payload[154..155], &[23]);
+        assert_eq!(&raw.payload[155..157], &[1, 0]); // gift count
+        assert_eq!(&raw.payload[157..163], &[24, 0, 0, 0, 25, 0]);
+    }
+
+    #[test]
+    fn five_word_flag_block_writes_the_gate_before_the_short() {
+        let frame = FiveWordFlagBlockPacket {
+            first_value: 1,
+            second_value: 2,
+            third_value: 3,
+            fourth_value: 4,
+            fifth_value: 5,
+            gate: 1,
+            short: 6,
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NOTICE_16066);
+        assert_eq!(raw.payload.len(), 23);
+        assert_eq!(
+            &raw.payload[..21],
+            &[1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 4, 0, 0, 0, 5, 0, 0, 0, 1]
+        );
+        assert_eq!(&raw.payload[21..23], &[6, 0]);
     }
 
     #[test]
