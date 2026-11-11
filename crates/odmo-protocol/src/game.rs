@@ -3959,6 +3959,161 @@ impl ItemUpgradePacket {
     }
 }
 
+/// One 37-byte dated row shared by opcodes 3502 and 3510:
+/// {u8; u2; u8; u4; u4; u1; u8; u2}.
+///
+/// The fields carry no resolved meaning, so they stay opaque in wire order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MixedWideRow {
+    pub first_wide: u64,  // unresolved
+    pub first_short: u16, // unresolved
+    pub second_wide: u64, // unresolved
+    pub first_value: u32, // unresolved
+    pub second_value: u32, // unresolved
+    pub tail: u8,
+    pub third_wide: u64,  // unresolved
+    pub second_short: u16, // unresolved
+}
+
+fn write_mixed_wide_row(writer: &mut PacketWriter, row: &MixedWideRow) {
+    writer.write_u64(row.first_wide);
+    writer.write_u16(row.first_short);
+    writer.write_u64(row.second_wide);
+    writer.write_u32(row.first_value);
+    writer.write_u32(row.second_value);
+    writer.write_u8(row.tail);
+    writer.write_u64(row.third_wide);
+    writer.write_u16(row.second_short);
+}
+
+/// Wire-only wide-led text list — opcode 3502: {u4; u8; text; u2 count;
+/// count x 37-byte rows}.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WideTextRowListPacket {
+    pub value: u32, // unresolved
+    pub wide: u64,  // unresolved
+    pub text: String,
+    pub rows: Vec<MixedWideRow>,
+}
+
+impl WideTextRowListPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.rows.len() <= u16::MAX as usize,
+            "wide text row count overflows u2"
+        );
+        let mut writer = PacketWriter::new(game::NOTICE_3502);
+        writer.write_u32(self.value);
+        writer.write_u64(self.wide);
+        writer.write_modern_utf8_string(&self.text);
+        writer.write_u16(self.rows.len() as u16);
+        for row in &self.rows {
+            write_mixed_wide_row(&mut writer, row);
+        }
+        writer.finalize()
+    }
+}
+
+/// Wire-only word-led text list — opcode 3510: {u4; u4; text; u2 count;
+/// count x 37-byte rows}.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WordTextRowListPacket {
+    pub value: u32,        // unresolved
+    pub second_value: u32, // unresolved
+    pub text: String,
+    pub rows: Vec<MixedWideRow>,
+}
+
+impl WordTextRowListPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.rows.len() <= u16::MAX as usize,
+            "word text row count overflows u2"
+        );
+        let mut writer = PacketWriter::new(game::NOTICE_3510);
+        writer.write_u32(self.value);
+        writer.write_u32(self.second_value);
+        writer.write_modern_utf8_string(&self.text);
+        writer.write_u16(self.rows.len() as u16);
+        for row in &self.rows {
+            write_mixed_wide_row(&mut writer, row);
+        }
+        writer.finalize()
+    }
+}
+
+/// One opcode 3602 row: {u2; u4; text; text; u2; u1; u4; u1}.
+///
+/// The words and flags carry no resolved meaning, so they stay opaque.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TextPairRow {
+    pub first_short: u16, // unresolved
+    pub first_value: u32, // unresolved
+    pub text: String,
+    pub second_text: String,
+    pub second_short: u16, // unresolved
+    pub first_flag: u8,
+    pub second_value: u32, // unresolved
+    pub second_flag: u8,
+}
+
+fn write_text_pair_row(writer: &mut PacketWriter, row: &TextPairRow) {
+    writer.write_u16(row.first_short);
+    writer.write_u32(row.first_value);
+    writer.write_modern_utf8_string(&row.text);
+    writer.write_modern_utf8_string(&row.second_text);
+    writer.write_u16(row.second_short);
+    writer.write_u8(row.first_flag);
+    writer.write_u32(row.second_value);
+    writer.write_u8(row.second_flag);
+}
+
+/// Wire-only counted text-pair list — opcode 3602: {u4; u1; u2; u4; text;
+/// text; u2; u1; u4; u1; u2 count; count x rows; u4; u4}.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TextPairListNoticePacket {
+    pub value: u32,       // unresolved
+    pub flag: u8,
+    pub short: u16,       // unresolved
+    pub second_value: u32, // unresolved
+    pub text: String,
+    pub second_text: String,
+    pub third_short: u16, // unresolved
+    pub tail: u8,
+    pub third_value: u32, // unresolved
+    pub second_tail: u8,
+    pub rows: Vec<TextPairRow>,
+    pub fourth_value: u32, // unresolved
+    pub fifth_value: u32,  // unresolved
+}
+
+impl TextPairListNoticePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.rows.len() <= u16::MAX as usize,
+            "text pair row count overflows u2"
+        );
+        let mut writer = PacketWriter::new(game::NOTICE_3602);
+        writer.write_u32(self.value);
+        writer.write_u8(self.flag);
+        writer.write_u16(self.short);
+        writer.write_u32(self.second_value);
+        writer.write_modern_utf8_string(&self.text);
+        writer.write_modern_utf8_string(&self.second_text);
+        writer.write_u16(self.third_short);
+        writer.write_u8(self.tail);
+        writer.write_u32(self.third_value);
+        writer.write_u8(self.second_tail);
+        writer.write_u16(self.rows.len() as u16);
+        for row in &self.rows {
+            write_text_pair_row(&mut writer, row);
+        }
+        writer.write_u32(self.fourth_value);
+        writer.write_u32(self.fifth_value);
+        writer.finalize()
+    }
+}
+
 /// `Union::HackResult` — opcodes 3173 and 3174.
 ///
 /// Modify carries one extra word before the item list; the list itself is the
@@ -14016,6 +14171,103 @@ mod tests {
         assert_eq!(&raw.payload[18..22], &[9, 0, 0, 0]); // row item word
         assert_eq!(&raw.payload[22..24], &[0, 0]); // row first word
         assert_eq!(&raw.payload[24..26], &[1, 0]); // row second word
+    }
+
+    #[test]
+    fn wide_and_word_text_lists_share_the_37_byte_row() {
+        let rows = vec![MixedWideRow {
+            first_wide: 1,
+            first_short: 2,
+            second_wide: 3,
+            first_value: 4,
+            second_value: 5,
+            tail: 6,
+            third_wide: 7,
+            second_short: 8,
+        }];
+
+        let wide = WideTextRowListPacket {
+            value: 1,
+            wide: 2,
+            text: "ab".to_string(),
+            rows: rows.clone(),
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&wide).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NOTICE_3502);
+        // 4 + 8 + (2 + 2) + 2 + 37 = 55.
+        assert_eq!(raw.payload.len(), 55);
+        assert_eq!(&raw.payload[..4], &[1, 0, 0, 0]);
+        assert_eq!(&raw.payload[4..12], &[2, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(&raw.payload[12..16], &[2, 0, b'a', b'b']);
+        assert_eq!(&raw.payload[16..18], &[1, 0]);
+        assert_eq!(&raw.payload[18..28], &[1, 0, 0, 0, 0, 0, 0, 0, 2, 0]);
+        assert_eq!(raw.payload[44], 6); // row tail
+        assert_eq!(&raw.payload[45..53], &[7, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(&raw.payload[53..55], &[8, 0]);
+
+        let word = WordTextRowListPacket {
+            value: 3,
+            second_value: 4,
+            text: "ab".to_string(),
+            rows,
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&word).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NOTICE_3510);
+        // 4 + 4 + (2 + 2) + 2 + 37 = 51.
+        assert_eq!(raw.payload.len(), 51);
+        assert_eq!(&raw.payload[..8], &[3, 0, 0, 0, 4, 0, 0, 0]);
+        assert_eq!(&raw.payload[8..12], &[2, 0, b'a', b'b']);
+        assert_eq!(&raw.payload[12..14], &[1, 0]);
+        assert_eq!(&raw.payload[14..24], &[1, 0, 0, 0, 0, 0, 0, 0, 2, 0]);
+    }
+
+    #[test]
+    fn text_pair_list_wraps_the_counted_rows_with_two_dwords() {
+        let frame = TextPairListNoticePacket {
+            value: 1,
+            flag: 2,
+            short: 3,
+            second_value: 4,
+            text: "ab".to_string(),
+            second_text: "cd".to_string(),
+            third_short: 5,
+            tail: 6,
+            third_value: 7,
+            second_tail: 8,
+            rows: vec![TextPairRow {
+                first_short: 9,
+                first_value: 10,
+                text: "e".to_string(),
+                second_text: "f".to_string(),
+                second_short: 11,
+                first_flag: 12,
+                second_value: 13,
+                second_flag: 14,
+            }],
+            fourth_value: 15,
+            fifth_value: 16,
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NOTICE_3602);
+        // head 4+1+2+4+(2+2)+(2+2)+2+1+4+1 = 27; count 2; row 2+4+(2+1)+(2+1)
+        // +2+1+4+1 = 20; tail 8. Total 57.
+        assert_eq!(raw.payload.len(), 57);
+        assert_eq!(&raw.payload[..4], &[1, 0, 0, 0]);
+        assert_eq!(&raw.payload[4..7], &[2, 3, 0]);
+        assert_eq!(&raw.payload[7..11], &[4, 0, 0, 0]);
+        assert_eq!(&raw.payload[11..19], &[2, 0, b'a', b'b', 2, 0, b'c', b'd']);
+        assert_eq!(&raw.payload[19..22], &[5, 0, 6]);
+        assert_eq!(&raw.payload[22..27], &[7, 0, 0, 0, 8]);
+        assert_eq!(&raw.payload[27..29], &[1, 0]);
+        assert_eq!(&raw.payload[29..31], &[9, 0]);
+        assert_eq!(&raw.payload[31..35], &[10, 0, 0, 0]);
+        assert_eq!(&raw.payload[35..41], &[1, 0, b'e', 1, 0, b'f']);
+        assert_eq!(&raw.payload[41..44], &[11, 0, 12]);
+        assert_eq!(&raw.payload[44..49], &[13, 0, 0, 0, 14]);
+        assert_eq!(&raw.payload[49..57], &[15, 0, 0, 0, 16, 0, 0, 0]);
     }
 
     #[test]

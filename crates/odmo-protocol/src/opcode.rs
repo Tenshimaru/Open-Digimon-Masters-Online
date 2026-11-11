@@ -1012,6 +1012,14 @@ pub mod game {
     pub const NTF_INIT_DIGIMON_EXPLORE_DATA: i16 = 5351;
     // Season pass text row: {u4 value; u4 value; u8 value; modern string}.
     pub const NTF_SEASON_3503: i16 = 3503;
+    // Wire-only text-led row lists; no dump or fork name is bound to either
+    // opcode. 3502 is {u4; u8; text; u2 count; count x 37-byte rows} and 3510
+    // is {u4; u4; text; u2 count; count x the same 37-byte rows}.
+    pub const NOTICE_3502: i16 = 3502;
+    pub const NOTICE_3510: i16 = 3510;
+    // Wire-only counted text-pair list: {u4; u1; u2; u4; text; text; u2; u1;
+    // u4; u1; u2 count; count x text rows; u4; u4}.
+    pub const NOTICE_3602: i16 = 3602;
     pub const NTF_SEASON_3506: i16 = 3506;
     pub const NTF_SEASON_3513: i16 = 3513;
     // Login-stage notice {u4 value; modern string}.
