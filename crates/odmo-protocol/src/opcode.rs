@@ -998,6 +998,12 @@ pub mod game {
     // item row being the 71-byte serialized form.
     pub const RES_START_DIGIMON_EXPLORE: i16 = 5353;
     pub const RES_OPEN_DIGIMON_EXPLORE_SLOT: i16 = 5356;
+    // Item upgrade result (dump GS2C_RES_ITEM_UPGRADE): {u4 result; process
+    // result; u4 result; 71-byte item row}.
+    pub const RES_ITEM_UPGRADE: i16 = 3995;
+    // Union init (dump GS2C_NTF_INIT_UNION_DATA): {counted u4 words; u2 count;
+    // count x 21-byte tool row}.
+    pub const NTF_INIT_UNION_DATA: i16 = 3171;
     // Explore reward draw: {u4 result; process result; u4 x3; {u2 count;
     // count x 9-byte reward row}}.
     pub const RES_GET_DIGIMON_EXPLORE_REWARD: i16 = 5355;

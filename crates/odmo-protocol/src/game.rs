@@ -3885,6 +3885,80 @@ impl ErrorMessageNoticePacket {
     }
 }
 
+/// One union tool row - opcode 3171 list element (dump
+/// `nsUnion::stHackingToolCli`): {u4 x5; u1}, 21 wire bytes.
+///
+/// The five dwords and the byte carry no resolved meaning, so they stay an
+/// opaque run in wire order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UnionToolRow {
+    pub first_value: u32,  // unresolved
+    pub second_value: u32, // unresolved
+    pub third_value: u32,  // unresolved
+    pub fourth_value: u32, // unresolved
+    pub fifth_value: u32,  // unresolved
+    pub tail: u8,
+}
+
+/// `Union::InitData` - opcode 3171 (dump `GS2C_NTF_INIT_UNION_DATA`):
+/// {u2 count; count x u4 words; u2 count; count x tool row}.
+///
+/// The leading word run is a separate counted list, so both counts stay
+/// distinct in the type.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InitUnionDataPacket {
+    pub words: Vec<u32>,
+    pub rows: Vec<UnionToolRow>,
+}
+
+impl InitUnionDataPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.words.len() <= u16::MAX as usize && self.rows.len() <= u16::MAX as usize,
+            "union init counts overflow u2"
+        );
+        let mut writer = PacketWriter::new(game::NTF_INIT_UNION_DATA);
+        writer.write_u16(self.words.len() as u16);
+        for word in &self.words {
+            writer.write_u32(*word);
+        }
+        writer.write_u16(self.rows.len() as u16);
+        for row in &self.rows {
+            writer.write_u32(row.first_value);
+            writer.write_u32(row.second_value);
+            writer.write_u32(row.third_value);
+            writer.write_u32(row.fourth_value);
+            writer.write_u32(row.fifth_value);
+            writer.write_u8(row.tail);
+        }
+        writer.finalize()
+    }
+}
+
+/// `Item::Upgrade` - opcode 3995 (dump `GS2C_RES_ITEM_UPGRADE`): {u4 result;
+/// process result; u4 result; 71-byte item row}.
+///
+/// The two trailing words and the row belong to the upgrade outcome, so both
+/// results stay plain wire values until the semantics resolve.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ItemUpgradePacket {
+    pub result: u32,
+    pub processed: ProcessResult,
+    pub second_result: u32,
+    pub row: SerializedItemRow,
+}
+
+impl ItemUpgradePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::RES_ITEM_UPGRADE);
+        writer.write_u32(self.result);
+        write_process_result(&mut writer, &self.processed);
+        writer.write_u32(self.second_result);
+        self.row.encode_into(&mut writer);
+        writer.finalize()
+    }
+}
+
 /// `Union::HackResult` — opcodes 3173 and 3174.
 ///
 /// Modify carries one extra word before the item list; the list itself is the
@@ -13873,6 +13947,75 @@ mod tests {
         assert_eq!(&raw.payload[242..244], &[8, 0]);
         assert_eq!(&raw.payload[244..258], &[9u8; 14]);
         assert_eq!(&raw.payload[258..272], &[10u8; 14]);
+    }
+
+    #[test]
+    fn union_init_counts_words_and_tools_separately() {
+        let frame = InitUnionDataPacket {
+            words: vec![1, 2],
+            rows: vec![UnionToolRow {
+                first_value: 3,
+                second_value: 4,
+                third_value: 5,
+                fourth_value: 6,
+                fifth_value: 7,
+                tail: 8,
+            }],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NTF_INIT_UNION_DATA);
+        // 2 + 8 + 2 + (5 x 4 + 1) = 33.
+        assert_eq!(raw.payload.len(), 33);
+        assert_eq!(&raw.payload[..2], &[2, 0]);
+        assert_eq!(&raw.payload[2..10], &[1, 0, 0, 0, 2, 0, 0, 0]);
+        assert_eq!(&raw.payload[10..12], &[1, 0]);
+        assert_eq!(&raw.payload[12..32], &[3, 0, 0, 0, 4, 0, 0, 0, 5, 0, 0, 0, 6, 0, 0, 0, 7, 0, 0, 0]);
+        assert_eq!(raw.payload[32], 8);
+    }
+
+    #[test]
+    fn item_upgrade_closes_with_a_serialized_item_row() {
+        let frame = ItemUpgradePacket {
+            result: 1,
+            processed: ProcessResult {
+                rows: vec![],
+                first_value: 2,
+                second_value: 3,
+            },
+            second_result: 4,
+            row: SerializedItemRow {
+                item: 9,
+                first_word: 0,
+                second_word: 1,
+                first_flag: 0,
+                second_flag: 0,
+                third_flag: 0,
+                fourth_flag: 0,
+                packed_six: [0; 6],
+                packed_three: [0; 3],
+                first_block: [0; 16],
+                second_block: [0; 16],
+                wide_value: 5,
+                third_word: 0,
+                fourth_word: 0,
+                fifth_flag: 0,
+                sixth_flag: 0,
+            },
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::RES_ITEM_UPGRADE);
+        // 4 + (2 + 4 + 4) + 4 + 71 = 89.
+        assert_eq!(raw.payload.len(), 89);
+        assert_eq!(&raw.payload[..4], &[1, 0, 0, 0]);
+        assert_eq!(&raw.payload[4..6], &[0, 0]); // empty row count
+        assert_eq!(&raw.payload[6..10], &[2, 0, 0, 0]); // record first value
+        assert_eq!(&raw.payload[10..14], &[3, 0, 0, 0]); // record second value
+        assert_eq!(&raw.payload[14..18], &[4, 0, 0, 0]); // second result word
+        assert_eq!(&raw.payload[18..22], &[9, 0, 0, 0]); // row item word
+        assert_eq!(&raw.payload[22..24], &[0, 0]); // row first word
+        assert_eq!(&raw.payload[24..26], &[1, 0]); // row second word
     }
 
     #[test]
