@@ -70,21 +70,23 @@ async fn serve_client(
     app: &CharacterApplication,
     session: &mut odmo_application::character::CharacterSession,
 ) -> anyhow::Result<()> {
-    // Send proactive handshake (opcode -1). Server verified working via Python test.
-    let handshake_resp = match app.handle_request(session, CharacterRequest::Connection { kind: 0 })
-    {
-        Ok(responses) => responses,
-        Err(e) => {
-            error!("handshake gen failed: {e}");
-            return Ok(());
-        }
-    };
-    for resp in &handshake_resp {
-        info!("sending handshake {} bytes: {:02X?}", resp.len(), &resp[..]);
-        socket.write_all(resp).await?;
-    }
+    // Send initial server handshake (opcode -1, 22-byte framed header).
+    let mut initial_handshake = vec![0u8; 22];
+    initial_handshake[0..4].copy_from_slice(&22u32.to_le_bytes());
+    initial_handshake[4..6].copy_from_slice(&(-1i16).to_le_bytes());
+    initial_handshake[6..8].copy_from_slice(&session.handshake_seed.to_le_bytes());
+    let checksum: u32 = 22u32 ^ 0x2B4D1A3Cu32;
+    initial_handshake[18..22].copy_from_slice(&checksum.to_le_bytes());
+
+    info!(
+        "sending initial character handshake (22 bytes, seed={}): {:02X?}",
+        session.handshake_seed,
+        &initial_handshake[..]
+    );
+    socket.write_all(&initial_handshake).await?;
     socket.flush().await.ok();
-    info!("handshake sent, waiting for client...");
+    info!("character handshake sent, waiting for client...");
+
     loop {
         let frame = match read_frame(&mut socket).await {
             Ok(frame) => frame,
@@ -122,8 +124,9 @@ async fn serve_client(
             Ok(responses) => {
                 info!("sending {} character response(s)", responses.len());
                 for response in responses {
-                    info!("sending response len={}", response.len());
-                    socket.write_all(&response).await?;
+                    let modern = ensure_modern_frame(&response);
+                    info!("sending response len={}", modern.len());
+                    socket.write_all(&modern).await?;
                 }
             }
             Err(error) => {
@@ -142,15 +145,43 @@ async fn serve_client(
     Ok(())
 }
 
+fn ensure_modern_frame(frame: &[u8]) -> Vec<u8> {
+    if frame.len() >= 10 {
+        let u32_len = u32::from_le_bytes(frame[0..4].try_into().unwrap()) as usize;
+        if u32_len == frame.len() {
+            let checksum = u32::from_le_bytes(frame[frame.len() - 4..].try_into().unwrap());
+            if checksum == (u32_len as u32) ^ 0x2B4D1A3C_u32 {
+                return frame.to_vec();
+            }
+        }
+    }
+
+    if frame.len() >= 6 {
+        let opcode = &frame[2..4];
+        let payload = &frame[4..frame.len() - 2];
+        let modern_len = (payload.len() + 10) as u32;
+        let mut modern = Vec::with_capacity(modern_len as usize);
+        modern.extend_from_slice(&modern_len.to_le_bytes());
+        modern.extend_from_slice(opcode);
+        modern.extend_from_slice(payload);
+        let checksum = modern_len ^ 0x2B4D1A3C_u32;
+        modern.extend_from_slice(&checksum.to_le_bytes());
+        return modern;
+    }
+
+    frame.to_vec()
+}
+
 async fn read_frame(socket: &mut TcpStream) -> std::io::Result<Vec<u8>> {
-    tracing::info!("read_frame: waiting for length bytes");
-    let mut len_bytes = [0_u8; 2];
-    socket.read_exact(&mut len_bytes).await?;
-    let length = u16::from_le_bytes(len_bytes) as usize;
-    tracing::info!("read_frame: got length={length}");
+    let mut header = [0_u8; 4];
+    socket.read_exact(&mut header).await?;
+    let length = if header[2] == 0 && header[3] == 0 && u32::from_le_bytes(header) >= 10 {
+        u32::from_le_bytes(header) as usize
+    } else {
+        u16::from_le_bytes([header[0], header[1]]) as usize
+    };
     let mut frame = vec![0_u8; length];
-    frame[0..2].copy_from_slice(&len_bytes);
-    socket.read_exact(&mut frame[2..]).await?;
-    tracing::info!("read_frame: complete, total={} bytes", frame.len());
+    frame[0..4].copy_from_slice(&header);
+    socket.read_exact(&mut frame[4..]).await?;
     Ok(frame)
 }

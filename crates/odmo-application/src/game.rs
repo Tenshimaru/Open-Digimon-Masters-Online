@@ -11,12 +11,14 @@ use std::{
 use thiserror::Error;
 
 use odmo_protocol::game::{EvolutionUnlockItem, TamerSummonRequest};
+use odmo_protocol::opcode::game as game_opcode;
 use odmo_protocol::{
     ArenaFameInfoPacket, ArenaFameSeasonListPacket, ArenaOldRankingInfoPacket,
     ArenaRankingDailyLoadPacket, ArenaRankingDailyUpdatePointsPacket, ArenaRankingInfoPacket,
     AvailableChannelsPacket, CashShopBuyResponsePacket, CashShopCoinsPacket,
     CashShopCropResponsePacket, CashShopWarehousePacket, CastSkillPacket,
-    ChangeTamerModelPacket, DailyCheckEventInfoPacket, DailyCheckEventInfoRow,
+    ChangeTamerModelPacket, CountedWordNoticePacket, DailyCheckEventInfoPacket,
+    DailyCheckEventInfoRow,
     DailyCheckEventItemResultPacket, DetailStatPair, DigiSummonPurchaseResponsePacket,
     DigiSummonSyncResponsePacket, DigimonEvolutionFailPacket, DigimonEvolutionSuccessPacket,
     DigimonToSpiritResultPacket, DigimonWalkPacket, DungeonArenaNextStagePacket,
@@ -30,7 +32,7 @@ use odmo_protocol::{
     ItemMoveSuccessPacket, ItemRerollPacket, ItemReturnPacket, ItemSocketIdentifyPacket,
     ItemSocketInPacket, ItemSocketOutPacket, ItemStoragePacket, KillOnHitPacket, KillOnSkillPacket,
     LoadBuffsPacket, LoadDropsPacket, LoadInventoryPacket, LoadMobBuffsPacket, LoadMobsPacket,
-    LoadTamerPacket, LocalMapSwapPacket, MapSwapPacket, MembershipPacket, MissHitPacket,
+    LoadTamerPacket, LocalMapSwapPacket, MailListPacket, MapSwapPacket, MembershipPacket, MissHitPacket,
     MonsterRespawnTimerPacket,
     NpcPurchaseResultPacket, NpcSellResultPacket, NpcSellRow, OtherTamerDetailInfoPacket,
     PartnerSkillErrorPacket, PartnerSwitchFailurePacket, PartnerSwitchPacket,
@@ -42,7 +44,8 @@ use odmo_protocol::{
     PickItemPacket, QuestAvailableListPacket, QuestGoalUpdatePacket, RandomBoxListEntry,
     RandomBoxListResponsePacket, RandomBoxPurchaseResponsePacket, RecompenseGainPacket,
     RemoveBuffPacket, SealsPacket, ServerExperiencePacket, SpiritToDigimonResultPacket,
-    SplitItemPacket, SyncChatLine, SyncChatRecord, SyncNamedLine, SyncWhisperLine,
+    SplitItemPacket, SyncChatLine, SyncChatRecord, SyncMegaphoneLine, SyncNamedLine,
+    SyncWhisperLine,
     TamerAttendancePacket, TamerChangeNamePacket, TamerRelationsPacket,
     TamerWalkPacket, TamerXaiResourcesPacket, TimeRewardPacket, TradeAcceptPacket,
     TradeAddItemPacket, TradeAddMoneyPacket, TradeCancelPacket, TradeConfirmationPacket,
@@ -549,6 +552,15 @@ impl GameApplication {
                 session.account_id = Some(account_id);
                 session.character_id = Some(character.id);
 
+                tracing::info!(
+                    tamer = %character.name,
+                    map_id = character.map_id,
+                    x = character.x,
+                    y = character.y,
+                    partner_x = character.partner_x,
+                    partner_y = character.partner_y,
+                    "Sending GameInitialInfoPacket (1003)"
+                );
                 let mut responses = vec![GameInitialInfoPacket { character }.encode()];
                 if let Ok(union_init) = self.build_union_init_data(session) {
                     responses.push(union_init);
@@ -811,6 +823,35 @@ impl GameApplication {
                     .character_by_id(character_id)
                     .map_err(|error| GameFlowError::Storage(error.to_string()))?
                     .ok_or(GameFlowError::CharacterNotFound(character_id))?;
+
+                tracing::info!(
+                    character_id,
+                    character_name = %character.name,
+                    origin_slot,
+                    destination_slot,
+                    "processed item move request (Opcode 3904 / MoveItem)"
+                );
+
+                if character.inventory.items.len() < character.inventory.size as usize {
+                    character
+                        .inventory
+                        .items
+                        .resize_with(character.inventory.size as usize, ItemRecord::default);
+                }
+                if character.warehouse.items.len() < character.warehouse.size as usize {
+                    character
+                        .warehouse
+                        .items
+                        .resize_with(character.warehouse.size as usize, ItemRecord::default);
+                }
+                if let Some(aw) = character.account_warehouse.as_mut() {
+                    if aw.items.len() < aw.size as usize {
+                        aw.items.resize_with(aw.size as usize, ItemRecord::default);
+                    }
+                }
+                if character.equipment.len() < 16 * 69 {
+                    character.equipment.resize(16 * 69, 0);
+                }
 
                 const TAB_INVENTORY: u16 = 0;
                 const TAB_EQUIPMENT: u16 = 1000;
@@ -1164,13 +1205,12 @@ impl GameApplication {
                     (TAB_EQUIPMENT, TAB_INVENTORY) => {
                         let len = character.inventory.items.len();
                         if src_idx < 16 && dst_idx < len {
-                            // Find empty slot in inventory
-                            if let Some(empty_idx) = character
-                                .inventory
-                                .items
-                                .iter()
-                                .position(|i| i.item_id == 0)
-                            {
+                            let target_slot = if character.inventory.items[dst_idx].item_id == 0 {
+                                Some(dst_idx)
+                            } else {
+                                character.inventory.items.iter().position(|i| i.item_id == 0)
+                            };
+                            if let Some(target_idx) = target_slot {
                                 // Read from equipment blob
                                 if character.equipment.len() >= 16 * 69 {
                                     let offset = src_idx * 69;
@@ -1191,7 +1231,7 @@ impl GameApplication {
                                                 record,
                                             };
                                             unequipped_item.sync_record(); // Ensure consistency
-                                            character.inventory.items[empty_idx] = unequipped_item;
+                                            character.inventory.items[target_idx] = unequipped_item;
 
                                             // Clear equipment slot
                                             character.equipment[offset..offset + 69].fill(0);
@@ -1449,6 +1489,28 @@ impl GameApplication {
                     .map_err(|error| GameFlowError::Storage(error.to_string()))?
                     .ok_or(GameFlowError::CharacterNotFound(character_id))?;
 
+                tracing::info!(
+                    character_id,
+                    character_name = %character.name,
+                    origin_slot,
+                    destination_slot,
+                    amount,
+                    "processed item split request (Opcode 3907 / SplitItem)"
+                );
+
+                if character.inventory.items.len() < character.inventory.size as usize {
+                    character
+                        .inventory
+                        .items
+                        .resize_with(character.inventory.size as usize, ItemRecord::default);
+                }
+                if character.warehouse.items.len() < character.warehouse.size as usize {
+                    character
+                        .warehouse
+                        .items
+                        .resize_with(character.warehouse.size as usize, ItemRecord::default);
+                }
+
                 fn tab_class(sid: u16) -> u16 {
                     sid / 1000 * 1000
                 }
@@ -1632,6 +1694,13 @@ impl GameApplication {
                     .character_by_id(character_id)
                     .map_err(|error| GameFlowError::Storage(error.to_string()))?
                     .ok_or(GameFlowError::CharacterNotFound(character_id))?;
+
+                if character.inventory.items.len() < character.inventory.size as usize {
+                    character
+                        .inventory
+                        .items
+                        .resize_with(character.inventory.size as usize, ItemRecord::default);
+                }
 
                 let slot_idx = slot as usize;
                 if slot_idx >= character.inventory.items.len() {
@@ -2116,25 +2185,11 @@ impl GameApplication {
             // Membership — client echoes back the membership packet sent during ComplementarInformation.
             // No second response needed.
             GameRequest::Membership => Ok(vec![]),
-            // Emoticon — client sends an emote to display
+            // Emoticon / SaveClientOption (opcode 1076) is one-way client-to-server; echoing it back tears down the session.
             GameRequest::Emoticon {
-                emoticon_type,
+                emoticon_type: _,
                 value: _,
-            } => {
-                let character_id = session.character_id.ok_or(GameFlowError::Unauthenticated)?;
-                let character = self
-                    .repository
-                    .character_by_id(character_id)
-                    .map_err(|error| GameFlowError::Storage(error.to_string()))?
-                    .ok_or(GameFlowError::CharacterNotFound(character_id))?;
-
-                // Echo the emoticon back to the client.
-                let mut writer =
-                    odmo_protocol::writer::PacketWriter::new(odmo_protocol::opcode::game::EMOTICON);
-                writer.write_u32(character.general_handler);
-                writer.write_i32(emoticon_type);
-                Ok(vec![writer.finalize()])
-            }
+            } => Ok(vec![]),
             // FriendlyInfo — client requests friendship info with a target
             GameRequest::FriendlyInfo { target_handler: _ } => {
                 // Respond with empty friendship data — no friendship system implemented yet.
@@ -2173,11 +2228,13 @@ impl GameApplication {
                     .map_err(|error| GameFlowError::Storage(error.to_string()))?
                     .ok_or(GameFlowError::CharacterNotFound(character_id))?;
 
-                let packet = SyncChatRecord::Chat(vec![SyncChatLine {
-                    handler: character.general_handler,
-                    message,
-                }])
-                .encode();
+                let handler = if character.general_handler != 0 {
+                    character.general_handler
+                } else {
+                    (2u32 << 16) | (character.id as u32 & 0xFFFF)
+                };
+
+                let packet = SyncChatRecord::Chat(vec![SyncChatLine { handler, message }]).encode();
 
                 // The speaker only echoes locally while offline, so its own copy is the
                 // returned packet and nearby tamers get it through the sink.
@@ -2261,28 +2318,56 @@ impl GameApplication {
 
                 Ok(vec![packet])
             }
-            // MegaphoneMessage — a branded shout, delivered on the same channel
+            // MegaphoneMessage — branded shout broadcast across the channel
             GameRequest::MegaphoneMessage {
-                mode: _,
-                item_code: _,
+                mode,
+                item_code,
                 message,
-                item_slot: _,
+                item_slot,
             } => {
                 let character_id = session.character_id.ok_or(GameFlowError::Unauthenticated)?;
-                let character = self
+                let mut character = self
                     .repository
                     .character_by_id(character_id)
                     .map_err(|error| GameFlowError::Storage(error.to_string()))?
                     .ok_or(GameFlowError::CharacterNotFound(character_id))?;
 
-                // The branded record also carries a style byte that selects the message
-                // colour, and the client drops the line unless the item code resolves to a
-                // shouter, so the plain shout form stays until that style source is settled.
-                let packet = SyncChatRecord::Shout(vec![SyncNamedLine {
-                    sender: character.name,
-                    message,
-                }])
-                .encode();
+                if mode == 0 {
+                    let slot = item_slot as usize;
+                    if slot < character.inventory.items.len() {
+                        let existing = &character.inventory.items[slot];
+                        if existing.item_id == item_code as i32 && existing.amount > 0 {
+                            let new_amount = existing.amount - 1;
+                            if new_amount <= 0 {
+                                character.inventory.items[slot] = ItemRecord::default();
+                            } else {
+                                let mut updated = existing.clone();
+                                updated.amount = new_amount;
+                                updated.sync_record();
+                                character.inventory.items[slot] = updated;
+                            }
+                            self.repository
+                                .update_inventory(character_id, character.inventory.clone())
+                                .map_err(|error| GameFlowError::Storage(error.to_string()))?;
+                        }
+                    }
+                }
+
+                let packet = if item_code != 0 {
+                    SyncChatRecord::Megaphone(vec![SyncMegaphoneLine {
+                        sender: character.name,
+                        message,
+                        item_code,
+                        tamer_level: character.level,
+                    }])
+                    .encode()
+                } else {
+                    SyncChatRecord::Shout(vec![SyncNamedLine {
+                        sender: character.name,
+                        message,
+                    }])
+                    .encode()
+                };
 
                 if let Some(broadcast) = &self.broadcast {
                     let _ = broadcast.send_to_all_except(character.id, &packet);
@@ -3011,6 +3096,20 @@ impl GameApplication {
                 validation,
                 npc_id,
             } => self.handle_digimon_to_spirit(session, slot, validation, npc_id),
+            GameRequest::SyncVerification { .. } => Ok(vec![
+                CountedWordNoticePacket {
+                    opcode: game_opcode::RES_SYNC_VERIFICATION,
+                    values: Vec::new(),
+                }
+                .encode(),
+            ]),
+            GameRequest::MailList => Ok(vec![
+                MailListPacket {
+                    value: 0,
+                    rows: Vec::new(),
+                }
+                .encode(),
+            ]),
         }?;
 
         responses.extend(request_responses);
@@ -12766,6 +12865,8 @@ mod tests {
             odmo_protocol::opcode::game::CHAT_MESSAGE_RESPONSE
         );
         assert_eq!(&speaker.payload[..2], &[7, 1], "record 7 carrying one line");
+        let packed_handler = u32::from_le_bytes(speaker.payload[2..6].try_into().expect("u32 handler"));
+        assert_eq!(packed_handler >> 16, 2, "tamer class bit must be packed in HIWORD");
 
         let visible = broadcast.visible.read().expect("visible poisoned");
         assert_eq!(visible.len(), 1, "one scoped delivery for nearby tamers");

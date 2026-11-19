@@ -77,11 +77,22 @@ pub struct ConnectionPacket {
 }
 
 impl ConnectionPacket {
+    /// Handshake confirmation response (opcode -2 / CONNECTION_RESPONSE).
+    /// Wire framing: 16 bytes total
+    /// [0..3]: Length = 16 (u32 LE: 10 00 00 00)
+    /// [4..5]: Opcode = -2 (i16 LE: FE FF)
+    /// [6..7]: Handshake (u16 LE = seed ^ 0x7E41)
+    /// [8..11]: Handshake timestamp (u32 LE)
+    /// [12..15]: Checksum = 16 ^ 0x2B4D1A3C = 0x2B4D1A2C (u32 LE: 2C 1A 4D 2B)
     pub fn encode(&self) -> Vec<u8> {
-        let mut writer = PacketWriter::new(account::CONNECTION_RESPONSE);
-        writer.write_i16(self.handshake);
-        writer.write_u32(self.handshake_timestamp);
-        writer.finalize()
+        let mut packet = vec![0u8; 16];
+        packet[0..4].copy_from_slice(&16u32.to_le_bytes());
+        packet[4..6].copy_from_slice(&(-2i16).to_le_bytes());
+        packet[6..8].copy_from_slice(&self.handshake.to_le_bytes());
+        packet[8..12].copy_from_slice(&self.handshake_timestamp.to_le_bytes());
+        let checksum: u32 = 16u32 ^ 0x2B4D1A3Cu32;
+        packet[12..16].copy_from_slice(&checksum.to_le_bytes());
+        packet
     }
 }
 
@@ -137,13 +148,15 @@ impl ServerListPacket {
         writer.write_u8(self.servers.len() as u8);
         for server in &self.servers {
             writer.write_i32(server.id as i32);
-            writer.write_string(&server.name);
+            writer.write_modern_utf8_string(&server.name);
             writer.write_u8(server.maintenance as u8);
             writer.write_u8(server.overloaded as u8);
             writer.write_u8(server.character_count);
             writer.write_u8(server.is_new as u8);
+            // Trailing slot capacity fields: [max_tamer_slot: u8][open_tamer_slot: u8]
+            writer.write_u8(4);
+            writer.write_u8(4);
         }
-        writer.write_i32(0);
         writer.finalize()
     }
 }
@@ -198,12 +211,11 @@ pub struct ConnectCharacterServerPacket {
 impl ConnectCharacterServerPacket {
     pub fn encode(&self) -> Vec<u8> {
         let mut writer = PacketWriter::new(901);
-        // Client reads sequentially: pop(account_idx:u4), pop(access_code:u4), pop(ip:string), pop(port:u4)
+        // Payload layout: [account_idx: u32][access_code: u32][ip: u16 LE len + UTF-8 bytes][port: u32]
         writer.write_u32(self.account_id as u32); // account_idx
         writer.write_u32(self.account_id as u32); // access_code
-        writer.write_string(&self.target.address); // ip address
+        writer.write_modern_utf8_string(&self.target.address); // ip address
         writer.write_u32(self.target.port as u32); // port
-        writer.write_u8(0); // VERSION_KOR: IsPcBang (u1)
         writer.finalize()
     }
 }
@@ -240,7 +252,59 @@ impl TryFrom<RawPacket> for AccountRequest {
 }
 
 fn parse_login_payload(reader: &mut PacketReader) -> Result<LoginPayload, ProtocolError> {
-    // Client sends: [u4 net_version][text user_type][text username][u1 dummy][text password]
+    let start_pos = reader.position();
+
+    // Primary UTF-8 login payload layout:
+    // 1. net_version: u32
+    // 2. user_type: modern_utf8_string
+    // 3. password: modern_utf8_string
+    // 4. username: modern_utf8_string
+    // 5. cpu: modern_utf8_string
+    // 6. gpu: modern_utf8_string
+    // 7. ram: u32
+    // 8. os: modern_utf8_string
+    // 9. mac: modern_utf8_string
+    let try_modern = |reader: &mut PacketReader| -> Result<LoginPayload, ProtocolError> {
+        let _net_version = reader.read_u32()?;
+        let _user_type = reader.read_modern_utf8_string()?;
+        let first = reader.read_modern_utf8_string()?;
+        let second = reader.read_modern_utf8_string()?;
+        let cpu = reader.read_modern_utf8_string().unwrap_or_default();
+        let gpu = reader.read_modern_utf8_string().unwrap_or_default();
+        let _ram = reader.read_u32().unwrap_or_default();
+        let _os = reader.read_modern_utf8_string().unwrap_or_default();
+        let _mac = reader.read_modern_utf8_string().unwrap_or_default();
+
+        // Support both orders: (username, password) or (password_md5, username)
+        let (username, password) = if first.len() == 32
+            && second.len() != 32
+            && first.chars().all(|c| c.is_ascii_hexdigit())
+        {
+            (second, first)
+        } else {
+            (first, second)
+        };
+
+        if !username.is_empty() {
+            Ok(LoginPayload {
+                username,
+                password,
+                cpu,
+                gpu,
+            })
+        } else {
+            Err(ProtocolError::InvalidTextLength(0))
+        }
+    };
+
+    let mut modern_reader = reader.clone();
+    if let Ok(payload) = try_modern(&mut modern_reader) {
+        *reader = modern_reader;
+        return Ok(payload);
+    }
+
+    // Fallback to compact string layout: [u4 net_version][text user_type][text username][u1 dummy][text password]
+    let _ = reader.seek(start_pos);
     let _net_version = reader.read_u32()?;
     let _user_type = reader.read_string()?;
     let username = reader.read_string()?;
@@ -304,7 +368,7 @@ mod tests {
         .encode();
 
         let raw = PacketReader::from_frame(&packet).expect("frame should decode");
-        assert_eq!(raw.packet_type, account::CONNECTION_RESPONSE);
+        assert_eq!(raw.packet_type, -2);
     }
 
     #[test]

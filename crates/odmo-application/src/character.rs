@@ -543,15 +543,12 @@ impl CharacterApplication {
                         character_id: character.id,
                     });
 
-                Ok(vec![
-                    ConnectGameServerInfoPacket {
-                        address: self.config.game_server.address.clone(),
-                        port: self.config.game_server.port,
-                        map_id: character.map_id,
-                    }
-                    .encode(),
-                    ConnectGameServerPacket.encode(),
-                ])
+                Ok(vec![ConnectGameServerInfoPacket {
+                    address: self.config.game_server.address.clone(),
+                    port: self.config.game_server.port,
+                    map_id: character.map_id,
+                }
+                .encode()])
             }
             CharacterRequest::ConnectGameServer => {
                 self.require_authorized(session)?;

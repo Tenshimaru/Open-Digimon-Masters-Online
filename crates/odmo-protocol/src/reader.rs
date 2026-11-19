@@ -20,6 +20,24 @@ impl PacketReader {
             return Err(ProtocolError::PacketTooShort);
         }
 
+        // Check for 32-bit framed header (u32 LE length, u32 LE checksum with 0x2B4D1A3C).
+        if frame.len() >= 10 {
+            let u32_len = u32::from_le_bytes(frame[0..4].try_into().unwrap()) as usize;
+            if u32_len == frame.len() {
+                let checksum = u32::from_le_bytes(frame[frame.len() - 4..].try_into().unwrap());
+                let expected = (u32_len as u32) ^ 0x2B4D1A3C_u32;
+                if checksum == expected {
+                    let packet_type = i16::from_le_bytes(frame[4..6].try_into().unwrap());
+                    let payload = frame[6..frame.len() - 4].to_vec();
+                    return Ok(RawPacket {
+                        length: frame.len() as u16,
+                        packet_type,
+                        payload,
+                    });
+                }
+            }
+        }
+
         let mut reader = Self::new(frame.to_vec());
         let length = reader.read_u16()?;
 
@@ -62,6 +80,10 @@ impl PacketReader {
             .seek(SeekFrom::Start(position))
             .map(|_| ())
             .map_err(|_| ProtocolError::UnexpectedEof)
+    }
+
+    pub fn position(&self) -> u64 {
+        self.cursor.position()
     }
 
     pub fn read_u8(&mut self) -> Result<u8, ProtocolError> {
@@ -155,9 +177,10 @@ impl PacketReader {
             return Ok(String::new());
         }
         let bytes = self.read_bytes(len)?;
-        String::from_utf8(bytes)
-            .map(|value| value.trim().to_string())
-            .map_err(|_| ProtocolError::InvalidTextEncoding)
+        match String::from_utf8(bytes.clone()) {
+            Ok(value) => Ok(value.trim().to_string()),
+            Err(_) => Ok(String::from_utf8_lossy(&bytes).trim().to_string()),
+        }
     }
 
     /// Read a length-prefixed UTF-16LE string: `[u8 code-unit count][units...][u16 0]`.

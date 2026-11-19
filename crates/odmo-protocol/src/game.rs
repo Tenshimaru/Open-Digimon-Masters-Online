@@ -661,6 +661,12 @@ pub enum GameRequest {
         validation: String,
         npc_id: i32,
     },
+    /// `Account::SyncVerification` C→S — opcode 16072: `[u2 value]`.
+    SyncVerification {
+        value: u16,
+    },
+    /// `Mail::List` C→S — opcode 16050: empty payload.
+    MailList,
 }
 
 /// Bodies the client frames under `pSkill::Summon`; the leading case byte chooses one.
@@ -707,13 +713,25 @@ pub struct SyncNamedLine {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyncMegaphoneLine {
+    pub sender: String,
+    pub message: String,
+    pub item_code: u32,
+    pub tamer_level: u8,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SyncChatRecord {
     /// `[u1 7][u1 count][count x {u4 handler, text message}]`
     Chat(Vec<SyncChatLine>),
     /// `[u1 8][u1 count][count x {u1 result, text sender, text receiver, text message}]`
     Whisper(Vec<SyncWhisperLine>),
+    /// `[u1 9][u1 count][count x {text sender, text message}]`
+    Notice(Vec<SyncNamedLine>),
     /// `[u1 11][u1 count][count x {text sender, text message}]`
     Shout(Vec<SyncNamedLine>),
+    /// `[u1 12][u1 count][count x {text sender, text message, u4 item_code, u1 tamer_level}]`
+    Megaphone(Vec<SyncMegaphoneLine>),
 }
 
 impl SyncChatRecord {
@@ -724,7 +742,12 @@ impl SyncChatRecord {
                 writer.write_u8(7);
                 writer.write_u8(clamp_u8_len(lines.len()));
                 for line in lines {
-                    writer.write_u32(line.handler);
+                    let packed_handler = if (line.handler >> 16) != 0 {
+                        line.handler
+                    } else {
+                        (2u32 << 16) | (line.handler & 0xFFFF)
+                    };
+                    writer.write_u32(packed_handler);
                     writer.write_modern_utf8_string(&line.message);
                 }
             }
@@ -738,12 +761,30 @@ impl SyncChatRecord {
                     writer.write_modern_utf8_string(&line.message);
                 }
             }
+            SyncChatRecord::Notice(lines) => {
+                writer.write_u8(9);
+                writer.write_u8(clamp_u8_len(lines.len()));
+                for line in lines {
+                    writer.write_modern_utf8_string(&line.sender);
+                    writer.write_modern_utf8_string(&line.message);
+                }
+            }
             SyncChatRecord::Shout(lines) => {
                 writer.write_u8(11);
                 writer.write_u8(clamp_u8_len(lines.len()));
                 for line in lines {
                     writer.write_modern_utf8_string(&line.sender);
                     writer.write_modern_utf8_string(&line.message);
+                }
+            }
+            SyncChatRecord::Megaphone(lines) => {
+                writer.write_u8(12);
+                writer.write_u8(clamp_u8_len(lines.len()));
+                for line in lines {
+                    writer.write_modern_utf8_string(&line.sender);
+                    writer.write_modern_utf8_string(&line.message);
+                    writer.write_u32(line.item_code);
+                    writer.write_u8(line.tamer_level);
                 }
             }
         }
@@ -766,19 +807,26 @@ pub struct GameConnectionPacket {
 }
 
 impl GameConnectionPacket {
-    /// The proactive handshake sent on TCP connect.
-    /// Uses opcode -1 (65535 as u16).
-    /// Proactive handshake sent on TCP connect (opcode -1 / 65535).
-    /// Wire: [FF,FF] [HS] [0,0] [0,0] [0,0] [0,0] [0,0] [CK] = 18 bytes
+    /// Handshake confirmation response (opcode -2 / CONNECTION_RESPONSE).
+    /// Wire framing: 16 bytes total
+    /// [0..3]: Length = 16 (u32 LE: 10 00 00 00)
+    /// [4..5]: Opcode = -2 (i16 LE: FE FF)
+    /// [6..7]: Handshake (u16 LE = seed ^ 0x7E41)
+    /// [8..11]: Handshake timestamp (u32 LE)
+    /// [12..15]: Checksum = 16 ^ 0x2B4D1A3C = 0x2B4D1A2C (u32 LE: 2C 1A 4D 2B)
     pub fn encode(&self) -> Vec<u8> {
-        let mut writer = PacketWriter::new(-1);
-        writer.write_i16(self.handshake);
-        writer.write_i16(0);
-        writer.write_i16(0);
-        writer.write_i16(0);
-        writer.write_i16(0);
-        writer.write_i16(0);
-        writer.finalize() // adds 1 zero→checksum, total = 18 bytes
+        let mut packet = vec![0u8; 16];
+        packet[0..4].copy_from_slice(&16u32.to_le_bytes());
+        packet[4..6].copy_from_slice(&(-2i16).to_le_bytes());
+        packet[6..8].copy_from_slice(&self.handshake.to_le_bytes());
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as u32)
+            .unwrap_or(0);
+        packet[8..12].copy_from_slice(&ts.to_le_bytes());
+        let checksum: u32 = 16u32 ^ 0x2B4D1A3Cu32;
+        packet[12..16].copy_from_slice(&checksum.to_le_bytes());
+        packet
     }
 }
 
@@ -791,15 +839,15 @@ impl GameInitialInfoPacket {
     pub fn encode(&self) -> Vec<u8> {
         let mut writer = PacketWriter::new(game::INITIAL_INFO_RESPONSE);
         writer.write_i32(1);
+        writer.write_u8(1);
         writer.write_i32(self.character.x);
         writer.write_i32(self.character.y);
         writer.write_i32(non_zero_handler(
             self.character.general_handler,
             self.character.id,
         ));
-        writer.write_u8(1);
         writer.write_i32(self.character.model);
-        writer.write_string(&self.character.name);
+        writer.write_modern_utf8_string(&self.character.name);
         writer.write_i64(self.character.current_experience.saturating_mul(100));
         writer.write_i16(self.character.level as i16);
         writer.write_i32(self.character.hp);
@@ -810,27 +858,23 @@ impl GameInitialInfoPacket {
         writer.write_i32(self.character.at);
         writer.write_i32(self.character.de);
         writer.write_i32(self.character.ms);
-        write_empty_item_records(&mut writer, 16);
+        if self.character.equipment.len() >= 16 * 69 {
+            writer.write_bytes(&self.character.equipment[..16 * 69]);
+        } else {
+            write_empty_item_records(&mut writer, 16);
+        }
         write_empty_item_records(&mut writer, 12);
         write_empty_item_records(&mut writer, 1);
         write_empty_item_records(&mut writer, 5);
-        writer.write_zeroes(1_292);
-        writer.write_i32(0);
-        writer.write_i32(0);
-        writer.write_i32(-1);
-        writer.write_i32(0);
-        writer.write_i32(-1);
-        writer.write_i64(self.character.inventory_bits);
-        writer.write_u16(self.character.inventory_size);
-        writer.write_u16(self.character.warehouse_size);
-        writer.write_i16(0);
+        writer.write_zeroes(1_432);
+        writer.write_u16(0);
         writer.write_u8(self.character.digimon_slots);
         writer.write_i32(non_zero_handler(
             self.character.partner_handler,
             self.character.id.saturating_add(10_000),
         ));
         writer.write_i32(self.character.partner_model);
-        writer.write_string(&self.character.partner_name);
+        writer.write_modern_utf8_string(&self.character.partner_name);
         writer.write_u8(self.character.partner_hatch_grade);
         writer.write_i16(self.character.partner_size);
         writer.write_i64(
@@ -840,29 +884,38 @@ impl GameInitialInfoPacket {
         );
         writer.write_i64(self.character.partner_transcendence_experience);
         writer.write_i16(self.character.partner_level as i16);
-        writer.write_i32(self.character.partner_hp);
-        writer.write_i32(self.character.partner_ds);
-        writer.write_i32(self.character.partner_de);
-        writer.write_i32(self.character.partner_at);
-        writer.write_i32(self.character.partner_current_hp);
-        writer.write_i32(self.character.partner_current_ds);
-        writer.write_i32(self.character.partner_fs);
-        writer.write_i32(0);
-        writer.write_i32(self.character.partner_ev);
-        writer.write_i32(self.character.partner_cc);
-        writer.write_i32(self.character.partner_ms);
-        writer.write_i32(self.character.partner_as);
-        writer.write_i32(0);
-        writer.write_i32(self.character.partner_ht);
-        writer.write_i32(0);
-        writer.write_i32(0);
-        writer.write_i32(self.character.partner_ar);
-        writer.write_i32(self.character.partner_bl);
+        let partner_stats: [(i32, i32); 18] = [
+            (self.character.partner_hp, 0),
+            (self.character.partner_ds, 0),
+            (self.character.partner_de, 0),
+            (self.character.partner_at, 0),
+            (self.character.partner_current_hp, 0),
+            (self.character.partner_current_ds, 0),
+            (self.character.partner_fs, 0),
+            (0, 0),
+            (self.character.partner_ev, 0),
+            (self.character.partner_cc, 0),
+            (self.character.partner_ms, 0),
+            (self.character.partner_as, 0),
+            (0, 0),
+            (self.character.partner_ht, 0),
+            (0, 0),
+            (0, 0),
+            (self.character.partner_ar, 0),
+            (self.character.partner_bl, 0),
+        ];
+        for (val, bonus) in partner_stats {
+            writer.write_i32(val);
+            writer.write_i32(bonus);
+        }
         writer.write_i32(self.character.partner_model);
         writer.write_u8(0);
-        write_zero_i16s(&mut writer, 15);
         writer.write_u16(0);
-        write_zero_i16s(&mut writer, 13);
+        writer.write_zeroes(14);
+        writer.write_zeroes(14);
+        writer.write_u16(0);
+        write_zero_i16s(&mut writer, 3);
+        write_zero_i16s(&mut writer, 10);
         writer.write_i32(non_zero_handler(
             self.character.partner_handler,
             self.character.id.saturating_add(10_000),
@@ -872,40 +925,28 @@ impl GameInitialInfoPacket {
         writer.write_i32(0);
         writer.write_i32(self.character.channel as i32);
         write_map_region(&mut writer, &self.character.map_region);
+        writer.write_u16(0);
         writer.write_i32(self.character.archive_slots);
-        writer.write_i32(0);
         writer.write_i32(0);
         writer.write_u8(0);
         writer.write_u8(0);
         writer.write_u8(0);
         writer.write_u8(99);
         writer.write_i16(self.character.current_title as i16);
-        for _ in 0..32 {
-            writer.write_i32(0);
-        }
-        writer.write_i32(0);
-        writer.write_i32(2);
+        writer.write_zeroes(408);
         writer.write_i32(0);
         writer.write_i32(0);
-        writer.write_u8(0);
+        writer.write_i32(0);
         writer.write_i32(0);
         writer.write_i32(0);
         writer.write_i32(0);
         writer.write_u8(0);
-        writer.write_i16(0);
         writer.write_u8(0);
-        writer.write_u8(0);
-        writer.write_i32(self.character.deck_buff_id);
-        writer.write_u8(0);
-        writer.write_i32(0);
-        writer.write_zeroes(29);
         writer.write_u8(0);
         writer.write_u8(0);
         writer.write_i32(0);
         writer.write_u8(0);
         writer.write_i32(0);
-        writer.write_u8(0);
-        writer.write_u8(0);
         writer.finalize()
     }
 }
@@ -954,7 +995,6 @@ impl SplitItemPacket {
         let mut writer = PacketWriter::new(game::SPLIT_ITEM);
         writer.write_u16(self.origin_slot);
         writer.write_u16(self.destination_slot);
-        writer.write_u16(self.amount);
         writer.finalize()
     }
 }
@@ -12085,7 +12125,7 @@ impl UpdateMovementSpeedPacket {
 
 fn write_empty_item_records(writer: &mut PacketWriter, slots: usize) {
     for _ in 0..slots {
-        writer.write_zeroes(60);
+        writer.write_zeroes(69);
     }
 }
 
@@ -12106,10 +12146,10 @@ fn normalize_item_record(item: &ItemRecord) -> Vec<u8> {
 }
 
 fn write_map_region(writer: &mut PacketWriter, region: &[u8]) {
-    let capped_len = region.len().min(255);
+    let capped_len = region.len().min(319);
     writer.write_bytes(&region[..capped_len]);
-    if capped_len < 255 {
-        writer.write_zeroes(255 - capped_len);
+    if capped_len < 319 {
+        writer.write_zeroes(319 - capped_len);
     }
 }
 
@@ -12273,10 +12313,15 @@ impl TamerWalkPacket {
         let mut writer = PacketWriter::new(game::MAP_ENTITY);
         writer.write_u8(5);
         writer.write_i16(1);
-        writer.write_u32(self.handler);
+        let packed_handler = if (self.handler >> 16) != 0 {
+            self.handler
+        } else {
+            (2u32 << 16) | (self.handler & 0xFFFF)
+        };
+        writer.write_u32(packed_handler);
         writer.write_i32(self.x);
         writer.write_i32(self.y);
-        writer.write_i32(0);
+        writer.write_u8(0);
         writer.finalize()
     }
 }
@@ -12293,10 +12338,15 @@ impl DigimonWalkPacket {
         let mut writer = PacketWriter::new(game::MAP_ENTITY);
         writer.write_u8(6);
         writer.write_i16(1);
-        writer.write_u32(self.handler);
+        let packed_handler = if (self.handler >> 16) != 0 {
+            self.handler
+        } else {
+            (1u32 << 16) | (self.handler & 0xFFFF)
+        };
+        writer.write_u32(packed_handler);
         writer.write_i32(self.x);
         writer.write_i32(self.y);
-        writer.write_i32(0);
+        writer.write_u8(0);
         writer.finalize()
     }
 }
@@ -13645,6 +13695,11 @@ impl TryFrom<RawPacket> for GameRequest {
                     npc_id,
                 })
             }
+            game::RES_SYNC_VERIFICATION => {
+                let value = reader.read_u16()?;
+                Ok(Self::SyncVerification { value })
+            }
+            game::RES_MAIL_LIST => Ok(Self::MailList),
             other => Err(ProtocolError::InvalidGamePacketType(other)),
         }
     }
@@ -18752,14 +18807,26 @@ mod tests {
         }
 
         let chat = SyncChatRecord::Chat(vec![SyncChatLine {
-            handler: 7,
+            handler: 13_000,
             message: "hello".to_string(),
         }])
         .encode();
-        let mut expected_chat = vec![7_u8, 1, 7, 0, 0, 0, 5, 0];
+        let mut expected_chat = vec![7_u8, 1];
+        expected_chat.extend_from_slice(&((2_u32 << 16) | 13_000_u32).to_le_bytes());
+        expected_chat.extend_from_slice(&5_u16.to_le_bytes());
         expected_chat.extend_from_slice(b"hello");
         expected_chat.push(0);
         assert_eq!(payload_of(&chat), expected_chat);
+
+        let pre_packed_chat = SyncChatRecord::Chat(vec![SyncChatLine {
+            handler: (2_u32 << 16) | 7,
+            message: "hi".to_string(),
+        }])
+        .encode();
+        let mut expected_packed_chat = vec![7_u8, 1, 7, 0, 2, 0, 2, 0];
+        expected_packed_chat.extend_from_slice(b"hi");
+        expected_packed_chat.push(0);
+        assert_eq!(payload_of(&pre_packed_chat), expected_packed_chat);
 
         let whisper = SyncChatRecord::Whisper(vec![SyncWhisperLine {
             result: 0,
@@ -18789,6 +18856,22 @@ mod tests {
         expected_shout.extend_from_slice(b"look");
         expected_shout.push(0);
         assert_eq!(payload_of(&shout), expected_shout);
+
+        let megaphone = SyncChatRecord::Megaphone(vec![SyncMegaphoneLine {
+            sender: "Sora".to_string(),
+            message: "sale".to_string(),
+            item_code: 98_001,
+            tamer_level: 75,
+        }])
+        .encode();
+        let mut expected_megaphone = vec![12_u8, 1, 4, 0];
+        expected_megaphone.extend_from_slice(b"Sora");
+        expected_megaphone.extend_from_slice(&4_u16.to_le_bytes());
+        expected_megaphone.extend_from_slice(b"sale");
+        expected_megaphone.extend_from_slice(&98_001_u32.to_le_bytes());
+        expected_megaphone.push(75);
+        expected_megaphone.push(0);
+        assert_eq!(payload_of(&megaphone), expected_megaphone);
     }
 
     #[test]

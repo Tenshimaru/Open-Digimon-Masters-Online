@@ -5,8 +5,8 @@ pub type CharacterId = u64;
 pub type DigimonId = u64;
 
 pub const DEFAULT_START_MAP_ID: i16 = 105;
-pub const DEFAULT_START_X: i32 = 14_834;
-pub const DEFAULT_START_Y: i32 = 9_895;
+pub const DEFAULT_START_X: i32 = 39_375;
+pub const DEFAULT_START_Y: i32 = 30_935;
 pub const DEFAULT_TAMER_MODEL_ID: i32 = 80_001;
 pub const DEFAULT_GM_TAMER_MODEL_ID: i32 = 80_010;
 pub const DEFAULT_ALT_TAMER_MODEL_ID: i32 = 80_011;
@@ -953,8 +953,8 @@ impl Default for CharacterSummary {
             xai: None,
             current_xgauge: 0,
             current_xcrystals: 0,
-            partner_x: 14_834,
-            partner_y: 9_895,
+            partner_x: DEFAULT_START_X,
+            partner_y: DEFAULT_START_Y,
             partner_z: 0.0,
             partner_current_slot: 1,
             partner_current_type: 31_001,

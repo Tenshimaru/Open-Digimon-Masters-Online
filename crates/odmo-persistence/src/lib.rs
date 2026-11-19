@@ -1783,8 +1783,10 @@ fn normalize_legacy_character(character: &mut CharacterSummary, fallback_model: 
     }
 
     if character.map_id == DEFAULT_START_MAP_ID
-        && character.x == LEGACY_START_X
-        && character.y == LEGACY_START_Y
+        && matches!(
+            (character.x, character.y),
+            (LEGACY_START_X, LEGACY_START_Y) | (4_471, 5_432) | (4_800, 5_200)
+        )
     {
         character.x = DEFAULT_START_X;
         character.y = DEFAULT_START_Y;

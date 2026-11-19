@@ -55,18 +55,26 @@ pub struct CharacterConnectionPacket {
 }
 
 impl CharacterConnectionPacket {
-    /// The proactive handshake sent on TCP connect.
-    /// Uses opcode -1 (65535 as u16).
-    /// Wire: [FF,FF] [HS] [0,0] [0,0] [0,0] [0,0] [0,0] [CK] = 18 bytes
+    /// Handshake confirmation response (opcode -2 / CONNECTION_RESPONSE).
+    /// Wire framing: 16 bytes total
+    /// [0..3]: Length = 16 (u32 LE: 10 00 00 00)
+    /// [4..5]: Opcode = -2 (i16 LE: FE FF)
+    /// [6..7]: Handshake (u16 LE = seed ^ 0x7E41)
+    /// [8..11]: Handshake timestamp (u32 LE)
+    /// [12..15]: Checksum = 16 ^ 0x2B4D1A3C = 0x2B4D1A2C (u32 LE: 2C 1A 4D 2B)
     pub fn encode(&self) -> Vec<u8> {
-        let mut writer = PacketWriter::new(-1);
-        writer.write_i16(self.handshake);
-        writer.write_i16(0);
-        writer.write_i16(0);
-        writer.write_i16(0);
-        writer.write_i16(0);
-        writer.write_i16(0);
-        writer.finalize() // adds 1 zero→checksum, total = 18 bytes
+        let mut packet = vec![0u8; 16];
+        packet[0..4].copy_from_slice(&16u32.to_le_bytes());
+        packet[4..6].copy_from_slice(&(-2i16).to_le_bytes());
+        packet[6..8].copy_from_slice(&self.handshake.to_le_bytes());
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as u32)
+            .unwrap_or(0);
+        packet[8..12].copy_from_slice(&ts.to_le_bytes());
+        let checksum: u32 = 16u32 ^ 0x2B4D1A3Cu32;
+        packet[12..16].copy_from_slice(&checksum.to_le_bytes());
+        packet
     }
 }
 
@@ -78,26 +86,33 @@ pub struct CharacterListPacket {
 impl CharacterListPacket {
     pub fn encode(&self) -> Vec<u8> {
         let mut writer = PacketWriter::new(character::CHARACTER_LIST);
+        // Character list header: [count: u8][flags1: u8][flags2: u16]
         writer.write_u8(self.characters.len() as u8);
+        writer.write_u8(0);
+        writer.write_u16(0);
 
         for character in &self.characters {
-            writer.write_u8(character.slot);
+            // [slot: u32][id: u32][map_id: i16][model: i32][level: u8][name: modern string]
+            writer.write_u32(character.slot as u32);
+            writer.write_u32(character.id as u32);
             writer.write_i16(character.map_id);
             writer.write_i32(character.model);
             writer.write_u8(character.level);
-            writer.write_string(&character.name);
+            writer.write_modern_utf8_string(&character.name);
 
-            for _ in 0..18 {
-                writer.write_bytes(&[0; 60]);
-            }
+            // Equipment/items: exactly 0x450 (1104) bytes
+            writer.write_zeroes(1104);
 
+            // [partner_model: i32][partner_level: u8][partner_name: modern string][partner_size: i16]
             writer.write_i32(character.partner_model);
             writer.write_u8(character.partner_level);
-            writer.write_string(&character.partner_name);
+            writer.write_modern_utf8_string(&character.partner_name);
             writer.write_i16(character.partner_size);
-            writer.write_i16(0);
-            writer.write_i16(0);
-            writer.write_i16(0);
+
+            // Trailer: [u32][u16][u8]
+            writer.write_u32(0);
+            writer.write_u16(0);
+            writer.write_u8(0);
         }
 
         writer.finalize()
@@ -114,7 +129,8 @@ pub struct ConnectGameServerInfoPacket {
 impl ConnectGameServerInfoPacket {
     pub fn encode(&self) -> Vec<u8> {
         let mut writer = PacketWriter::new(character::CONNECT_GAME_SERVER_INFO);
-        writer.write_string(&self.address);
+        // Payload layout: [address: u16 LE len + UTF-8 bytes][port: i32][map_id: i32]
+        writer.write_modern_utf8_string(&self.address);
         writer.write_i32(self.port as i32);
         writer.write_i32(self.map_id as i32);
         writer.finalize()

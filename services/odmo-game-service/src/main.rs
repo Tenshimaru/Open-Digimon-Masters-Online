@@ -147,24 +147,22 @@ async fn serve_client(
     session: &mut odmo_application::game::GameSession,
     broadcast: &SessionBroadcast,
 ) -> anyhow::Result<()> {
-    // Send CONNECTION_RESPONSE proactively on connect.
-    let initial =
-        match app.handle_request(session, odmo_protocol::GameRequest::Connection { kind: 0 }) {
-            Ok(responses) => {
-                info!(
-                    "sending initial game handshake ({} bytes)",
-                    responses.first().map(|r| r.len()).unwrap_or(0)
-                );
-                responses
-            }
-            Err(error) => {
-                error!("failed to generate initial game handshake: {error}");
-                return Ok(());
-            }
-        };
-    for response in &initial {
-        socket.write_all(response).await?;
-    }
+    // Send initial server handshake (opcode -1, 22-byte framed header).
+    let mut initial_handshake = vec![0u8; 22];
+    initial_handshake[0..4].copy_from_slice(&22u32.to_le_bytes());
+    initial_handshake[4..6].copy_from_slice(&(-1i16).to_le_bytes());
+    initial_handshake[6..8].copy_from_slice(&session.handshake_seed.to_le_bytes());
+    let checksum: u32 = 22u32 ^ 0x2B4D1A3Cu32;
+    initial_handshake[18..22].copy_from_slice(&checksum.to_le_bytes());
+
+    info!(
+        "sending initial game handshake (22 bytes, seed={}): {:02X?}",
+        session.handshake_seed,
+        &initial_handshake[..]
+    );
+    socket.write_all(&initial_handshake).await?;
+    socket.flush().await.ok();
+    info!("game handshake sent, waiting for client response...");
 
     let mut session_error: Option<anyhow::Error> = None;
     let mut broadcast_rx: Option<mpsc::Receiver<Vec<u8>>> = None;
@@ -184,8 +182,9 @@ async fn serve_client(
                     }
                 }
                 Some(broadcast_data) = rx.recv() => {
-                    // Send broadcast packet to this client
-                    if let Err(e) = socket.write_all(&broadcast_data).await {
+                    // Forward broadcast frame using the 32-bit length/checksum wire header.
+                    let modern_data = ensure_modern_frame(&broadcast_data);
+                    if let Err(e) = socket.write_all(&modern_data).await {
                         session_error = Some(e.into());
                         None
                     } else {
@@ -218,6 +217,7 @@ async fn serve_client(
         };
         let raw_packet_type = raw.packet_type;
         let raw_payload_len = raw.payload.len();
+        info!("incoming game request opcode={raw_packet_type} payload_bytes={raw_payload_len}");
 
         let request = match GameRequest::try_from(raw) {
             Ok(request) => request,
@@ -251,16 +251,16 @@ async fn serve_client(
                 }
 
                 for response in responses {
-                    if is_encyclopedia_load
-                        && let Ok(raw_response) = PacketReader::from_frame(&response)
-                    {
+                    let modern = ensure_modern_frame(&response);
+                    if let Ok(raw_response) = PacketReader::from_frame(&response) {
                         info!(
-                            "Encyclopedia load response sent packet={} payload_bytes={}",
+                            "Game response sent packet={} payload_bytes={} wire_len={}",
                             raw_response.packet_type,
-                            raw_response.payload.len()
+                            raw_response.payload.len(),
+                            modern.len()
                         );
                     }
-                    socket.write_all(&response).await?;
+                    socket.write_all(&modern).await?;
                 }
             }
             Err(error) => {
@@ -291,12 +291,43 @@ async fn serve_client(
     }
 }
 
+fn ensure_modern_frame(frame: &[u8]) -> Vec<u8> {
+    if frame.len() >= 10 {
+        let u32_len = u32::from_le_bytes(frame[0..4].try_into().unwrap()) as usize;
+        if u32_len == frame.len() {
+            let checksum = u32::from_le_bytes(frame[frame.len() - 4..].try_into().unwrap());
+            if checksum == (u32_len as u32) ^ 0x2B4D1A3C_u32 {
+                return frame.to_vec();
+            }
+        }
+    }
+
+    if frame.len() >= 6 {
+        let opcode = &frame[2..4];
+        let payload = &frame[4..frame.len() - 2];
+        let modern_len = (payload.len() + 10) as u32;
+        let mut modern = Vec::with_capacity(modern_len as usize);
+        modern.extend_from_slice(&modern_len.to_le_bytes());
+        modern.extend_from_slice(opcode);
+        modern.extend_from_slice(payload);
+        let checksum = modern_len ^ 0x2B4D1A3C_u32;
+        modern.extend_from_slice(&checksum.to_le_bytes());
+        return modern;
+    }
+
+    frame.to_vec()
+}
+
 async fn read_frame(socket: &mut TcpStream) -> std::io::Result<Vec<u8>> {
-    let mut len_bytes = [0_u8; 2];
-    socket.read_exact(&mut len_bytes).await?;
-    let length = u16::from_le_bytes(len_bytes) as usize;
+    let mut header = [0_u8; 4];
+    socket.read_exact(&mut header).await?;
+    let length = if header[2] == 0 && header[3] == 0 && u32::from_le_bytes(header) >= 10 {
+        u32::from_le_bytes(header) as usize
+    } else {
+        u16::from_le_bytes([header[0], header[1]]) as usize
+    };
     let mut frame = vec![0_u8; length];
-    frame[0..2].copy_from_slice(&len_bytes);
-    socket.read_exact(&mut frame[2..]).await?;
+    frame[0..4].copy_from_slice(&header);
+    socket.read_exact(&mut frame[4..]).await?;
     Ok(frame)
 }
