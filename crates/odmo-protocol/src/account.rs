@@ -205,6 +205,8 @@ impl ResourcesHashPacket {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConnectCharacterServerPacket {
     pub account_id: AccountId,
+    /// Per-login secret the client echoes to the character and game services.
+    pub access_code: u32,
     pub target: CharacterServerTarget,
 }
 
@@ -213,7 +215,7 @@ impl ConnectCharacterServerPacket {
         let mut writer = PacketWriter::new(901);
         // Payload layout: [account_idx: u32][access_code: u32][ip: u16 LE len + UTF-8 bytes][port: u32]
         writer.write_u32(self.account_id as u32); // account_idx
-        writer.write_u32(self.account_id as u32); // access_code
+        writer.write_u32(self.access_code); // access_code
         writer.write_modern_utf8_string(&self.target.address); // ip address
         writer.write_u32(self.target.port as u32); // port
         writer.finalize()

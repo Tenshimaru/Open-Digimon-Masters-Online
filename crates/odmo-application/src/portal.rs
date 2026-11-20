@@ -1,5 +1,18 @@
 use std::{fs, path::PathBuf, sync::Arc};
 
+/// A fresh access code for one login. The account service hands it to the client with
+/// the character server address; the client presents it to the character and game
+/// services, which accept it only when it matches the ticket issued with it. Never 0.
+pub fn new_access_code() -> u32 {
+    let bytes = uuid::Uuid::new_v4().into_bytes();
+    u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]).max(1)
+}
+
+/// Whether `access_code` is the one a ticket with `token` was issued for.
+pub fn access_code_matches(token: &str, access_code: u32) -> bool {
+    token == access_code.to_string()
+}
+
 use anyhow::Context;
 use odmo_types::{AccountId, CharacterId, CharacterSummary, GameSessionTicket, TransferTicket};
 use serde::{Deserialize, Serialize};

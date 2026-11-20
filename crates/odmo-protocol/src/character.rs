@@ -15,6 +15,7 @@ pub enum CharacterRequest {
     KeepConnection,
     RequestCharacters {
         account_id: AccountId,
+        access_code: u32,
     },
     CreateCharacter {
         slot: u8,
@@ -236,6 +237,7 @@ impl TryFrom<RawPacket> for CharacterRequest {
                 reader.seek(4)?;
                 Ok(Self::RequestCharacters {
                     account_id: reader.read_u32()? as AccountId,
+                    access_code: reader.read_u32()?,
                 })
             }
             character::CREATE_CHARACTER => Ok(parse_create_character(&mut reader)?),
@@ -314,7 +316,10 @@ mod tests {
 
         assert_eq!(
             request,
-            CharacterRequest::RequestCharacters { account_id: 1 }
+            CharacterRequest::RequestCharacters {
+                account_id: 1,
+                access_code: 0xBEEF,
+            }
         );
     }
 

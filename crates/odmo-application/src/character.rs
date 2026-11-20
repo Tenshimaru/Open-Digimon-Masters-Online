@@ -17,7 +17,6 @@ use odmo_types::{
     Account, AccountId, CharacterSummary, DEFAULT_START_MAP_ID, DEFAULT_START_X, DEFAULT_START_Y,
     GameServerTarget, GameSessionTicket,
 };
-use uuid::Uuid;
 
 use crate::portal::PortalBridge;
 
@@ -34,6 +33,8 @@ pub struct CharacterServiceConfig {
 pub struct CharacterSession {
     pub handshake_seed: i16,
     pub account_id: Option<AccountId>,
+    /// The access code this client presented; the game session ticket is issued for it.
+    pub access_code: Option<u32>,
     pub selected_character_id: Option<u64>,
 }
 
@@ -42,6 +43,7 @@ impl CharacterSession {
         Self {
             handshake_seed,
             account_id: None,
+            access_code: None,
             selected_character_id: None,
         }
     }
@@ -424,9 +426,13 @@ impl CharacterApplication {
                 .encode(),
             ]),
             CharacterRequest::KeepConnection => Ok(Vec::new()),
-            CharacterRequest::RequestCharacters { account_id } => {
-                self.authorize_account(account_id)?;
+            CharacterRequest::RequestCharacters {
+                account_id,
+                access_code,
+            } => {
+                self.authorize_account(account_id, access_code)?;
                 session.account_id = Some(account_id);
+                session.access_code = Some(access_code);
 
                 let characters = self
                     .repository
@@ -535,10 +541,14 @@ impl CharacterApplication {
                 }
 
                 session.selected_character_id = Some(character.id);
+                // The game service admits this client only with the same access code.
+                let access_code = session
+                    .access_code
+                    .ok_or(CharacterFlowError::Unauthenticated)?;
                 let _ = self
                     .portal_bridge
                     .store_game_session_ticket(&GameSessionTicket {
-                        token: Uuid::new_v4().to_string(),
+                        token: access_code.to_string(),
                         account_id,
                         character_id: character.id,
                     });
@@ -564,7 +574,11 @@ impl CharacterApplication {
         }
     }
 
-    fn authorize_account(&self, account_id: AccountId) -> Result<(), CharacterFlowError> {
+    fn authorize_account(
+        &self,
+        account_id: AccountId,
+        access_code: u32,
+    ) -> Result<(), CharacterFlowError> {
         let Some(ticket) = self
             .portal_bridge
             .consume_transfer_ticket(account_id)
@@ -572,6 +586,11 @@ impl CharacterApplication {
         else {
             return Err(CharacterFlowError::MissingTransferTicket(account_id));
         };
+        // Only the client the account service issued the ticket to knows its code. The
+        // ticket is spent either way, so a wrong guess cannot be retried.
+        if !crate::portal::access_code_matches(&ticket.token, access_code) {
+            return Err(CharacterFlowError::MissingTransferTicket(account_id));
+        }
 
         let mut state = self.write_state();
         state.authorized_accounts.insert(ticket.account_id);
@@ -996,13 +1015,68 @@ mod tests {
         let error = app
             .handle_request(
                 &mut session,
-                CharacterRequest::RequestCharacters { account_id: 1 },
+                CharacterRequest::RequestCharacters {
+                    account_id: 1,
+                    access_code: TEST_ACCESS_CODE,
+                },
             )
             .expect_err("ticket should be required");
         assert!(matches!(
             error,
             CharacterFlowError::MissingTransferTicket(1)
         ));
+    }
+
+    const TEST_ACCESS_CODE: u32 = 4_242;
+
+    #[test]
+    fn request_characters_with_another_access_code_is_refused() {
+        let portal_state_dir = unique_test_dir("character-wrong-code");
+        let bridge =
+            PortalBridge::from_json(portal_state_dir.clone()).expect("bridge should initialize");
+        bridge
+            .store_transfer_ticket(&TransferTicket {
+                token: TEST_ACCESS_CODE.to_string(),
+                account_id: 1,
+                server_id: 1,
+            })
+            .expect("ticket should be stored");
+        let app = CharacterApplication::new(
+            CharacterServiceConfig {
+                game_server: odmo_types::GameServerTarget {
+                    address: "127.0.0.1".to_string(),
+                    port: 7003,
+                },
+                portal_state_dir,
+            },
+            Arc::new(InMemoryCharacterRepository::demo()),
+            Arc::new(InMemoryAccountRepository::demo()),
+        );
+        let mut session = CharacterSession::new(1);
+        let error = app
+            .handle_request(
+                &mut session,
+                CharacterRequest::RequestCharacters {
+                    account_id: 1,
+                    access_code: TEST_ACCESS_CODE + 1,
+                },
+            )
+            .expect_err("a guessed code is refused");
+        assert!(matches!(
+            error,
+            CharacterFlowError::MissingTransferTicket(1)
+        ));
+        // The ticket is spent: the right code no longer works either.
+        assert!(
+            app.handle_request(
+                &mut session,
+                CharacterRequest::RequestCharacters {
+                    account_id: 1,
+                    access_code: TEST_ACCESS_CODE,
+                },
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -1012,7 +1086,7 @@ mod tests {
             PortalBridge::from_json(portal_state_dir.clone()).expect("bridge should initialize");
         bridge
             .store_transfer_ticket(&TransferTicket {
-                token: "demo".to_string(),
+                token: TEST_ACCESS_CODE.to_string(),
                 account_id: 1,
                 server_id: 1,
             })
@@ -1033,7 +1107,10 @@ mod tests {
         let responses = app
             .handle_request(
                 &mut session,
-                CharacterRequest::RequestCharacters { account_id: 1 },
+                CharacterRequest::RequestCharacters {
+                    account_id: 1,
+                    access_code: TEST_ACCESS_CODE,
+                },
             )
             .expect("ticketed request should succeed");
         assert_eq!(responses.len(), 1);
@@ -1046,7 +1123,7 @@ mod tests {
             PortalBridge::from_json(portal_state_dir.clone()).expect("bridge should initialize");
         bridge
             .store_transfer_ticket(&TransferTicket {
-                token: "demo".to_string(),
+                token: TEST_ACCESS_CODE.to_string(),
                 account_id: 1,
                 server_id: 1,
             })
@@ -1066,7 +1143,10 @@ mod tests {
         let mut session = CharacterSession::new(1);
         app.handle_request(
             &mut session,
-            CharacterRequest::RequestCharacters { account_id: 1 },
+            CharacterRequest::RequestCharacters {
+                account_id: 1,
+                access_code: TEST_ACCESS_CODE,
+            },
         )
         .expect("authorization should succeed");
         let responses = app
