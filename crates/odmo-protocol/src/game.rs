@@ -1000,19 +1000,33 @@ impl SplitItemPacket {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ItemConsumeSuccessPacket {
+    pub target_handler: i32,
+    pub slot: u16,
+}
+
+impl ItemConsumeSuccessPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::CONSUME_ITEM);
+        writer.write_i32(self.target_handler);
+        writer.write_u16(self.slot);
+        writer.finalize()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ItemConsumeFailPacket {
     pub slot: u16,
     pub item_id: i32,
-    pub result: u8,
+    pub result: u32,
 }
 
 impl ItemConsumeFailPacket {
     pub fn encode(&self) -> Vec<u8> {
-        let mut writer = PacketWriter::new(game::CONSUME_ITEM);
-        writer.write_u8(0); // fail
+        let mut writer = PacketWriter::new(game::CONSUME_ITEM_FAILURE);
         writer.write_u16(self.slot);
         writer.write_i32(self.item_id);
-        writer.write_u8(self.result);
+        writer.write_u32(self.result);
         writer.finalize()
     }
 }
@@ -8376,8 +8390,8 @@ impl MasterUserListPacket {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InventoryType {
     Inventory = 0,
-    Warehouse = 1,
-    AccountWarehouse = 2,
+    Warehouse = 2,
+    AccountWarehouse = 9,
     ExtraInventory = 3,
 }
 
@@ -18875,6 +18889,53 @@ mod tests {
     }
 
     #[test]
+    fn item_consume_and_inventory_packets_encode_wire_contracts() {
+        let ok = ItemConsumeSuccessPacket {
+            target_handler: (2 << 16) | 13_000,
+            slot: 6,
+        }
+        .encode();
+        let raw_ok = PacketReader::from_frame(&ok).expect("consume ok frame");
+        assert_eq!(raw_ok.packet_type, game::CONSUME_ITEM);
+        let mut ok_expected = ((2_i32 << 16) | 13_000).to_le_bytes().to_vec();
+        ok_expected.extend_from_slice(&6_u16.to_le_bytes());
+        assert_eq!(raw_ok.payload, ok_expected);
+
+        let fail = ItemConsumeFailPacket {
+            slot: 6,
+            item_id: 5101,
+            result: 1,
+        }
+        .encode();
+        let raw_fail = PacketReader::from_frame(&fail).expect("consume fail frame");
+        assert_eq!(raw_fail.packet_type, game::CONSUME_ITEM_FAILURE);
+        let mut fail_expected = 6_u16.to_le_bytes().to_vec();
+        fail_expected.extend_from_slice(&5101_i32.to_le_bytes());
+        fail_expected.extend_from_slice(&1_u32.to_le_bytes());
+        assert_eq!(raw_fail.payload, fail_expected);
+
+        assert_eq!(InventoryType::Inventory as u8, 0);
+        assert_eq!(InventoryType::Warehouse as u8, 2);
+        assert_eq!(InventoryType::ExtraInventory as u8, 3);
+        assert_eq!(InventoryType::AccountWarehouse as u8, 9);
+
+        let inv_frame = LoadInventoryPacket {
+            inventory: InventorySnapshot {
+                bits: 500_000,
+                size: 1,
+                items: vec![ItemRecord::new(90101, 9)],
+            },
+            inventory_type: InventoryType::Inventory,
+        }
+        .encode();
+        let raw_inv = PacketReader::from_frame(&inv_frame).expect("load inventory frame");
+        assert_eq!(raw_inv.packet_type, game::LOAD_INVENTORY);
+        let slot0 = &raw_inv.payload[15..84];
+        assert_eq!(&slot0[0..4], &90101_u32.to_le_bytes());
+        assert_eq!(&slot0[4..6], &9_u16.to_le_bytes());
+    }
+
+    #[test]
     fn guild_set_title_decodes_modern_text_fields() {
         let mut payload = Vec::new();
         payload.extend_from_slice(&2_i32.to_le_bytes());
@@ -22080,7 +22141,7 @@ mod sync_1006_preservation {
     // These byte vectors are the baseline F(X). The fix must reproduce them
     // exactly (F(X) == F'(X)) for every encoder below.
 
-    const GOLDEN_INVENTORY: &str = "9f00893e000000000807060504030201000200ed1306000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a31a";
+    const GOLDEN_INVENTORY: &str = "9f00a63e000000000807060504030201000200ed1300000300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a31a";
     const GOLDEN_SERVER_EXPERIENCE: &str = "1a001e040100000040e20100010000000000000040e20100261a";
     const GOLDEN_PICK_ITEM: &str = "1500460ff82a0000ed13000002000000000000291a";
     const GOLDEN_PICK_BITS: &str = "1a00470ff82a00007b000000000000000000000000000000261a";

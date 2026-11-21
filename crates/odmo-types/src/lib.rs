@@ -196,17 +196,16 @@ pub struct ItemAsset {
 }
 
 impl ItemRecord {
-    /// Sync the struct's item_id and amount fields back into the raw 69-byte record.
-    /// Uses the packed u32 format for item_id and amount:
-    ///   bits [0..16]  = item_id (17 bits)
-    ///   bits [17..31] = amount (15 bits)
+    /// Sync `item_id` and `amount` into the leading `[u32 item_id][u16 amount]`
+    /// fields of the 69-byte item record buffer.
     pub fn sync_record(&mut self) {
         if self.record.len() < 69 {
             self.record.resize(69, 0);
         }
-        let packed =
-            (self.item_id.max(0) as u32 & 0x1FFFF) | ((self.amount.max(0) as u32 & 0x7FFF) << 17);
-        self.record[0..4].copy_from_slice(&packed.to_le_bytes());
+        let item_id = self.item_id.max(0) as u32;
+        let amount = self.amount.clamp(0, u16::MAX as i32) as u16;
+        self.record[0..4].copy_from_slice(&item_id.to_le_bytes());
+        self.record[4..6].copy_from_slice(&amount.to_le_bytes());
     }
 
     /// Create a new ItemRecord for a given item_id and amount, with record bytes synced.

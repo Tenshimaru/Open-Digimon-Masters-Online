@@ -117,13 +117,14 @@ pub mod game {
     pub const PICK_ITEM_FAIL: i16 = 3913;
     pub const LOOT_ITEM: i16 = 3910;
     pub const UPDATE_MOVEMENT_SPEED: i16 = 9905;
-    pub const LOAD_INVENTORY: i16 = 16009;
+    pub const LOAD_INVENTORY: i16 = 16038;
     pub const TAMER_XAI_RESOURCES: i16 = 16032;
     pub const XAI_INFO: i16 = 16033;
     pub const SYNC_CONDITION: i16 = 1070;
     pub const WARP_GATE: i16 = 1709;
     pub const LOCAL_MAP_SWAP: i16 = 1711;
     pub const CONSUME_ITEM: i16 = 3901;
+    pub const CONSUME_ITEM_FAILURE: i16 = 3902;
     pub const MOVE_ITEM: i16 = 3904;
     pub const MOVE_ITEM_FAILURE: i16 = 3905;
     pub const SPLIT_ITEM: i16 = 3907;

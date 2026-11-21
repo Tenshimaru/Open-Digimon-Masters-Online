@@ -28,7 +28,8 @@ use odmo_protocol::{
     GuildHistoricPacket, GuildInformationPacket, GuildInviteAcceptPacket, GuildInviteDenyPacket,
     GuildInviteFailPacket, GuildInviteSuccessPacket, GuildMemberKickPacket, GuildMemberQuitPacket,
     GuildMessagePacket, GuildNoticeUpdatePacket, GuildPromotionDemotionPacket, HitPacket, HitType,
-    InventoryType, ItemConsumeFailPacket, ItemIdentifyPacket, ItemMoveFailPacket,
+    InventoryType, ItemConsumeFailPacket, ItemConsumeSuccessPacket, ItemIdentifyPacket,
+    ItemMoveFailPacket,
     ItemMoveSuccessPacket, ItemRerollPacket, ItemReturnPacket, ItemSocketIdentifyPacket,
     ItemSocketInPacket, ItemSocketOutPacket, ItemStoragePacket, KillOnHitPacket, KillOnSkillPacket,
     LoadBuffsPacket, LoadDropsPacket, LoadInventoryPacket, LoadMobBuffsPacket, LoadMobsPacket,
@@ -735,7 +736,7 @@ impl GameApplication {
                 Ok(responses)
             }
             GameRequest::ConsumeItem {
-                target_handler: _,
+                target_handler,
                 slot,
             } => {
                 let character_id = session.character_id.ok_or(GameFlowError::Unauthenticated)?;
@@ -769,6 +770,12 @@ impl GameApplication {
                     ]);
                 }
 
+                let resolved_handler = if target_handler != 0 {
+                    target_handler
+                } else {
+                    ((2u32 << 16) | ((character.general_handler as u32) & 0xFFFF)) as i32
+                };
+
                 let new_amount = item.amount - 1;
                 if new_amount <= 0 {
                     // Remove item completely
@@ -793,6 +800,13 @@ impl GameApplication {
                     .ok_or(GameFlowError::CharacterNotFound(character_id))?;
 
                 let mut responses = Vec::new();
+                responses.push(
+                    ItemConsumeSuccessPacket {
+                        target_handler: resolved_handler,
+                        slot,
+                    }
+                    .encode(),
+                );
                 responses.push(
                     LoadInventoryPacket {
                         inventory: updated_character.inventory.clone(),
@@ -1216,13 +1230,12 @@ impl GameApplication {
                                     let offset = src_idx * 69;
                                     let record = character.equipment[offset..offset + 69].to_vec();
 
-                                    // Extract item_id and amount from the record (packed in first 4 bytes)
-                                    if record.len() >= 4 {
-                                        let packed = u32::from_le_bytes([
+                                    // Extract item_id (u32 LE at +0) and amount (u16 LE at +4) from the 69-byte record.
+                                    if record.len() >= 6 {
+                                        let item_id = u32::from_le_bytes([
                                             record[0], record[1], record[2], record[3],
-                                        ]);
-                                        let item_id = (packed & 0x1FFFF) as i32;
-                                        let amount = ((packed >> 17) & 0x7FFF) as i32;
+                                        ]) as i32;
+                                        let amount = u16::from_le_bytes([record[4], record[5]]) as i32;
 
                                         if item_id > 0 {
                                             let mut unequipped_item = ItemRecord {
@@ -1445,7 +1458,10 @@ impl GameApplication {
                         }
                         .encode(),
                     );
-                    for tab in [src_tab, dst_tab] {
+                    for tab in [Some(src_tab), (dst_tab != src_tab).then_some(dst_tab)]
+                        .into_iter()
+                        .flatten()
+                    {
                         let (inv, ty) = match tab {
                             TAB_INVENTORY => (&character.inventory, InventoryType::Inventory),
                             TAB_WAREHOUSE => (&character.warehouse, InventoryType::Warehouse),
@@ -1640,10 +1656,9 @@ impl GameApplication {
 
                 if !success {
                     return Ok(vec![
-                        SplitItemPacket {
+                        ItemMoveFailPacket {
                             origin_slot,
                             destination_slot,
-                            amount: 0,
                         }
                         .encode(),
                     ]);
@@ -1666,7 +1681,10 @@ impl GameApplication {
                     }
                     .encode(),
                 );
-                for tab in [src_tab, dst_tab] {
+                for tab in [Some(src_tab), (dst_tab != src_tab).then_some(dst_tab)]
+                    .into_iter()
+                    .flatten()
+                {
                     let (inv, ty) = match tab {
                         0 => (&character.inventory, InventoryType::Inventory),
                         2000 => (&character.warehouse, InventoryType::Warehouse),
@@ -6287,12 +6305,11 @@ impl GameApplication {
             .update_inventory(character_id, inventory.clone())
             .map_err(|error| GameFlowError::Storage(error.to_string()))?;
 
-        // The legacy server emits a `LoadInventoryPacket` to refresh the client view.
-        // Build the same payload here.
+        // Refresh the modified container after sorting.
         let inv_type = match sort_type {
-            1 => InventoryType::Warehouse,
-            2 => InventoryType::AccountWarehouse,
+            1 | 2 => InventoryType::Warehouse,
             3 => InventoryType::ExtraInventory,
+            9 => InventoryType::AccountWarehouse,
             _ => InventoryType::Inventory,
         };
         Ok(vec![
@@ -15117,5 +15134,104 @@ mod tests {
         assert!(matches_tamer_target_handler(&character, 13_000));
         assert!(matches_tamer_target_handler(&character, 33_480));
         assert!(!matches_tamer_target_handler(&character, 13_001));
+    }
+
+    #[test]
+    fn inventory_consume_and_split_emit_expected_opcodes_and_deduplicated_loads() {
+        let repo = Arc::new(InMemoryCharacterRepository::demo());
+        let app = GameApplication::new(
+            GameServiceConfig {
+                portal_state_dir: unique_test_dir("inven-ops-parity"),
+            },
+            repo.clone(),
+        );
+        repo.characters
+            .write()
+            .expect("repo poisoned")
+            .get_mut(&100)
+            .map(|character| {
+                character.inventory.size = 10;
+                character.inventory.items.resize(10, ItemRecord::default());
+                character.inventory.items[0] = ItemRecord::new(5101, 5);
+                character.inventory.items[1] = ItemRecord::default();
+            })
+            .expect("character");
+
+        let mut session = GameSession::new(1);
+        session.character_id = Some(100);
+
+        let split_ok = app
+            .handle_request(
+                &mut session,
+                GameRequest::SplitItem {
+                    origin_slot: 0,
+                    destination_slot: 1,
+                    amount: 2,
+                },
+            )
+            .expect("split ok");
+        assert_eq!(split_ok.len(), 2);
+        assert_eq!(
+            PacketReader::from_frame(&split_ok[0]).unwrap().packet_type,
+            odmo_protocol::opcode::game::SPLIT_ITEM
+        );
+        assert_eq!(
+            PacketReader::from_frame(&split_ok[1]).unwrap().packet_type,
+            odmo_protocol::opcode::game::LOAD_INVENTORY
+        );
+
+        let split_fail = app
+            .handle_request(
+                &mut session,
+                GameRequest::SplitItem {
+                    origin_slot: 999,
+                    destination_slot: 1,
+                    amount: 1,
+                },
+            )
+            .expect("split fail");
+        assert_eq!(split_fail.len(), 1);
+        assert_eq!(
+            PacketReader::from_frame(&split_fail[0])
+                .unwrap()
+                .packet_type,
+            odmo_protocol::opcode::game::MOVE_ITEM_FAILURE
+        );
+
+        let consume_ok = app
+            .handle_request(
+                &mut session,
+                GameRequest::ConsumeItem {
+                    target_handler: 0,
+                    slot: 0,
+                },
+            )
+            .expect("consume ok");
+        let consume_opcodes: Vec<i16> = consume_ok
+            .iter()
+            .map(|f| PacketReader::from_frame(f).unwrap().packet_type)
+            .collect();
+        assert_eq!(consume_opcodes[0], odmo_protocol::opcode::game::CONSUME_ITEM);
+        assert_eq!(
+            consume_opcodes[1],
+            odmo_protocol::opcode::game::LOAD_INVENTORY
+        );
+
+        let consume_fail = app
+            .handle_request(
+                &mut session,
+                GameRequest::ConsumeItem {
+                    target_handler: 0,
+                    slot: 99,
+                },
+            )
+            .expect("consume fail");
+        assert_eq!(consume_fail.len(), 1);
+        assert_eq!(
+            PacketReader::from_frame(&consume_fail[0])
+                .unwrap()
+                .packet_type,
+            odmo_protocol::opcode::game::CONSUME_ITEM_FAILURE
+        );
     }
 }
