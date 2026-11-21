@@ -8857,16 +8857,37 @@ impl ServerExperiencePacket {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Membership status payload for opcode 3414: `[active: u8][expire_unix_ts: u32 LE]`.
+///
+/// When `active` is true, the client computes remaining membership duration as
+/// `expire_unix_ts - current_unix_ts`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MembershipPacket {
-    pub remaining_seconds: u32,
+    pub active: bool,
+    pub expire_unix_ts: u32,
 }
 
 impl MembershipPacket {
+    /// Construct a membership status payload from a remaining duration in
+    /// seconds and the current Unix epoch timestamp.
+    pub fn from_remaining_seconds(remaining_seconds: u32, now_unix_ts: u32) -> Self {
+        if remaining_seconds == 0 {
+            Self {
+                active: false,
+                expire_unix_ts: 0,
+            }
+        } else {
+            Self {
+                active: true,
+                expire_unix_ts: now_unix_ts.saturating_add(remaining_seconds),
+            }
+        }
+    }
+
     pub fn encode(&self) -> Vec<u8> {
         let mut writer = PacketWriter::new(game::MEMBERSHIP);
-        writer.write_u8((self.remaining_seconds > 0) as u8);
-        writer.write_i32(self.remaining_seconds.min(i32::MAX as u32) as i32);
+        writer.write_u8(u8::from(self.active));
+        writer.write_u32(if self.active { self.expire_unix_ts } else { 0 });
         writer.finalize()
     }
 }
@@ -14343,6 +14364,15 @@ mod tests {
 
     #[test]
     fn union_init_counts_words_and_tools_separately() {
+        let empty = InitUnionDataPacket {
+            words: Vec::new(),
+            rows: Vec::new(),
+        }
+        .encode();
+        let empty_raw = PacketReader::from_frame(&empty).expect("empty frame should decode");
+        assert_eq!(empty_raw.packet_type, game::NTF_INIT_UNION_DATA);
+        assert_eq!(empty_raw.payload, [0, 0, 0, 0]);
+
         let frame = InitUnionDataPacket {
             words: vec![1, 2],
             rows: vec![UnionToolRow {
@@ -14364,6 +14394,47 @@ mod tests {
         assert_eq!(&raw.payload[10..12], &[1, 0]);
         assert_eq!(&raw.payload[12..32], &[3, 0, 0, 0, 4, 0, 0, 0, 5, 0, 0, 0, 6, 0, 0, 0, 7, 0, 0, 0]);
         assert_eq!(raw.payload[32], 8);
+    }
+
+    #[test]
+    fn membership_packet_encodes_active_flag_and_unix_expiration() {
+        let inactive = MembershipPacket::from_remaining_seconds(0, 1_700_000_000).encode();
+        let inactive_raw = PacketReader::from_frame(&inactive).expect("inactive frame decodes");
+        assert_eq!(inactive_raw.packet_type, game::MEMBERSHIP);
+        assert_eq!(inactive_raw.payload, [0, 0, 0, 0, 0]);
+
+        let active = MembershipPacket::from_remaining_seconds(3_600, 1_700_000_000).encode();
+        let active_raw = PacketReader::from_frame(&active).expect("active frame decodes");
+        assert_eq!(active_raw.packet_type, game::MEMBERSHIP);
+        assert_eq!(active_raw.payload.len(), 5);
+        assert_eq!(active_raw.payload[0], 1);
+        assert_eq!(
+            u32::from_le_bytes(active_raw.payload[1..5].try_into().unwrap()),
+            1_700_003_600
+        );
+    }
+
+    #[test]
+    fn membership_and_option_flags_requests_decode_expected_lengths() {
+        let membership_frame = PacketWriter::new(game::MEMBERSHIP).finalize();
+        let membership_raw =
+            PacketReader::from_frame(&membership_frame).expect("membership frame decodes");
+        assert_eq!(
+            GameRequest::try_from(membership_raw).expect("membership decodes"),
+            GameRequest::Membership
+        );
+
+        let mut option_writer = PacketWriter::new(game::EMOTICON);
+        option_writer.write_i32(0);
+        let option_raw =
+            PacketReader::from_frame(&option_writer.finalize()).expect("option frame decodes");
+        assert_eq!(
+            GameRequest::try_from(option_raw).expect("option flags decode"),
+            GameRequest::Emoticon {
+                emoticon_type: 0,
+                value: -1,
+            }
+        );
     }
 
     #[test]

@@ -28,8 +28,8 @@ use odmo_protocol::{
     GuildHistoricPacket, GuildInformationPacket, GuildInviteAcceptPacket, GuildInviteDenyPacket,
     GuildInviteFailPacket, GuildInviteSuccessPacket, GuildMemberKickPacket, GuildMemberQuitPacket,
     GuildMessagePacket, GuildNoticeUpdatePacket, GuildPromotionDemotionPacket, HitPacket, HitType,
-    InventoryType, ItemConsumeFailPacket, ItemConsumeSuccessPacket, ItemIdentifyPacket,
-    ItemMoveFailPacket,
+    InitUnionDataPacket, InventoryType, ItemConsumeFailPacket, ItemConsumeSuccessPacket,
+    ItemIdentifyPacket, ItemMoveFailPacket,
     ItemMoveSuccessPacket, ItemRerollPacket, ItemReturnPacket, ItemSocketIdentifyPacket,
     ItemSocketInPacket, ItemSocketOutPacket, ItemStoragePacket, KillOnHitPacket, KillOnSkillPacket,
     LoadBuffsPacket, LoadDropsPacket, LoadInventoryPacket, LoadMobBuffsPacket, LoadMobsPacket,
@@ -52,7 +52,7 @@ use odmo_protocol::{
     TradeAddItemPacket, TradeAddMoneyPacket, TradeCancelPacket, TradeConfirmationPacket,
     TradeFinalConfirmationPacket, TradeInventoryLockPacket, TradeInventoryUnlockPacket,
     TradeRemoveItemPacket, TradeRequestErrorPacket, TradeRequestSuccessPacket,
-    UnionHackModifyResponsePacket, UnionHackOpenResponsePacket, UnionHackSlot, UnionInitDataPacket,
+    UnionHackModifyResponsePacket, UnionHackOpenResponsePacket, UnionHackSlot,
     UnloadDropsPacket, UnloadMobsPacket, UnloadTamerPacket, UpdateCurrentTitlePacket,
     UpdateMovementSpeedPacket, UpdateStatusPacket, XaiInfoPacket,
     game::{
@@ -597,10 +597,6 @@ impl GameApplication {
                     .encode(),
                     ServerExperiencePacket {
                         experience: character.server_experience,
-                    }
-                    .encode(),
-                    MembershipPacket {
-                        remaining_seconds: character.membership_seconds,
                     }
                     .encode(),
                     CashShopCoinsPacket {
@@ -2200,10 +2196,23 @@ impl GameApplication {
             // ChannelInfo — client echoes back the channel info sent during ComplementarInformation.
             // No second response needed.
             GameRequest::ChannelInfo => Ok(vec![]),
-            // Membership — client echoes back the membership packet sent during ComplementarInformation.
-            // No second response needed.
-            GameRequest::Membership => Ok(vec![]),
-            // Emoticon / SaveClientOption (opcode 1076) is one-way client-to-server; echoing it back tears down the session.
+            // Membership — client requests active status and Unix expiration timestamp on world entry.
+            GameRequest::Membership => {
+                let character_id = session.character_id.ok_or(GameFlowError::Unauthenticated)?;
+                let character = self
+                    .repository
+                    .character_by_id(character_id)
+                    .map_err(|error| GameFlowError::Storage(error.to_string()))?
+                    .ok_or(GameFlowError::CharacterNotFound(character_id))?;
+                Ok(vec![
+                    MembershipPacket::from_remaining_seconds(
+                        character.membership_seconds,
+                        unix_timestamp(),
+                    )
+                    .encode(),
+                ])
+            }
+            // Client option flags are one-way notifications; consume without echoing so the stream stays aligned.
             GameRequest::Emoticon {
                 emoticon_type: _,
                 value: _,
@@ -4351,32 +4360,18 @@ impl GameApplication {
         ])
     }
 
-    /// Push the full D-Unit state to the client on login so the modern
-    /// `cUnionContents` can hydrate its hacking grid without an extra request.
+    /// Build the initial union state notification emitted on world entry so
+    /// the client marks its union panel initialized before rating reward calls.
     pub fn build_union_init_data(&self, session: &GameSession) -> Result<Vec<u8>, GameFlowError> {
         let character_id = session.character_id.ok_or(GameFlowError::Unauthenticated)?;
-        let rows = self
+        let _rows = self
             .repository
             .union_hack_slots(character_id)
             .map_err(|error| GameFlowError::Storage(error.to_string()))?;
 
-        let slots: Vec<UnionHackSlot> = rows
-            .into_iter()
-            .enumerate()
-            .map(|(index, row)| UnionHackSlot {
-                slot: index as u8,
-                part_id: row.part_id,
-                grade: row.grade,
-                locked: row.locked,
-            })
-            .collect();
-
-        let total_rating: i32 = slots.iter().map(|slot| i32::from(slot.grade)).sum();
-
-        Ok(UnionInitDataPacket {
-            slots,
-            total_rating,
-            synergy_bonus: 0,
+        Ok(InitUnionDataPacket {
+            words: Vec::new(),
+            rows: Vec::new(),
         }
         .encode())
     }
@@ -9949,7 +9944,6 @@ pub enum GameFlowError {
     Storage(String),
 }
 
-#[allow(dead_code)]
 fn unix_timestamp() -> u32 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -11912,6 +11906,21 @@ mod tests {
             )
             .expect("bootstrap should succeed");
         assert_eq!(responses.len(), 2);
+        let first_raw = PacketReader::from_frame(&responses[0]).expect("initial info frame");
+        assert_eq!(
+            first_raw.packet_type,
+            odmo_protocol::opcode::game::INITIAL_INFO_RESPONSE
+        );
+        let union_raw = PacketReader::from_frame(&responses[1]).expect("union init frame");
+        assert_eq!(
+            union_raw.packet_type,
+            odmo_protocol::opcode::game::NTF_INIT_UNION_DATA
+        );
+        assert_ne!(
+            union_raw.packet_type,
+            odmo_protocol::opcode::game::UNION_INIT_DATA
+        );
+        assert_eq!(union_raw.payload, [0, 0, 0, 0]);
     }
 
     #[test]
@@ -12059,9 +12068,88 @@ mod tests {
             "complementary flow should include guild rank when present",
         );
         assert!(
+            !packet_types.contains(&odmo_protocol::opcode::game::MEMBERSHIP),
+            "complementary flow should not push unsolicited membership state",
+        );
+        assert!(
             responses.len() >= 18,
             "complementary flow should emit the expanded legacy-like follow-up set",
         );
+    }
+
+    #[test]
+    fn membership_request_returns_unix_expiration_status() {
+        let repo = Arc::new(InMemoryCharacterRepository::demo());
+        let app = GameApplication::new(
+            GameServiceConfig {
+                portal_state_dir: unique_test_dir("membership-status"),
+            },
+            repo.clone(),
+        );
+        let mut session = GameSession::new(1);
+        session.character_id = Some(100);
+
+        let inactive = app
+            .handle_request(&mut session, GameRequest::Membership)
+            .expect("inactive membership request succeeds");
+        assert_eq!(inactive.len(), 1);
+        let inactive_raw = PacketReader::from_frame(&inactive[0]).expect("inactive frame decodes");
+        assert_eq!(
+            inactive_raw.packet_type,
+            odmo_protocol::opcode::game::MEMBERSHIP
+        );
+        assert_eq!(inactive_raw.payload, [0, 0, 0, 0, 0]);
+
+        repo.characters
+            .write()
+            .expect("repo poisoned")
+            .get_mut(&100)
+            .expect("character")
+            .membership_seconds = 3_600;
+
+        let before = unix_timestamp();
+        let active = app
+            .handle_request(&mut session, GameRequest::Membership)
+            .expect("active membership request succeeds");
+        let after = unix_timestamp();
+        assert_eq!(active.len(), 1);
+        let active_raw = PacketReader::from_frame(&active[0]).expect("active frame decodes");
+        assert_eq!(
+            active_raw.packet_type,
+            odmo_protocol::opcode::game::MEMBERSHIP
+        );
+        assert_eq!(active_raw.payload.len(), 5);
+        assert_eq!(active_raw.payload[0], 1);
+        let expire_ts = u32::from_le_bytes(active_raw.payload[1..5].try_into().unwrap());
+        assert!(
+            expire_ts >= before.saturating_add(3_600) && expire_ts <= after.saturating_add(3_600),
+            "expected expiration timestamp in [{}, {}], got {expire_ts}",
+            before.saturating_add(3_600),
+            after.saturating_add(3_600)
+        );
+    }
+
+    #[test]
+    fn emoticon_request_consumes_option_payload_without_response() {
+        let app = GameApplication::new(
+            GameServiceConfig {
+                portal_state_dir: unique_test_dir("emoticon-oneway"),
+            },
+            Arc::new(InMemoryCharacterRepository::demo()),
+        );
+        let mut session = GameSession::new(1);
+        session.character_id = Some(100);
+
+        let responses = app
+            .handle_request(
+                &mut session,
+                GameRequest::Emoticon {
+                    emoticon_type: 0,
+                    value: -1,
+                },
+            )
+            .expect("one-way option payload succeeds");
+        assert!(responses.is_empty());
     }
 
     #[test]
