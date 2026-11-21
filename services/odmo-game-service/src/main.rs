@@ -111,6 +111,84 @@ async fn main() -> anyhow::Result<()> {
         .and_then(|v| v.parse().ok())
         .unwrap_or(7607);
 
+    let assets_dir = std::env::var("ODMO_SERVER_ASSETS_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from("data/server-assets"));
+
+    // Movement checks: ODMO_MOVE_CHECK=off disables them; ODMO_MOVE_MAX_DISTANCE and
+    // ODMO_MOVE_SPEED_TOLERANCE loosen or tighten them.
+    let mut movement_limits = odmo_application::movement::MovementLimits::default();
+    if std::env::var("ODMO_MOVE_CHECK").is_ok_and(|value| {
+        matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "off" | "0" | "false"
+        )
+    }) {
+        movement_limits.enabled = false;
+    }
+    if let Some(distance) = std::env::var("ODMO_MOVE_MAX_DISTANCE")
+        .ok()
+        .and_then(|value| value.trim().parse::<i64>().ok())
+        .filter(|distance| *distance > 0)
+    {
+        movement_limits.max_distance = distance;
+    }
+    if let Some(tolerance) = std::env::var("ODMO_MOVE_SPEED_TOLERANCE")
+        .ok()
+        .and_then(|value| value.trim().parse::<f64>().ok())
+        .filter(|tolerance| tolerance.is_finite() && *tolerance >= 1.0)
+    {
+        movement_limits.speed_tolerance = tolerance;
+    }
+    info!(
+        "movement checks: {} (max distance {}, speed tolerance {})",
+        if movement_limits.enabled { "on" } else { "off" },
+        movement_limits.max_distance,
+        movement_limits.speed_tolerance
+    );
+
+    // Portals configured for this server (optional); see odmo_application::portals.
+    let portal_catalog = match odmo_application::portals::PortalCatalog::load_dir(&assets_dir) {
+        Ok(catalog) => {
+            if catalog.is_empty() {
+                info!("portals: none configured, using the built-in portals");
+            } else {
+                info!(
+                    "portals: {} configured ({} with a source location)",
+                    catalog.len(),
+                    catalog.with_source()
+                );
+            }
+            catalog
+        }
+        Err(error) => {
+            warn!("portals unavailable: {error:#}");
+            odmo_application::portals::PortalCatalog::default()
+        }
+    };
+
+    // Where NPCs stand (optional); requests made at a listed NPC are range checked, and
+    // in strict mode requests naming an unlisted NPC are refused.
+    let npc_catalog = match odmo_application::npcs::NpcCatalog::load_dir(&assets_dir) {
+        Ok(catalog) => {
+            if catalog.is_empty() {
+                info!("npcs: none listed, npc requests are not range checked");
+            } else if catalog.is_strict() {
+                info!(
+                    "npcs: {} locations listed, strict mode on (unlisted npcs are refused)",
+                    catalog.len()
+                );
+            } else {
+                info!("npcs: {} locations listed", catalog.len());
+            }
+            catalog
+        }
+        Err(error) => {
+            warn!("npcs unavailable: {error:#}");
+            odmo_application::npcs::NpcCatalog::default()
+        }
+    };
+
     let broadcast = Arc::new(SessionBroadcast::new());
 
     let backend = Arc::new(odmo_persistence::initialize_backend().await?);
@@ -118,7 +196,10 @@ async fn main() -> anyhow::Result<()> {
 
     let app = GameApplication::new(GameServiceConfig { portal_state_dir }, repository)
         .with_broadcast(broadcast.clone())
-        .with_game_server(game_server_address, game_server_port);
+        .with_game_server(game_server_address, game_server_port)
+        .with_movement_limits(movement_limits)
+        .with_portal_catalog(portal_catalog)
+        .with_npc_catalog(npc_catalog);
 
     let session_factory = GameSessionFactory::new();
     let listener = TcpListener::bind(&bind)

@@ -299,6 +299,9 @@ pub struct GameSession {
     pub viewed_characters: HashMap<u64, odmo_types::CharacterSummary>,
     pub viewed_mobs: HashMap<u64, odmo_types::MobSummary>,
     pub viewed_drops: HashMap<u64, odmo_types::DropSummary>,
+    /// Where the tamer and the partner were last accepted to walk (movement checks).
+    pub tamer_track: Option<crate::movement::MoveTrack>,
+    pub partner_track: Option<crate::movement::MoveTrack>,
 }
 
 impl GameSession {
@@ -312,6 +315,8 @@ impl GameSession {
             viewed_characters: HashMap::new(),
             viewed_mobs: HashMap::new(),
             viewed_drops: HashMap::new(),
+            tamer_track: None,
+            partner_track: None,
         }
     }
 }
@@ -373,6 +378,35 @@ pub struct PortalDefinition {
     pub destination_map_id: i16,
     pub destination_x: i32,
     pub destination_y: i32,
+    /// Where the portal stands. When set, a tamer must be on that map and within
+    /// [`PORTAL_USE_RANGE`] of it to use the portal; when unset the portal is not checked.
+    pub source: Option<PortalSource>,
+}
+
+/// Map and position of a portal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PortalSource {
+    pub map_id: i16,
+    pub x: i32,
+    pub y: i32,
+}
+
+/// Farthest a tamer may stand from a portal with a known source and still use it.
+/// Loose until checked against a real client: covers the portal's trigger area and the
+/// latency between the last movement packet and the warp request.
+pub const PORTAL_USE_RANGE: i64 = 1_500;
+
+impl PortalDefinition {
+    /// Whether a tamer on `map_id` at (`x`, `y`) may use this portal.
+    pub fn usable_from(&self, map_id: i16, x: i32, y: i32) -> bool {
+        match self.source {
+            None => true,
+            Some(source) => {
+                source.map_id == map_id
+                    && map_distance(source.x, source.y, x, y) <= PORTAL_USE_RANGE
+            }
+        }
+    }
 }
 
 pub trait PortalRepository: Send + Sync {
@@ -476,6 +510,9 @@ pub struct GameApplication {
     trade_runtime: Arc<RwLock<TradeRuntimeState>>,
     game_server_address: String,
     game_server_port: i32,
+    movement_limits: crate::movement::MovementLimits,
+    portal_catalog: crate::portals::PortalCatalog,
+    npc_catalog: crate::npcs::NpcCatalog,
 }
 
 impl GameApplication {
@@ -491,6 +528,9 @@ impl GameApplication {
             trade_runtime: Arc::new(RwLock::new(TradeRuntimeState::default())),
             game_server_address: "127.0.0.1".to_string(),
             game_server_port: 7003,
+            movement_limits: crate::movement::MovementLimits::default(),
+            portal_catalog: crate::portals::PortalCatalog::default(),
+            npc_catalog: crate::npcs::NpcCatalog::default(),
         }
     }
 
@@ -502,6 +542,26 @@ impl GameApplication {
     pub fn with_game_server(mut self, address: String, port: i32) -> Self {
         self.game_server_address = address;
         self.game_server_port = port;
+        self
+    }
+
+    /// Portals configured for this server; they replace the repository's portals with the
+    /// same id.
+    pub fn with_portal_catalog(mut self, catalog: crate::portals::PortalCatalog) -> Self {
+        self.portal_catalog = catalog;
+        self
+    }
+
+    /// Where this server's NPCs stand; requests made at a listed NPC must come from
+    /// within range of it, and in strict mode unlisted NPCs are refused.
+    pub fn with_npc_catalog(mut self, catalog: crate::npcs::NpcCatalog) -> Self {
+        self.npc_catalog = catalog;
+        self
+    }
+
+    /// Limits applied to client-reported movement. On by default.
+    pub fn with_movement_limits(mut self, limits: crate::movement::MovementLimits) -> Self {
+        self.movement_limits = limits;
         self
     }
 
@@ -525,6 +585,21 @@ impl GameApplication {
             self.reconcile_drop_visibility(session)
                 .map_err(|error| GameFlowError::Storage(error.to_string()))?,
         );
+
+        // Requests made at an NPC are refused, without an answer, when the NPC is listed
+        // and the tamer is not next to it. Shops answer their own refusal instead.
+        if let Some((npc_id, action)) = request_npc(&request)
+            && let Some(character_id) = session.character_id
+        {
+            let character = self
+                .repository
+                .character_by_id(character_id)
+                .map_err(|error| GameFlowError::Storage(error.to_string()))?
+                .ok_or(GameFlowError::CharacterNotFound(character_id))?;
+            if !self.npc_in_reach(npc_id, &character, action) {
+                return Ok(responses);
+            }
+        }
 
         let request_responses = match request {
             GameRequest::Connection { .. } => Ok(vec![
@@ -1765,6 +1840,15 @@ impl GameApplication {
                     .character_by_id(character_id)
                     .map_err(|error| GameFlowError::Storage(error.to_string()))?
                     .ok_or(GameFlowError::CharacterNotFound(character_id))?;
+                if !self.npc_in_reach(npc_id, &character, "purchase") {
+                    return Ok(vec![
+                        NpcPurchaseResultPacket {
+                            success: false,
+                            remaining_bits: character.inventory.bits,
+                        }
+                        .encode(),
+                    ]);
+                }
 
                 let shop = self
                     .repository
@@ -1775,8 +1859,12 @@ impl GameApplication {
                         character.map_id
                     )))?;
 
-                let slot_idx = shop_slot as usize;
-                if slot_idx >= shop.items.len() {
+                // A negative slot, a purchase of nothing or a negative price is refused.
+                let slot_idx = usize::try_from(shop_slot).unwrap_or(usize::MAX);
+                if slot_idx >= shop.items.len()
+                    || purchase_count == 0
+                    || shop.items[slot_idx].buy_price < 0
+                {
                     return Ok(vec![
                         NpcPurchaseResultPacket {
                             success: false,
@@ -1785,11 +1873,21 @@ impl GameApplication {
                         .encode(),
                     ]);
                 }
+                // Stored inventories may list fewer records than their size; the free
+                // slots past the end are empty, so pad them like item moves do.
+                if character.inventory.items.len() < character.inventory.size as usize {
+                    character
+                        .inventory
+                        .items
+                        .resize_with(character.inventory.size as usize, ItemRecord::default);
+                }
 
                 let npc_item = &shop.items[slot_idx];
-                let total_cost = npc_item.buy_price * purchase_count as i32;
+                // In i64: price x count overflows an i32 for expensive items and would
+                // wrap to a negative cost that adds bits.
+                let total_cost = i64::from(npc_item.buy_price) * i64::from(purchase_count);
 
-                if character.inventory.bits < total_cost as i64 {
+                if character.inventory.bits < total_cost {
                     return Ok(vec![
                         NpcPurchaseResultPacket {
                             success: false,
@@ -1800,7 +1898,7 @@ impl GameApplication {
                 }
 
                 // Deduct bits
-                character.inventory.bits -= total_cost as i64;
+                character.inventory.bits -= total_cost;
 
                 // Find empty slot or existing stack of same item
                 let mut placed = false;
@@ -1843,7 +1941,7 @@ impl GameApplication {
 
                 if !placed {
                     // No space - refund bits
-                    character.inventory.bits += total_cost as i64;
+                    character.inventory.bits += total_cost;
                     return Ok(vec![
                         NpcPurchaseResultPacket {
                             success: false,
@@ -1884,6 +1982,9 @@ impl GameApplication {
                     .character_by_id(character_id)
                     .map_err(|error| GameFlowError::Storage(error.to_string()))?
                     .ok_or(GameFlowError::CharacterNotFound(character_id))?;
+                if !self.npc_in_reach(npc_id, &character, "sale") {
+                    return Ok(Vec::new());
+                }
 
                 let slot_idx = item_slot as usize;
                 if slot_idx >= character.inventory.items.len() {
@@ -2059,6 +2160,73 @@ impl GameApplication {
                 // Condition bit 0x01 = Ride (ConditionEnum.Ride = 1)
                 let is_riding = (character.current_condition & 0x01) != 0;
 
+                // Reject positions the entity cannot have reached at its speed; the client
+                // is walked back to its last accepted position.
+                let limits = self.movement_limits;
+                let now = std::time::Instant::now();
+                let (stored, speed, track) = if is_tamer {
+                    // Riding doubles the tamer's speed, as UpdateMovementSpeed reports it.
+                    let ms = if is_riding {
+                        character.ms.saturating_mul(2)
+                    } else {
+                        character.ms
+                    };
+                    (
+                        (character.x, character.y),
+                        crate::movement::allowed_speed(
+                            ms,
+                            crate::movement::DEFAULT_TAMER_SPEED,
+                            &limits,
+                        ),
+                        session.tamer_track,
+                    )
+                } else {
+                    // A following partner may run to catch up with its tamer.
+                    let ms = character.partner_ms.max(character.ms);
+                    (
+                        (character.partner_x, character.partner_y),
+                        crate::movement::allowed_speed(
+                            ms,
+                            crate::movement::DEFAULT_PARTNER_SPEED,
+                            &limits,
+                        ),
+                        session.partner_track,
+                    )
+                };
+                let Some(accepted) = crate::movement::check_move(
+                    track.as_ref(),
+                    stored,
+                    (x, y),
+                    now,
+                    speed,
+                    &limits,
+                ) else {
+                    let correction = if is_tamer {
+                        TamerWalkPacket {
+                            handler: character.general_handler,
+                            x: stored.0,
+                            y: stored.1,
+                        }
+                        .encode()
+                    } else {
+                        DigimonWalkPacket {
+                            handler: character.partner_handler,
+                            x: stored.0,
+                            y: stored.1,
+                        }
+                        .encode()
+                    };
+                    return Ok(vec![correction]);
+                };
+                if is_tamer {
+                    session.tamer_track = Some(accepted);
+                    if is_riding {
+                        session.partner_track = Some(accepted);
+                    }
+                } else {
+                    session.partner_track = Some(accepted);
+                }
+
                 if is_tamer {
                     self.repository
                         .update_character_position(character_id, x, y, z)
@@ -2126,13 +2294,34 @@ impl GameApplication {
                     .map_err(|error| GameFlowError::Storage(error.to_string()))?
                     .ok_or(GameFlowError::CharacterNotFound(character_id))?;
 
-                let portal = self
-                    .repository
-                    .portal_by_id(portal_id)
-                    .map_err(|error| GameFlowError::Storage(error.to_string()))?
-                    .ok_or(GameFlowError::Storage(format!(
-                        "portal {portal_id} not found"
-                    )))?;
+                // Logged for every request so a server can record where its portals
+                // stand (see `crate::portals`).
+                tracing::info!(
+                    "warp request: portal {portal_id} by character {character_id} on map {} at ({}, {})",
+                    character.map_id,
+                    character.x,
+                    character.y
+                );
+                let portal = match self.portal_catalog.get(portal_id) {
+                    Some(portal) => portal.clone(),
+                    None => self
+                        .repository
+                        .portal_by_id(portal_id)
+                        .map_err(|error| GameFlowError::Storage(error.to_string()))?
+                        .ok_or(GameFlowError::Storage(format!(
+                            "portal {portal_id} not found"
+                        )))?,
+                };
+                // A portal with a known location can only be used next to it.
+                if !portal.usable_from(character.map_id, character.x, character.y) {
+                    tracing::warn!(
+                        "rejected warp through portal {portal_id}: character {character_id} on map {} at ({}, {}) is not at the portal",
+                        character.map_id,
+                        character.x,
+                        character.y
+                    );
+                    return Ok(Vec::new());
+                }
 
                 // Remove from current map presence
                 self.portal_bridge
@@ -2170,6 +2359,8 @@ impl GameApplication {
                 session.viewed_characters.clear();
                 session.viewed_mobs.clear();
                 session.viewed_drops.clear();
+                session.tamer_track = None;
+                session.partner_track = None;
 
                 if portal.is_local {
                     // Local teleport: same map, send LocalMapSwapPacket (opcode 1711)
@@ -6496,6 +6687,39 @@ impl GameApplication {
         ])
     }
 
+    /// Whether `character` stands close enough to NPC `npc_id` to use it (see
+    /// [`crate::npcs`]). Every NPC request is logged with the NPC id and the tamer's
+    /// position, so a server can record where its NPCs stand.
+    fn npc_in_reach(
+        &self,
+        npc_id: i32,
+        character: &odmo_types::CharacterSummary,
+        action: &str,
+    ) -> bool {
+        tracing::info!(
+            "npc {action}: npc {npc_id} by character {} on map {} at ({}, {})",
+            character.id,
+            character.map_id,
+            character.x,
+            character.y
+        );
+        let in_reach =
+            self.npc_catalog
+                .usable_from(npc_id, character.map_id, character.x, character.y);
+        if !in_reach {
+            let reason = if self.npc_catalog.is_strict() && !self.npc_catalog.is_listed(npc_id) {
+                "the npc is not listed and strict mode is on"
+            } else {
+                "the character is not near it"
+            };
+            tracing::warn!(
+                "rejected npc {action}: npc {npc_id} for character {}: {reason}",
+                character.id
+            );
+        }
+        in_reach
+    }
+
     fn handle_item_return(
         &self,
         session: &GameSession,
@@ -6510,6 +6734,11 @@ impl GameApplication {
 
         let idx = item_slot as usize;
         if item_slot < 0 || idx >= character.inventory.items.len() {
+            return Ok(Vec::new());
+        }
+        // An empty slot has nothing to return; refunding it would mint bits.
+        let returned = &character.inventory.items[idx];
+        if returned.item_id <= 0 || returned.amount <= 0 {
             return Ok(Vec::new());
         }
 
@@ -9980,6 +10209,33 @@ fn compute_partner_damage(
     raw.saturating_mul(multiplier)
 }
 
+/// The NPC a request is made at, with a name for the log, for every request that names
+/// one except shop purchases and sales, which check their NPC themselves. Digimon
+/// archive moves and listings carry an NPC type rather than an NPC and are not included.
+fn request_npc(request: &GameRequest) -> Option<(i32, &'static str)> {
+    // Ids sent as u32 are compared as the i32 the catalog uses.
+    let as_id = |id: u32| id as i32;
+    Some(match request {
+        GameRequest::HatchInsertEgg { npc_idx, .. } => (*npc_idx, "hatch insert egg"),
+        GameRequest::HatchIncrease { npc_idx, .. } => (*npc_idx, "hatch increase"),
+        GameRequest::HatchFinish { npc_idx, .. } => (*npc_idx, "hatch finish"),
+        GameRequest::HatchRemoveEgg { npc_idx, .. } => (*npc_idx, "hatch remove egg"),
+        GameRequest::HatchBackupInsert { npc_idx, .. } => (*npc_idx, "hatch backup insert"),
+        GameRequest::HatchBackupCancel { npc_idx, .. } => (*npc_idx, "hatch backup cancel"),
+        GameRequest::DigimonArchiveSwap { npc_idx, .. } => (as_id(*npc_idx), "archive swap"),
+        GameRequest::ItemSocketIn { npc_idx, .. } => (*npc_idx, "socket in"),
+        GameRequest::ItemSocketOut { npc_idx, .. } => (*npc_idx, "socket out"),
+        GameRequest::ItemSocketIdentify { npc_idx, .. } => (*npc_idx, "socket identify"),
+        GameRequest::QuestAvailableList { npc_id } => (*npc_id, "quest list"),
+        GameRequest::RareMachineOpen { npc_idx, .. } => (as_id(*npc_idx), "rare machine open"),
+        GameRequest::RareMachineRun { npc_idx, .. } => (as_id(*npc_idx), "rare machine run"),
+        GameRequest::GuildCreate { npc_id, .. } => (as_id(*npc_id), "guild create"),
+        GameRequest::SpiritToDigimon { npc_id, .. } => (*npc_id, "spirit to digimon"),
+        GameRequest::DigimonToSpirit { npc_id, .. } => (*npc_id, "digimon to spirit"),
+        _ => return None,
+    })
+}
+
 fn map_distance(xa: i32, ya: i32, xb: i32, yb: i32) -> i64 {
     let distance_x = (xb as i64 - xa as i64).pow(2);
     let distance_y = (yb as i64 - ya as i64).pow(2);
@@ -11648,6 +11904,7 @@ mod tests {
                     destination_map_id: 102,
                     destination_x: 32615,
                     destination_y: 14930,
+                    source: None,
                 }),
                 10002 => Some(PortalDefinition {
                     id: 10002,
@@ -11655,6 +11912,7 @@ mod tests {
                     destination_map_id: 3,
                     destination_x: 18086,
                     destination_y: 18874,
+                    source: None,
                 }),
                 _ => None,
             })
@@ -11664,10 +11922,30 @@ mod tests {
     impl NpcShopRepository for InMemoryCharacterRepository {
         fn shop_by_npc(
             &self,
-            _npc_id: i32,
-            _map_id: i16,
+            npc_id: i32,
+            map_id: i16,
         ) -> anyhow::Result<Option<NpcShopDefinition>> {
-            Ok(None)
+            // One test shop: NPC 1001 on the start map sells item 41001 cheaply and
+            // item 41002 at a price whose i32 product with a large count overflows.
+            if npc_id != 1001 || map_id != DEFAULT_START_MAP_ID {
+                return Ok(None);
+            }
+            Ok(Some(NpcShopDefinition {
+                npc_id,
+                map_id,
+                items: vec![
+                    NpcShopItem {
+                        item_id: 41_001,
+                        buy_price: 200,
+                        sell_price: 100,
+                    },
+                    NpcShopItem {
+                        item_id: 41_002,
+                        buy_price: 100_000,
+                        sell_price: 100,
+                    },
+                ],
+            }))
         }
     }
 
@@ -13285,8 +13563,8 @@ mod tests {
             GameRequest::TamerMovimentation {
                 ticks: 0,
                 handler: 32_767,
-                x: 4321,
-                y: 5432,
+                x: DEFAULT_START_X + 1_000,
+                y: DEFAULT_START_Y + 500,
                 z: 0.0,
             },
         )
@@ -13306,8 +13584,8 @@ mod tests {
         let raw = PacketReader::from_frame(&position_packet).expect("frame");
         let mut payload = PacketReader::new(raw.payload);
         assert_eq!(payload.read_u8().expect("slot"), 0);
-        assert_eq!(payload.read_i32().expect("x"), 4321);
-        assert_eq!(payload.read_i32().expect("y"), 5432);
+        assert_eq!(payload.read_i32().expect("x"), DEFAULT_START_X + 1_000);
+        assert_eq!(payload.read_i32().expect("y"), DEFAULT_START_Y + 500);
     }
 
     #[test]
@@ -15232,6 +15510,445 @@ mod tests {
                 .unwrap()
                 .packet_type,
             odmo_protocol::opcode::game::CONSUME_ITEM_FAILURE
+        );
+    }
+
+    // ---- Server-side checks on client requests (security) ----
+
+    fn stored_character(repo: &InMemoryCharacterRepository) -> CharacterSummary {
+        repo.character_by_id(100)
+            .expect("character")
+            .expect("character exists")
+    }
+
+    fn checks_app(
+        name: &str,
+    ) -> (
+        GameApplication,
+        Arc<InMemoryCharacterRepository>,
+        GameSession,
+    ) {
+        let repo = Arc::new(InMemoryCharacterRepository::demo());
+        let app = GameApplication::new(
+            GameServiceConfig {
+                portal_state_dir: unique_test_dir(name),
+            },
+            repo.clone(),
+        );
+        let mut session = GameSession::new(1);
+        session.character_id = Some(100);
+        (app, repo, session)
+    }
+
+    fn set_position(repo: &InMemoryCharacterRepository, map_id: i16, x: i32, y: i32) {
+        let mut characters = repo.characters.write().expect("repo poisoned");
+        let character = characters.get_mut(&100).expect("demo character");
+        character.map_id = map_id;
+        character.x = x;
+        character.y = y;
+    }
+
+    fn set_bits(repo: &InMemoryCharacterRepository, bits: i64) {
+        let mut characters = repo.characters.write().expect("repo poisoned");
+        characters
+            .get_mut(&100)
+            .expect("demo character")
+            .inventory
+            .bits = bits;
+    }
+
+    #[test]
+    fn returning_an_empty_slot_refunds_nothing() {
+        let (app, repo, mut session) = checks_app("empty-item-return");
+        repo.characters
+            .write()
+            .expect("repo poisoned")
+            .get_mut(&100)
+            .expect("demo character")
+            .inventory
+            .items[2] = odmo_types::ItemRecord::default();
+        let bits_before = stored_character(&repo).inventory_bits;
+
+        for _ in 0..3 {
+            let responses = app
+                .handle_request(&mut session, GameRequest::ItemReturn { item_slot: 2 })
+                .expect("item return");
+            assert!(responses.is_empty());
+        }
+        assert_eq!(stored_character(&repo).inventory_bits, bits_before);
+    }
+
+    fn buy(app: &GameApplication, shop_slot: i32, purchase_count: u16) -> Vec<Vec<u8>> {
+        let mut session = GameSession::new(1);
+        session.character_id = Some(100);
+        app.handle_request(
+            &mut session,
+            GameRequest::NpcPurchase {
+                vip: 0,
+                npc_id: 1001,
+                marker: 0x38,
+                shop_slot,
+                purchase_count,
+            },
+        )
+        .expect("purchase")
+    }
+
+    #[test]
+    fn npc_purchase_cost_does_not_overflow_into_bits() {
+        let (app, repo, _) = checks_app("npc-purchase-overflow");
+        set_bits(&repo, 1_000);
+        // 100,000 x 65,535 does not fit an i32; wrapped, it would be a negative cost.
+        let responses = buy(&app, 1, u16::MAX);
+        assert_eq!(
+            responses,
+            vec![
+                NpcPurchaseResultPacket {
+                    success: false,
+                    remaining_bits: 1_000,
+                }
+                .encode()
+            ]
+        );
+        assert_eq!(stored_character(&repo).inventory.bits, 1_000);
+    }
+
+    #[test]
+    fn npc_purchase_refuses_nothing_and_negative_slots() {
+        let (app, repo, _) = checks_app("npc-purchase-bounds");
+        set_bits(&repo, 1_000);
+        let refused = NpcPurchaseResultPacket {
+            success: false,
+            remaining_bits: 1_000,
+        }
+        .encode();
+        assert_eq!(buy(&app, 0, 0), vec![refused.clone()]);
+        assert_eq!(buy(&app, -1, 1), vec![refused]);
+        assert_eq!(stored_character(&repo).inventory.bits, 1_000);
+    }
+
+    #[test]
+    fn npc_purchase_fills_an_inventory_stored_shorter_than_its_size() {
+        let (app, repo, _) = checks_app("npc-purchase-short");
+        {
+            let mut characters = repo.characters.write().expect("repo poisoned");
+            let character = characters.get_mut(&100).expect("demo character");
+            character.inventory.items.clear();
+            character.inventory.size = 30;
+            character.inventory.bits = 1_000;
+        }
+        let responses = buy(&app, 0, 2);
+        assert_eq!(
+            responses[0],
+            NpcPurchaseResultPacket {
+                success: true,
+                remaining_bits: 600,
+            }
+            .encode()
+        );
+        let after = stored_character(&repo);
+        assert_eq!(after.inventory.items.len(), 30);
+        assert_eq!(after.inventory.items[0].item_id, 41_001);
+        assert_eq!(after.inventory.items[0].amount, 2);
+    }
+
+    fn move_request(handler: u32, x: i32, y: i32) -> GameRequest {
+        GameRequest::TamerMovimentation {
+            ticks: 0,
+            handler,
+            x,
+            y,
+            z: 0.0,
+        }
+    }
+
+    #[test]
+    fn tamer_teleport_is_rejected_and_walked_back() {
+        let (app, repo, mut session) = checks_app("movement-teleport");
+        let before = stored_character(&repo);
+
+        let responses = app
+            .handle_request(
+                &mut session,
+                move_request(32_767, before.x + 20_000, before.y),
+            )
+            .expect("movement");
+        let after = stored_character(&repo);
+        assert_eq!((after.x, after.y), (before.x, before.y), "position kept");
+        assert_eq!(
+            responses,
+            vec![
+                TamerWalkPacket {
+                    handler: before.general_handler,
+                    x: before.x,
+                    y: before.y,
+                }
+                .encode()
+            ]
+        );
+
+        // A normal click is accepted and stored.
+        app.handle_request(
+            &mut session,
+            move_request(32_767, before.x + 1_500, before.y),
+        )
+        .expect("movement");
+        assert_eq!(stored_character(&repo).x, before.x + 1_500);
+    }
+
+    #[test]
+    fn rapid_moves_cannot_outrun_the_allowed_speed() {
+        let (app, repo, mut session) = checks_app("movement-rapid");
+        let start = stored_character(&repo);
+        // Each click lands just inside the limit of the previous accepted destination,
+        // but the server's estimate barely moves between packets.
+        let mut accepted = 0;
+        for step in 1..=5 {
+            let target = start.x + 4_900 * step;
+            app.handle_request(&mut session, move_request(32_767, target, start.y))
+                .expect("movement");
+            if stored_character(&repo).x == target {
+                accepted += 1;
+            }
+        }
+        assert_eq!(accepted, 1, "only the first hop is reachable");
+    }
+
+    #[test]
+    fn partner_teleport_is_rejected() {
+        let (app, repo, mut session) = checks_app("movement-partner");
+        let before = stored_character(&repo);
+        let responses = app
+            .handle_request(
+                &mut session,
+                move_request(1, before.partner_x - 30_000, before.partner_y),
+            )
+            .expect("movement");
+        let after = stored_character(&repo);
+        assert_eq!(
+            (after.partner_x, after.partner_y),
+            (before.partner_x, before.partner_y)
+        );
+        assert_eq!(
+            responses,
+            vec![
+                DigimonWalkPacket {
+                    handler: before.partner_handler,
+                    x: before.partner_x,
+                    y: before.partner_y,
+                }
+                .encode()
+            ]
+        );
+    }
+
+    #[test]
+    fn disabled_movement_limits_accept_any_position() {
+        let (app, repo, mut session) = checks_app("movement-off");
+        let app = app.with_movement_limits(crate::movement::MovementLimits {
+            enabled: false,
+            ..crate::movement::MovementLimits::default()
+        });
+        let before = stored_character(&repo);
+        app.handle_request(
+            &mut session,
+            move_request(32_767, before.x + 50_000, before.y),
+        )
+        .expect("movement");
+        assert_eq!(stored_character(&repo).x, before.x + 50_000);
+    }
+
+    fn portal_catalog() -> crate::portals::PortalCatalog {
+        crate::portals::PortalCatalog::from_json(&format!(
+            r#"{{"portals": [
+                {{"id": 10001, "destination": {{"map_id": 3, "x": 100, "y": 200}},
+                 "source": {{"map_id": {DEFAULT_START_MAP_ID}, "x": {DEFAULT_START_X}, "y": {DEFAULT_START_Y}}}}},
+                {{"id": 55555, "destination": {{"map_id": 7, "x": 300, "y": 400}}}}
+            ]}}"#
+        ))
+        .expect("catalog")
+    }
+
+    #[test]
+    fn portal_with_a_source_warps_only_a_tamer_standing_next_to_it() {
+        // Too far from the portal: refused, position kept.
+        let (app, repo, mut session) = checks_app("portal-far");
+        let app = app.with_portal_catalog(portal_catalog());
+        let far_x = DEFAULT_START_X + PORTAL_USE_RANGE as i32 + 1;
+        set_position(&repo, DEFAULT_START_MAP_ID, far_x, DEFAULT_START_Y);
+        let responses = app
+            .handle_request(&mut session, GameRequest::WarpGate { portal_id: 10001 })
+            .expect("warp request");
+        assert!(responses.is_empty());
+        let after = stored_character(&repo);
+        assert_eq!((after.map_id, after.x), (DEFAULT_START_MAP_ID, far_x));
+
+        // Right coordinates, wrong map: refused.
+        set_position(&repo, 102, DEFAULT_START_X, DEFAULT_START_Y);
+        let responses = app
+            .handle_request(&mut session, GameRequest::WarpGate { portal_id: 10001 })
+            .expect("warp request");
+        assert!(responses.is_empty());
+        assert_eq!(stored_character(&repo).map_id, 102);
+
+        // At the edge of the range: warped.
+        set_position(
+            &repo,
+            DEFAULT_START_MAP_ID,
+            DEFAULT_START_X + PORTAL_USE_RANGE as i32,
+            DEFAULT_START_Y,
+        );
+        let responses = app
+            .handle_request(&mut session, GameRequest::WarpGate { portal_id: 10001 })
+            .expect("warp");
+        assert!(!responses.is_empty());
+        let after = stored_character(&repo);
+        assert_eq!((after.map_id, after.x, after.y), (3, 100, 200));
+    }
+
+    #[test]
+    fn portal_without_a_source_is_not_checked() {
+        let (app, repo, mut session) = checks_app("portal-unchecked");
+        let app = app.with_portal_catalog(portal_catalog());
+        set_position(&repo, 9, 90_000, 90_000);
+        // Only the catalog knows 55555; the repository's 10002 has no source either.
+        app.handle_request(&mut session, GameRequest::WarpGate { portal_id: 55555 })
+            .expect("warp");
+        let after = stored_character(&repo);
+        assert_eq!((after.map_id, after.x, after.y), (7, 300, 400));
+        app.handle_request(&mut session, GameRequest::WarpGate { portal_id: 10002 })
+            .expect("warp");
+        assert_eq!(stored_character(&repo).map_id, 3);
+    }
+
+    fn npc_catalog(extra: &str) -> crate::npcs::NpcCatalog {
+        crate::npcs::NpcCatalog::from_json(&format!(
+            r#"{{{extra}"npcs": [{{"npc_id": 1001, "map_id": {DEFAULT_START_MAP_ID}, "x": 1000, "y": 1000}}]}}"#
+        ))
+        .expect("npcs")
+    }
+
+    #[test]
+    fn listed_npcs_trade_only_with_tamers_standing_nearby() {
+        let (app, repo, _) = checks_app("npc-range");
+        let app = app.with_npc_catalog(npc_catalog(""));
+        set_bits(&repo, 1_000);
+        let refused = NpcPurchaseResultPacket {
+            success: false,
+            remaining_bits: 1_000,
+        }
+        .encode();
+        let sale = GameRequest::NpcSell {
+            vip: 0,
+            npc_id: 1001,
+            marker: 0x38,
+            item_slot: 2,
+            sell_amount: 1,
+        };
+        repo.characters
+            .write()
+            .expect("repo poisoned")
+            .get_mut(&100)
+            .expect("demo character")
+            .inventory
+            .items[2] = odmo_types::ItemRecord::new(41_001, 1);
+        let mut session = GameSession::new(1);
+        session.character_id = Some(100);
+
+        // Far from the NPC: buying and selling are refused.
+        set_position(
+            &repo,
+            DEFAULT_START_MAP_ID,
+            1_000 + crate::npcs::NPC_USE_RANGE as i32 + 1,
+            1_000,
+        );
+        assert_eq!(buy(&app, 0, 1), vec![refused.clone()]);
+        assert!(
+            app.handle_request(&mut session, sale.clone())
+                .expect("sale")
+                .is_empty()
+        );
+        assert_eq!(stored_character(&repo).inventory.bits, 1_000);
+
+        // Same coordinates on another map: refused too.
+        set_position(&repo, 7, 1_000, 1_000);
+        assert_eq!(buy(&app, 0, 1), vec![refused]);
+
+        // Next to the NPC: both go through.
+        set_position(&repo, DEFAULT_START_MAP_ID, 1_000, 1_000);
+        assert_eq!(
+            buy(&app, 0, 1)[0],
+            NpcPurchaseResultPacket {
+                success: true,
+                remaining_bits: 800,
+            }
+            .encode()
+        );
+        assert!(
+            !app.handle_request(&mut session, sale)
+                .expect("sale")
+                .is_empty()
+        );
+        assert_eq!(stored_character(&repo).inventory.bits, 900);
+    }
+
+    fn ask_quests(app: &GameApplication, npc_id: i32) -> Vec<Vec<u8>> {
+        let mut session = GameSession::new(1);
+        session.character_id = Some(100);
+        app.handle_request(&mut session, GameRequest::QuestAvailableList { npc_id })
+            .expect("quest list")
+    }
+
+    fn quest_answer(npc_id: i32) -> Vec<u8> {
+        QuestAvailableListPacket {
+            npc_id,
+            quest_ids: Vec::new(),
+        }
+        .encode()
+    }
+
+    #[test]
+    fn other_npc_requests_are_refused_away_from_a_listed_npc() {
+        let (app, repo, _) = checks_app("npc-range-other");
+        let app = app.with_npc_catalog(npc_catalog(""));
+
+        set_position(&repo, DEFAULT_START_MAP_ID, 1_000, 1_000);
+        assert!(
+            ask_quests(&app, 1001).contains(&quest_answer(1001)),
+            "next to the npc"
+        );
+
+        set_position(&repo, DEFAULT_START_MAP_ID, 9_000, 1_000);
+        assert!(
+            !ask_quests(&app, 1001).contains(&quest_answer(1001)),
+            "too far"
+        );
+        // An npc that is not listed is not checked outside strict mode.
+        assert!(ask_quests(&app, 2002).contains(&quest_answer(2002)));
+
+        set_position(&repo, 7, 1_000, 1_000);
+        assert!(
+            !ask_quests(&app, 1001).contains(&quest_answer(1001)),
+            "another map"
+        );
+    }
+
+    #[test]
+    fn strict_npc_mode_refuses_requests_at_unlisted_npcs() {
+        let (app, repo, _) = checks_app("npc-strict");
+        let app = app.with_npc_catalog(npc_catalog(r#""strict": true, "anywhere": [0], "#));
+        set_position(&repo, DEFAULT_START_MAP_ID, 1_000, 1_000);
+        assert!(
+            ask_quests(&app, 1001).contains(&quest_answer(1001)),
+            "listed and nearby"
+        );
+        assert!(
+            !ask_quests(&app, 2002).contains(&quest_answer(2002)),
+            "unlisted refused"
+        );
+        assert!(
+            ask_quests(&app, 0).contains(&quest_answer(0)),
+            "anywhere id"
         );
     }
 }

@@ -1,7 +1,10 @@
 pub mod account;
 pub mod character;
 pub mod game;
+pub mod movement;
+pub mod npcs;
 pub mod portal;
+pub mod portals;
 
 pub fn bootstrap_message() -> &'static str {
     "odmo application layer"

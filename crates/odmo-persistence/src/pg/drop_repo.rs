@@ -29,13 +29,16 @@ impl MapDropRepository for PgRepository {
     ) -> anyhow::Result<DropCollectionResult> {
         let pool = self.pool().clone();
         self.block_on(async move {
+            // One transaction with the drop row locked: a concurrent pickup of the same
+            // drop waits here and then finds it gone, so a drop is only ever paid out once.
+            let mut tx = pool.begin().await?;
             let drop_row: Option<DropDb> = sqlx::query_as(
-                "SELECT id, map_id, channel, handler, owner_id, owner_handler, item_id, amount, x, y, owner_expires_at_unix, expires_at_unix, bits_drop, no_owner, collected FROM map_drops WHERE map_id = $1 AND channel = $2 AND handler = $3",
+                "SELECT id, map_id, channel, handler, owner_id, owner_handler, item_id, amount, x, y, owner_expires_at_unix, expires_at_unix, bits_drop, no_owner, collected FROM map_drops WHERE map_id = $1 AND channel = $2 AND handler = $3 FOR UPDATE",
             )
             .bind(map_id)
             .bind(channel as i16)
             .bind(drop_handler as i32)
-            .fetch_optional(&pool)
+            .fetch_optional(&mut *tx)
             .await?;
 
             let Some(drop_raw) = drop_row else {
@@ -58,26 +61,26 @@ impl MapDropRepository for PgRepository {
             }
 
             let drop_id = drop.id as i64;
-            let drop_map = drop.map_id;
-            let drop_chan = drop.channel as i16;
-            let drop_hdl = drop.handler as i32;
 
             if drop.collected {
-                sqlx::query("DELETE FROM map_drops WHERE id = $1 AND map_id = $2 AND channel = $3 AND handler = $4")
-                    .bind(drop_id).bind(drop_map).bind(drop_chan).bind(drop_hdl)
-                    .execute(&pool).await?;
+                sqlx::query("DELETE FROM map_drops WHERE id = $1")
+                    .bind(drop_id)
+                    .execute(&mut *tx)
+                    .await?;
+                tx.commit().await?;
                 return Ok(DropCollectionResult::Missing);
             }
 
-            // Load character position
-            let char_pos: Option<(i32, i32)> = sqlx::query_as(
-                "SELECT current_x, current_y FROM characters WHERE id = $1",
+            // Load (and lock) the character: position for the distance check and, for
+            // items, the inventory that is rewritten below.
+            let char_row: Option<(i32, i32, serde_json::Value)> = sqlx::query_as(
+                "SELECT current_x, current_y, inventory FROM characters WHERE id = $1 FOR UPDATE",
             )
             .bind(character_id as i64)
-            .fetch_optional(&pool)
+            .fetch_optional(&mut *tx)
             .await?;
 
-            let Some((char_x, char_y)) = char_pos else {
+            let Some((char_x, char_y, inv_json)) = char_row else {
                 return Ok(DropCollectionResult::Missing);
             };
 
@@ -100,28 +103,19 @@ impl MapDropRepository for PgRepository {
                 sqlx::query("UPDATE characters SET bits = bits + $1 WHERE id = $2")
                     .bind(i64::from(amount.max(0)))
                     .bind(character_id as i64)
-                    .execute(&pool).await?;
-
-                sqlx::query("DELETE FROM map_drops WHERE id = $1 AND map_id = $2 AND channel = $3 AND handler = $4")
-                    .bind(drop_id).bind(drop_map).bind(drop_chan).bind(drop_hdl)
-                    .execute(&pool).await?;
+                    .execute(&mut *tx)
+                    .await?;
+                sqlx::query("DELETE FROM map_drops WHERE id = $1")
+                    .bind(drop_id)
+                    .execute(&mut *tx)
+                    .await?;
+                tx.commit().await?;
 
                 let character = load_character(&pool, character_id).await?;
                 return Ok(DropCollectionResult::BitsCollected { drop, amount, character });
             }
 
             // Item collection
-            let inv_row: Option<(serde_json::Value,)> = sqlx::query_as(
-                "SELECT inventory FROM characters WHERE id = $1",
-            )
-            .bind(character_id as i64)
-            .fetch_optional(&pool)
-            .await?;
-
-            let Some((inv_json,)) = inv_row else {
-                return Ok(DropCollectionResult::Missing);
-            };
-
             let mut inventory: InventorySnapshot =
                 serde_json::from_value(inv_json).unwrap_or_default();
 
@@ -136,11 +130,13 @@ impl MapDropRepository for PgRepository {
             sqlx::query("UPDATE characters SET inventory = $1 WHERE id = $2")
                 .bind(&inv_ser)
                 .bind(character_id as i64)
-                .execute(&pool).await?;
-
-            sqlx::query("DELETE FROM map_drops WHERE id = $1 AND map_id = $2 AND channel = $3 AND handler = $4")
-                .bind(drop_id).bind(drop_map).bind(drop_chan).bind(drop_hdl)
-                .execute(&pool).await?;
+                .execute(&mut *tx)
+                .await?;
+            sqlx::query("DELETE FROM map_drops WHERE id = $1")
+                .bind(drop_id)
+                .execute(&mut *tx)
+                .await?;
+            tx.commit().await?;
 
             let character = load_character(&pool, character_id).await?;
             Ok(DropCollectionResult::ItemCollected { drop, item_id, amount, character })

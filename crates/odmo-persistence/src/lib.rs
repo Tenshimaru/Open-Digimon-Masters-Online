@@ -1172,6 +1172,7 @@ pub(crate) fn get_portal_definitions() -> Vec<PortalDefinition> {
             destination_map_id: 102,
             destination_x: 32615,
             destination_y: 14930,
+            source: None,
         },
         PortalDefinition {
             id: 10002,
@@ -1179,6 +1180,7 @@ pub(crate) fn get_portal_definitions() -> Vec<PortalDefinition> {
             destination_map_id: 3,
             destination_x: 18086,
             destination_y: 18874,
+            source: None,
         },
         PortalDefinition {
             id: 20001,
@@ -1186,6 +1188,7 @@ pub(crate) fn get_portal_definitions() -> Vec<PortalDefinition> {
             destination_map_id: DEFAULT_START_MAP_ID,
             destination_x: DEFAULT_START_X,
             destination_y: DEFAULT_START_Y,
+            source: None,
         },
         PortalDefinition {
             id: 20002,
@@ -1193,6 +1196,7 @@ pub(crate) fn get_portal_definitions() -> Vec<PortalDefinition> {
             destination_map_id: DEFAULT_START_MAP_ID,
             destination_x: DEFAULT_START_X,
             destination_y: DEFAULT_START_Y,
+            source: None,
         },
     ]
 }
