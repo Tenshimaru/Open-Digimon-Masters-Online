@@ -29,21 +29,23 @@ use odmo_protocol::{
     GuildInviteFailPacket, GuildInviteSuccessPacket, GuildMemberKickPacket, GuildMemberQuitPacket,
     GuildMessagePacket, GuildNoticeUpdatePacket, GuildPromotionDemotionPacket, HitPacket, HitType,
     InitUnionDataPacket, InventorySortLockResponsePacket, InventoryType, ItemConsumeFailPacket,
-    ItemConsumeSuccessPacket, ItemIdentifyPacket, ItemMoveFailPacket, ItemMoveSuccessPacket,
-    ItemRerollPacket, ItemReturnPacket, ItemSocketIdentifyPacket, ItemSocketInPacket,
-    ItemSocketOutPacket, ItemStoragePacket, KillOnHitPacket, KillOnSkillPacket, LoadBuffsPacket,
-    LoadDropsPacket, LoadInventoryPacket, LoadMobBuffsPacket, LoadMobsPacket, LoadTamerPacket,
-    LocalMapSwapPacket, MailListPacket, MapSwapPacket, MembershipPacket, MissHitPacket,
-    MonsterRespawnTimerPacket, NpcPurchaseResultPacket, NpcSellResultPacket, NpcSellRow,
-    OtherTamerDetailInfoPacket, PartnerSkillErrorPacket, PartnerSwitchFailurePacket,
-    PartnerSwitchPacket, PartyChangeLootTypePacket, PartyCreatedPacket, PartyInvitePacket,
-    PartyInviteResultPacket, PartyJoinPacket, PartyKickPacket, PartyLeaderChangedPacket,
-    PartyLeavePacket, PartyMemberBuffChangePacket, PartyMemberBuffEntry,
+    ItemConsumeSuccessPacket, ItemCraftResponsePacket, ItemIdentifyPacket, ItemMoveFailPacket,
+    ItemMoveSuccessPacket, ItemRerollPacket, ItemReturnPacket, ItemSocketIdentifyPacket,
+    ItemSocketInPacket, ItemSocketOutPacket, ItemStoragePacket, KillOnHitPacket, KillOnSkillPacket,
+    LoadBuffsPacket, LoadDropsPacket, LoadInventoryPacket, LoadMobBuffsPacket, LoadMobsPacket,
+    LoadTamerPacket, LocalMapSwapPacket, MailListPacket, MapSwapPacket, MembershipPacket,
+    MissHitPacket, MonsterRespawnTimerPacket, MultiSellEntry, MultiSellResultPacket,
+    NpcPurchaseResultPacket, NpcPurchaseRow, NpcRepurchaseBuyPacket, NpcRepurchaseListPacket,
+    NpcSellResultPacket, NpcSellRow, OtherTamerDetailInfoPacket, PartnerSkillErrorPacket,
+    PartnerSwitchFailurePacket, PartnerSwitchPacket, PartyChangeLootTypePacket, PartyCreatedPacket,
+    PartyInvitePacket, PartyInviteResultPacket, PartyJoinPacket, PartyKickPacket,
+    PartyLeaderChangedPacket, PartyLeavePacket, PartyMemberBuffChangePacket, PartyMemberBuffEntry,
     PartyMemberDisconnectedPacket, PartyMemberInfoPacket, PartyMemberListEntry,
     PartyMemberListPacket, PartyMemberMapChangePacket, PartyMemberPositionPacket, PickBitsPacket,
-    PickItemFailPacket, PickItemFailReason, PickItemPacket, QuestAvailableListPacket,
-    QuestGoalUpdatePacket, RandomBoxListEntry, RandomBoxListResponsePacket,
-    RandomBoxPurchaseResponsePacket, RecompenseGainPacket, RemoveBuffPacket, SealsPacket,
+    PickItemFailPacket, PickItemFailReason, PickItemPacket, QuestCompletePacket,
+    QuestCompleteRewardRow, QuestGoalUpdatePacket, RandomBoxListEntry, RandomBoxListResponsePacket,
+    RandomBoxPurchaseResponsePacket, RecompenseGainPacket, RemoveBuffPacket, RepurchaseBuyRow,
+    SealsPacket,
     SerializedItemRow, ServerExperiencePacket, SpiritToDigimonResultPacket, SplitItemPacket,
     SyncChatLine, SyncChatRecord, SyncMegaphoneLine, SyncNamedLine, SyncWhisperLine,
     TamerAttendancePacket, TamerChangeNamePacket, TamerEquipItemPacket, TamerRelationsPacket,
@@ -378,17 +380,29 @@ pub trait PortalRepository: Send + Sync {
     fn portal_by_id(&self, portal_id: i32) -> anyhow::Result<Option<PortalDefinition>>;
 }
 
-#[derive(Debug, Clone, PartialEq)]
+fn default_npc_shop_type() -> u8 {
+    1
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct NpcShopItem {
     pub item_id: i32,
     pub buy_price: i32,
     pub sell_price: i32,
+    #[serde(default)]
+    pub item_index: u16,
+    #[serde(default)]
+    pub barter_item_id: i32,
+    #[serde(default)]
+    pub barter_count: i32,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct NpcShopDefinition {
     pub npc_id: i32,
     pub map_id: i16,
+    #[serde(default = "default_npc_shop_type")]
+    pub shop_type: u8,
     pub items: Vec<NpcShopItem>,
 }
 
@@ -1844,196 +1858,28 @@ impl GameApplication {
                 marker: _,
                 shop_slot,
                 purchase_count,
-            } => {
-                let character_id = session.character_id.ok_or(GameFlowError::Unauthenticated)?;
-                let mut character = self
-                    .repository
-                    .character_by_id(character_id)
-                    .map_err(|error| GameFlowError::Storage(error.to_string()))?
-                    .ok_or(GameFlowError::CharacterNotFound(character_id))?;
-
-                let shop = self
-                    .repository
-                    .shop_by_npc(npc_id, character.map_id)
-                    .map_err(|error| GameFlowError::Storage(error.to_string()))?
-                    .ok_or(GameFlowError::Storage(format!(
-                        "NPC shop {npc_id} not found on map {}",
-                        character.map_id
-                    )))?;
-
-                let slot_idx = shop_slot as usize;
-                if slot_idx >= shop.items.len() {
-                    return Ok(vec![
-                        NpcPurchaseResultPacket {
-                            success: false,
-                            remaining_bits: character.inventory.bits,
-                        }
-                        .encode(),
-                    ]);
-                }
-
-                let npc_item = &shop.items[slot_idx];
-                let total_cost = npc_item.buy_price * purchase_count as i32;
-
-                if character.inventory.bits < total_cost as i64 {
-                    return Ok(vec![
-                        NpcPurchaseResultPacket {
-                            success: false,
-                            remaining_bits: character.inventory.bits,
-                        }
-                        .encode(),
-                    ]);
-                }
-
-                // Deduct bits
-                character.inventory.bits -= total_cost as i64;
-
-                // Find empty slot or existing stack of same item
-                let mut placed = false;
-                for i in 0..character
-                    .inventory
-                    .items
-                    .len()
-                    .min(character.inventory.size as usize)
-                {
-                    let existing = &character.inventory.items[i];
-                    if existing.item_id == npc_item.item_id && existing.amount > 0 {
-                        // Stack onto existing
-                        let mut updated = existing.clone();
-                        updated.amount += purchase_count as i32;
-                        updated.sync_record();
-                        character.inventory.items[i] = updated;
-                        placed = true;
-                        break;
-                    }
-                }
-
-                if !placed {
-                    // Find first empty slot
-                    for i in 0..character
-                        .inventory
-                        .items
-                        .len()
-                        .min(character.inventory.size as usize)
-                    {
-                        if character.inventory.items[i].item_id <= 0
-                            || character.inventory.items[i].amount <= 0
-                        {
-                            character.inventory.items[i] =
-                                ItemRecord::new(npc_item.item_id, purchase_count as i32);
-                            placed = true;
-                            break;
-                        }
-                    }
-                }
-
-                if !placed {
-                    // No space - refund bits
-                    character.inventory.bits += total_cost as i64;
-                    return Ok(vec![
-                        NpcPurchaseResultPacket {
-                            success: false,
-                            remaining_bits: character.inventory.bits,
-                        }
-                        .encode(),
-                    ]);
-                }
-
-                self.repository
-                    .update_inventory(character_id, character.inventory.clone())
-                    .map_err(|error| GameFlowError::Storage(error.to_string()))?;
-
-                let responses = vec![
-                    NpcPurchaseResultPacket {
-                        success: true,
-                        remaining_bits: character.inventory.bits,
-                    }
-                    .encode(),
-                    LoadInventoryPacket {
-                        inventory: character.inventory,
-                        inventory_type: InventoryType::Inventory,
-                    }
-                    .encode(),
-                ];
-                Ok(responses)
-            }
+                item_index,
+            } => self.handle_npc_purchase(session, npc_id, shop_slot, purchase_count, item_index),
             GameRequest::NpcSell {
                 vip: _,
                 npc_id,
                 marker: _,
                 item_slot,
                 sell_amount,
-            } => {
-                let character_id = session.character_id.ok_or(GameFlowError::Unauthenticated)?;
-                let mut character = self
-                    .repository
-                    .character_by_id(character_id)
-                    .map_err(|error| GameFlowError::Storage(error.to_string()))?
-                    .ok_or(GameFlowError::CharacterNotFound(character_id))?;
-
-                let slot_idx = item_slot as usize;
-                if slot_idx >= character.inventory.items.len() {
-                    return Ok(Vec::new());
-                }
-
-                let item = &character.inventory.items[slot_idx];
-                if item.item_id <= 0 || item.amount <= 0 {
-                    return Ok(Vec::new());
-                }
-
-                if item.amount < sell_amount as i32 {
-                    return Ok(Vec::new());
-                }
-
-                // Look up actual sell price from NPC shop definition
-                let sell_per_item =
-                    if let Ok(Some(shop)) = self.repository.shop_by_npc(npc_id, character.map_id) {
-                        shop.items
-                            .iter()
-                            .find(|si| si.item_id == item.item_id)
-                            .map(|si| si.sell_price as i64)
-                            .unwrap_or(100)
-                    } else {
-                        100 // Fallback default if shop not found
-                    };
-                let sell_price = sell_per_item * sell_amount as i64;
-
-                character.inventory.bits += sell_price;
-
-                // Reduce or remove item
-                let sold_serial = item.item_id.max(0) as u32;
-                let remaining = item.amount - sell_amount as i32;
-                if remaining <= 0 {
-                    character.inventory.items[slot_idx] = ItemRecord::default();
-                } else {
-                    let mut updated = item.clone();
-                    updated.amount = remaining;
-                    updated.sync_record();
-                    character.inventory.items[slot_idx] = updated;
-                }
-
-                self.repository
-                    .update_inventory(character_id, character.inventory.clone())
-                    .map_err(|error| GameFlowError::Storage(error.to_string()))?;
-
-                let responses = vec![
-                    NpcSellResultPacket {
-                        remaining_bits: character.inventory.bits,
-                        rows: vec![NpcSellRow {
-                            kind: 0, // unresolved kind slot, resolved on the client side
-                            serial: sold_serial,
-                            stack: sell_amount,
-                        }],
-                    }
-                    .encode(),
-                    LoadInventoryPacket {
-                        inventory: character.inventory,
-                        inventory_type: InventoryType::Inventory,
-                    }
-                    .encode(),
-                ];
-                Ok(responses)
+            } => self.handle_npc_sell(session, npc_id, item_slot, sell_amount),
+            GameRequest::NpcMultiSell {
+                vip: _,
+                npc_id,
+                items,
+            } => self.handle_npc_multi_sell(session, npc_id, items),
+            GameRequest::LoadNpcRepurchaseList { vip: _, npc_id } => {
+                self.handle_load_npc_repurchase_list(session, npc_id)
             }
+            GameRequest::RepurchaseItem {
+                vip: _,
+                npc_id,
+                index,
+            } => self.handle_repurchase_item(session, npc_id, index),
             GameRequest::LootItem { drop_handler } => {
                 let character_id = session.character_id.ok_or(GameFlowError::Unauthenticated)?;
                 let character = self
@@ -2782,13 +2628,13 @@ impl GameApplication {
             GameRequest::ItemIdentify { item_slot } => {
                 self.handle_item_identify(session, item_slot)
             }
-            GameRequest::ItemCraft { recipe_slot: _ } => {
-                let mut writer = odmo_protocol::writer::PacketWriter::new(
-                    odmo_protocol::opcode::game::ITEM_CRAFT,
-                );
-                writer.write_u8(0);
-                Ok(vec![writer.finalize()])
-            }
+            GameRequest::ItemCraft {
+                npc_id,
+                recipe_id,
+                count,
+                sub_index: _,
+                flag: _,
+            } => self.handle_item_craft(session, npc_id, recipe_id, count),
             // ItemReroll — re-roll the accessory stats on the target item.
             GameRequest::ItemReroll { item_slot } => self.handle_item_reroll(session, item_slot),
             GameRequest::ItemSocketIn {
@@ -2820,7 +2666,12 @@ impl GameApplication {
                 inven_portable_pos: _,
                 inven_pos,
             } => self.handle_item_socket_identify(session, inven_pos as i16),
-            GameRequest::ItemReturn { item_slot } => self.handle_item_return(session, item_slot),
+            GameRequest::ItemReturn {
+                kind: _,
+                reserved: _,
+                item_slot,
+                count,
+            } => self.handle_item_return(session, item_slot, count),
             GameRequest::ItemScan { item_slot: _ } => Ok(Vec::new()),
             // LoadGiftStorage — return the character's gift storage contents.
             GameRequest::LoadGiftStorage => self.handle_load_gift_storage(session),
@@ -2867,15 +2718,9 @@ impl GameApplication {
             } => self.handle_cash_shop_buy(session, amount, total_price, order_id, product_ids),
             // CashShopReload — return current premium/silk balances.
             GameRequest::CashShopReload => self.handle_cash_shop_reload(session),
-            // QuestAvailableList — return quest ids the character can accept from the
-            // queried NPC. Without quest asset data we return an empty list.
-            GameRequest::QuestAvailableList { npc_id } => Ok(vec![
-                QuestAvailableListPacket {
-                    npc_id,
-                    quest_ids: Vec::new(),
-                }
-                .encode(),
-            ]),
+            // QuestAvailableList (11009) is retired on the modern client, which
+            // evaluates available quests locally from the 1432-byte quest snapshot.
+            GameRequest::QuestAvailableList { npc_id: _ } => Ok(Vec::new()),
             // QuestAccept — register the quest in the character's quest progress.
             GameRequest::QuestAccept { quest_id } => self.handle_quest_accept(session, quest_id),
             // QuestDeliver — mark the quest as completed in the character's progress.
@@ -2887,6 +2732,11 @@ impl GameApplication {
                 cond_index,
                 value,
             } => self.handle_quest_update(session, quest_id, cond_index, value),
+            GameRequest::QuestAchievement {
+                quest_id,
+                server_time: _,
+                elapsed: _,
+            } => self.handle_quest_achievement(session, quest_id),
             // DieConfirm — server-side acknowledgement of death; restores HP minimum and
             // teleports the character back to the spawn map. Real respawn logic still
             // depends on the death state machine which is part of the combat slice; for
@@ -6116,12 +5966,232 @@ impl GameApplication {
         Ok(Vec::new())
     }
 
-    // ----- Quest slice ---------------------------------------------------------------
+    // ----- Quest & NPC shop slices ---------------------------------------------------
 
-    fn handle_quest_accept(
+    fn handle_npc_purchase(
         &self,
         session: &GameSession,
-        quest_id: i16,
+        npc_id: i32,
+        shop_slot: i32,
+        purchase_count: u16,
+        item_index: Option<u16>,
+    ) -> Result<Vec<Vec<u8>>, GameFlowError> {
+        let character_id = session.character_id.ok_or(GameFlowError::Unauthenticated)?;
+        let mut character = self
+            .repository
+            .character_by_id(character_id)
+            .map_err(|error| GameFlowError::Storage(error.to_string()))?
+            .ok_or(GameFlowError::CharacterNotFound(character_id))?;
+
+        let shop = self
+            .repository
+            .shop_by_npc(npc_id, character.map_id)
+            .map_err(|error| GameFlowError::Storage(error.to_string()))?
+            .ok_or(GameFlowError::Storage(format!(
+                "NPC shop {npc_id} not found on map {}",
+                character.map_id
+            )))?;
+
+        let current_bits = effective_inventory_bits(&character);
+        if purchase_count == 0 {
+            return Ok(vec![NpcPurchaseResultPacket::failure(current_bits).encode()]);
+        }
+
+        let Some(npc_item) = resolve_shop_item(&shop, shop_slot, item_index) else {
+            return Ok(vec![NpcPurchaseResultPacket::failure(current_bits).encode()]);
+        };
+
+        let qty = i32::from(purchase_count);
+        let Some(total_cost_i32) = npc_item.buy_price.checked_mul(qty) else {
+            return Ok(vec![NpcPurchaseResultPacket::failure(current_bits).encode()]);
+        };
+        let total_cost = i64::from(total_cost_i32.max(0));
+
+        if shop.shop_type != 14 && current_bits < total_cost {
+            return Ok(vec![NpcPurchaseResultPacket::failure(current_bits).encode()]);
+        }
+
+        let mut next_inventory = character.inventory.clone();
+        if shop.shop_type == 14 && npc_item.barter_item_id > 0 && npc_item.barter_count > 0 {
+            let need = npc_item.barter_count.saturating_mul(qty);
+            if !consume_item_across_inventory(&mut next_inventory, npc_item.barter_item_id, need) {
+                return Ok(vec![NpcPurchaseResultPacket::failure(current_bits).encode()]);
+            }
+        }
+
+        let item_assets = self.repository.item_assets().unwrap_or_default();
+        let max_overlap = max_overlap_for_item(&item_assets, npc_item.item_id);
+        let Some(placed_slots) = place_item_delta(&mut next_inventory, npc_item.item_id, qty, max_overlap)
+        else {
+            return Ok(vec![NpcPurchaseResultPacket::failure(current_bits).encode()]);
+        };
+
+        let new_bits = if shop.shop_type == 14 {
+            current_bits
+        } else {
+            current_bits - total_cost
+        };
+        character.inventory = next_inventory;
+        sync_bits_and_inventory(&*self.repository, &mut character, new_bits)?;
+
+        let rows = placed_slots
+            .into_iter()
+            .filter_map(|(slot_idx, record)| {
+                u8::try_from(slot_idx).ok().map(|inven_slot| NpcPurchaseRow {
+                    inven_slot,
+                    item_id: record.item_id.max(0) as u32,
+                    total_stack: record.amount.clamp(0, u16::MAX as i32) as u16,
+                    rate: record.record[6],
+                    limited: record.record[8],
+                })
+            })
+            .collect();
+
+        Ok(vec![
+            NpcPurchaseResultPacket {
+                remaining_bits: new_bits,
+                items: rows,
+            }
+            .encode(),
+        ])
+    }
+
+    fn handle_npc_sell(
+        &self,
+        session: &GameSession,
+        npc_id: i32,
+        item_slot: u8,
+        sell_amount: u16,
+    ) -> Result<Vec<Vec<u8>>, GameFlowError> {
+        let character_id = session.character_id.ok_or(GameFlowError::Unauthenticated)?;
+        let mut character = self
+            .repository
+            .character_by_id(character_id)
+            .map_err(|error| GameFlowError::Storage(error.to_string()))?
+            .ok_or(GameFlowError::CharacterNotFound(character_id))?;
+
+        let shop = self
+            .repository
+            .shop_by_npc(npc_id, character.map_id)
+            .ok()
+            .flatten();
+        let item_assets = self.repository.item_assets().unwrap_or_default();
+
+        let slot_idx = usize::from(item_slot);
+        let Some(existing) = character.inventory.items.get(slot_idx) else {
+            return Ok(Vec::new());
+        };
+        if existing.item_id <= 0 || existing.amount < i32::from(sell_amount) || sell_amount == 0 {
+            return Ok(Vec::new());
+        }
+
+        let unit_price =
+            resolve_sell_unit_price(shop.as_ref(), &item_assets, existing.item_id, false);
+        let mut repurchase_log = character.npc_repurchase_log.clone();
+        let Some((earned, rem_item_id, rem_stack)) = apply_sell_delta(
+            &mut character.inventory,
+            Some(&mut repurchase_log),
+            slot_idx,
+            sell_amount,
+            unit_price,
+        ) else {
+            return Ok(Vec::new());
+        };
+
+        let new_bits = effective_inventory_bits(&character).saturating_add(earned);
+        character.npc_repurchase_log = repurchase_log.clone();
+        sync_bits_and_inventory(&*self.repository, &mut character, new_bits)?;
+        self.repository
+            .update_npc_repurchase_log(character_id, repurchase_log)
+            .map_err(|error| GameFlowError::Storage(error.to_string()))?;
+
+        Ok(vec![
+            NpcSellResultPacket {
+                remaining_bits: new_bits,
+                rows: vec![NpcSellRow {
+                    inven_slot: item_slot,
+                    item_id: rem_item_id,
+                    stack: rem_stack,
+                }],
+            }
+            .encode(),
+        ])
+    }
+
+    fn handle_npc_multi_sell(
+        &self,
+        session: &GameSession,
+        npc_id: i32,
+        entries: Vec<MultiSellEntry>,
+    ) -> Result<Vec<Vec<u8>>, GameFlowError> {
+        let character_id = session.character_id.ok_or(GameFlowError::Unauthenticated)?;
+        let mut character = self
+            .repository
+            .character_by_id(character_id)
+            .map_err(|error| GameFlowError::Storage(error.to_string()))?
+            .ok_or(GameFlowError::CharacterNotFound(character_id))?;
+
+        let shop = self
+            .repository
+            .shop_by_npc(npc_id, character.map_id)
+            .ok()
+            .flatten();
+        let item_assets = self.repository.item_assets().unwrap_or_default();
+
+        let mut next_inventory = character.inventory.clone();
+        let mut next_log = character.npc_repurchase_log.clone();
+        let mut total_earned = 0i64;
+        let mut sold_slots = Vec::with_capacity(entries.len());
+
+        for entry in entries {
+            let slot_idx = usize::from(entry.slot);
+            let Some(existing) = next_inventory.items.get(slot_idx) else {
+                return Ok(Vec::new());
+            };
+            if existing.item_id <= 0
+                || (entry.item_id != 0 && existing.item_id.max(0) as u32 != entry.item_id)
+            {
+                return Ok(Vec::new());
+            }
+
+            let unit_price =
+                resolve_sell_unit_price(shop.as_ref(), &item_assets, existing.item_id, false);
+            let Some((earned, _, _)) = apply_sell_delta(
+                &mut next_inventory,
+                Some(&mut next_log),
+                slot_idx,
+                entry.count,
+                unit_price,
+            ) else {
+                return Ok(Vec::new());
+            };
+            total_earned = total_earned.saturating_add(earned);
+            sold_slots.push(entry.slot);
+        }
+
+        let new_bits = effective_inventory_bits(&character).saturating_add(total_earned);
+        character.inventory = next_inventory;
+        character.npc_repurchase_log = next_log.clone();
+        sync_bits_and_inventory(&*self.repository, &mut character, new_bits)?;
+        self.repository
+            .update_npc_repurchase_log(character_id, next_log)
+            .map_err(|error| GameFlowError::Storage(error.to_string()))?;
+
+        Ok(vec![
+            MultiSellResultPacket {
+                first: 1,
+                second: new_bits,
+                third: total_earned,
+                entries: sold_slots,
+            }
+            .encode(),
+        ])
+    }
+
+    fn handle_load_npc_repurchase_list(
+        &self,
+        session: &GameSession,
+        _npc_id: i32,
     ) -> Result<Vec<Vec<u8>>, GameFlowError> {
         let character_id = session.character_id.ok_or(GameFlowError::Unauthenticated)?;
         let character = self
@@ -6130,16 +6200,212 @@ impl GameApplication {
             .map_err(|error| GameFlowError::Storage(error.to_string()))?
             .ok_or(GameFlowError::CharacterNotFound(character_id))?;
 
-        let mut progress = character.quest_progress.clone();
+        Ok(vec![
+            NpcRepurchaseListPacket {
+                items: character.npc_repurchase_log,
+            }
+            .encode(),
+        ])
+    }
 
-        // Reject duplicates (legacy: the same quest cannot be accepted twice).
+    fn handle_repurchase_item(
+        &self,
+        session: &GameSession,
+        npc_id: i32,
+        index: u16,
+    ) -> Result<Vec<Vec<u8>>, GameFlowError> {
+        let character_id = session.character_id.ok_or(GameFlowError::Unauthenticated)?;
+        let mut character = self
+            .repository
+            .character_by_id(character_id)
+            .map_err(|error| GameFlowError::Storage(error.to_string()))?
+            .ok_or(GameFlowError::CharacterNotFound(character_id))?;
+
+        let idx = usize::from(index);
+        if idx >= character.npc_repurchase_log.len() {
+            return Ok(vec![
+                NpcRepurchaseBuyPacket::Failure { error_code: 1 }.encode(),
+            ]);
+        }
+
+        let item = character.npc_repurchase_log[idx].clone();
+        let shop = self
+            .repository
+            .shop_by_npc(npc_id, character.map_id)
+            .ok()
+            .flatten();
+        let item_assets = self.repository.item_assets().unwrap_or_default();
+        let unit_price =
+            resolve_sell_unit_price(shop.as_ref(), &item_assets, item.item_id, false);
+        let cost = unit_price.saturating_mul(i64::from(item.amount.max(1)));
+        let current_bits = effective_inventory_bits(&character);
+        if current_bits < cost {
+            return Ok(vec![
+                NpcRepurchaseBuyPacket::Failure { error_code: 1 }.encode(),
+            ]);
+        }
+
+        let Some(placed_slot) = place_exact_item_record(&mut character.inventory, item.clone())
+        else {
+            return Ok(vec![
+                NpcRepurchaseBuyPacket::Failure { error_code: 7 }.encode(),
+            ]);
+        };
+        let Ok(inven_slot) = u8::try_from(placed_slot) else {
+            return Ok(vec![
+                NpcRepurchaseBuyPacket::Failure { error_code: 7 }.encode(),
+            ]);
+        };
+
+        character.npc_repurchase_log.remove(idx);
+        let repurchase_log = character.npc_repurchase_log.clone();
+        let new_bits = current_bits - cost;
+        sync_bits_and_inventory(&*self.repository, &mut character, new_bits)?;
+        self.repository
+            .update_npc_repurchase_log(character_id, repurchase_log)
+            .map_err(|error| GameFlowError::Storage(error.to_string()))?;
+
+        Ok(vec![
+            NpcRepurchaseBuyPacket::Success {
+                remaining_bits: new_bits,
+                items: vec![RepurchaseBuyRow::from_item_record(inven_slot, &item)],
+            }
+            .encode(),
+        ])
+    }
+
+    fn handle_item_craft(
+        &self,
+        session: &GameSession,
+        _npc_id: u32,
+        recipe_id: u32,
+        count: u16,
+    ) -> Result<Vec<Vec<u8>>, GameFlowError> {
+        let character_id = session.character_id.ok_or(GameFlowError::Unauthenticated)?;
+        let mut character = self
+            .repository
+            .character_by_id(character_id)
+            .map_err(|error| GameFlowError::Storage(error.to_string()))?
+            .ok_or(GameFlowError::CharacterNotFound(character_id))?;
+
+        let fail = |code: u32| {
+            Ok(vec![
+                ItemCraftResponsePacket {
+                    result: code,
+                    items: Vec::new(),
+                    money: -1,
+                    reserved_a: 0,
+                    crafted_count: 0,
+                    reserved_b: 0,
+                    reserved_c: 0,
+                }
+                .encode(),
+            ])
+        };
+
+        if count == 0 {
+            return fail(1);
+        }
+
+        let Some(recipe) = craft_recipe(recipe_id) else {
+            return fail(1);
+        };
+
+        let qty = i32::from(count);
+        let total_cost = recipe.cost.saturating_mul(i64::from(qty));
+        let current_bits = effective_inventory_bits(&character);
+        if total_cost > 0 && current_bits < total_cost {
+            return fail(3);
+        }
+
+        let mut next_inventory = character.inventory.clone();
+        let Some(consumed_slots) = consume_item_across_inventory_tracked(
+            &mut next_inventory,
+            recipe.material_item_id,
+            recipe.material_amount.saturating_mul(qty),
+        ) else {
+            return fail(1);
+        };
+
+        let item_assets = self.repository.item_assets().unwrap_or_default();
+        let max_overlap = max_overlap_for_item(&item_assets, recipe.output_item_id);
+        let output_total = recipe.output_amount.saturating_mul(qty);
+        let Some(output_slots) = place_item_delta(
+            &mut next_inventory,
+            recipe.output_item_id,
+            output_total,
+            max_overlap,
+        ) else {
+            return fail(2);
+        };
+
+        let mut updated_map: std::collections::BTreeMap<usize, ItemRecord> =
+            consumed_slots.into_iter().collect();
+        for (slot_idx, rec) in output_slots {
+            updated_map.insert(slot_idx, rec);
+        }
+        let changed_rows = updated_map
+            .into_iter()
+            .filter_map(|(slot_idx, rec)| {
+                u16::try_from(slot_idx)
+                    .ok()
+                    .map(|slot| SerializedItemRow::from_item_record(slot, &rec))
+            })
+            .collect();
+
+        let new_bits = current_bits - total_cost;
+        let wire_money = if total_cost > 0 { new_bits } else { -1 };
+        character.inventory = next_inventory;
+        sync_bits_and_inventory(&*self.repository, &mut character, new_bits)?;
+
+        Ok(vec![
+            ItemCraftResponsePacket {
+                result: 0,
+                items: changed_rows,
+                money: wire_money,
+                reserved_a: 0,
+                crafted_count: u32::from(count),
+                reserved_b: 0,
+                reserved_c: 0,
+            }
+            .encode(),
+        ])
+    }
+
+    fn handle_quest_accept(
+        &self,
+        session: &GameSession,
+        quest_id: i16,
+    ) -> Result<Vec<Vec<u8>>, GameFlowError> {
+        let character_id = session.character_id.ok_or(GameFlowError::Unauthenticated)?;
+        let mut character = self
+            .repository
+            .character_by_id(character_id)
+            .map_err(|error| GameFlowError::Storage(error.to_string()))?
+            .ok_or(GameFlowError::CharacterNotFound(character_id))?;
+
+        let mut progress = character.quest_progress.clone();
         if progress.in_progress.iter().any(|q| q.quest_id == quest_id) {
             return Ok(Vec::new());
         }
-
-        // Reject if the legacy completed bitmap already has this quest set.
         if quest_completed(&progress, quest_id as i32) {
             return Ok(Vec::new());
+        }
+
+        let apply_items = quest_apply_items(quest_id);
+        if !apply_items.is_empty() {
+            let item_assets = self.repository.item_assets().unwrap_or_default();
+            let mut next_inventory = character.inventory.clone();
+            for &(item_id, amount) in apply_items {
+                let max_overlap = max_overlap_for_item(&item_assets, item_id);
+                if place_item_delta(&mut next_inventory, item_id, amount, max_overlap).is_none() {
+                    return Ok(Vec::new());
+                }
+            }
+            character.inventory = next_inventory.clone();
+            self.repository
+                .update_inventory(character_id, next_inventory)
+                .map_err(|error| GameFlowError::Storage(error.to_string()))?;
         }
 
         progress.in_progress.push(odmo_types::InProgressQuest {
@@ -6160,31 +6426,54 @@ impl GameApplication {
         quest_id: i16,
     ) -> Result<Vec<Vec<u8>>, GameFlowError> {
         let character_id = session.character_id.ok_or(GameFlowError::Unauthenticated)?;
-        let character = self
+        let mut character = self
             .repository
             .character_by_id(character_id)
             .map_err(|error| GameFlowError::Storage(error.to_string()))?
             .ok_or(GameFlowError::CharacterNotFound(character_id))?;
 
-        let mut progress = character.quest_progress.clone();
-        let original_len = progress.in_progress.len();
-        progress.in_progress.retain(|q| q.quest_id != quest_id);
+        let qid_u16 = quest_id.max(0) as u16;
+        let reward = quest_reward_spec(quest_id);
+        let item_assets = self.repository.item_assets().unwrap_or_default();
 
-        // If the quest was not in progress we still mark it complete defensively so the
-        // legacy bitmap stays consistent.
-        set_quest_completed(&mut progress, quest_id as i32);
+        let mut next_inventory = character.inventory.clone();
+        let mut reward_rows = Vec::new();
+        let reward_bits = reward.as_ref().map_or(0, |spec| spec.bits);
 
-        if progress.in_progress.len() == original_len
-            && progress.in_progress.iter().all(|q| q.quest_id != quest_id)
-        {
-            // Quest never started; do nothing extra.
+        if let Some(spec) = &reward {
+            for &(item_id, amount) in spec.items {
+                let max_overlap = max_overlap_for_item(&item_assets, item_id);
+                let Some(placed) = place_item_delta(&mut next_inventory, item_id, amount, max_overlap)
+                else {
+                    return Ok(vec![QuestCompletePacket::failure(2, qid_u16).encode()]);
+                };
+                for (slot_idx, rec) in placed {
+                    if let Ok(inven_slot) = u16::try_from(slot_idx) {
+                        reward_rows.push(QuestCompleteRewardRow {
+                            item_id: rec.item_id.max(0) as u32,
+                            extra: 0,
+                            new_stack: rec.amount.max(0) as u32,
+                            inven_slot,
+                        });
+                    }
+                }
+            }
         }
 
+        let mut progress = character.quest_progress.clone();
+        progress.in_progress.retain(|q| q.quest_id != quest_id);
+        set_quest_completed(&mut progress, quest_id as i32);
+
+        let new_bits = effective_inventory_bits(&character).saturating_add(reward_bits);
+        character.inventory = next_inventory;
+        sync_bits_and_inventory(&*self.repository, &mut character, new_bits)?;
         self.repository
             .update_quest_progress(character_id, progress)
             .map_err(|error| GameFlowError::Storage(error.to_string()))?;
 
-        Ok(Vec::new())
+        Ok(vec![
+            QuestCompletePacket::success(qid_u16, new_bits, reward_rows).encode(),
+        ])
     }
 
     fn handle_quest_give_up(
@@ -6206,9 +6495,6 @@ impl GameApplication {
             .update_quest_progress(character_id, progress)
             .map_err(|error| GameFlowError::Storage(error.to_string()))?;
 
-        // Without quest asset data we cannot infer which warehouse items belong to
-        // the cancelled quest. The modern client registers no reader for 11003, so
-        // the cancellation is carried by the stored progress alone.
         Ok(Vec::new())
     }
 
@@ -6242,7 +6528,7 @@ impl GameApplication {
         };
 
         quest.goals[cond_idx] = i16::from(value);
-        let current = quest.goals[cond_idx];
+        let current = quest.goals[cond_idx].clamp(0, u8::MAX as i16) as u8;
 
         self.repository
             .update_quest_progress(character_id, progress)
@@ -6256,6 +6542,29 @@ impl GameApplication {
             }
             .encode(),
         ])
+    }
+
+    fn handle_quest_achievement(
+        &self,
+        session: &GameSession,
+        quest_id: u32,
+    ) -> Result<Vec<Vec<u8>>, GameFlowError> {
+        let character_id = session.character_id.ok_or(GameFlowError::Unauthenticated)?;
+        let character = self
+            .repository
+            .character_by_id(character_id)
+            .map_err(|error| GameFlowError::Storage(error.to_string()))?
+            .ok_or(GameFlowError::CharacterNotFound(character_id))?;
+
+        if let Ok(qid) = i32::try_from(quest_id) {
+            let mut progress = character.quest_progress;
+            set_quest_completed(&mut progress, qid);
+            self.repository
+                .update_quest_progress(character_id, progress)
+                .map_err(|error| GameFlowError::Storage(error.to_string()))?;
+        }
+
+        Ok(Vec::new())
     }
 
     // ----- Combat status helpers ----------------------------------------------------
@@ -6600,6 +6909,7 @@ impl GameApplication {
         &self,
         session: &GameSession,
         item_slot: i16,
+        count: u16,
     ) -> Result<Vec<Vec<u8>>, GameFlowError> {
         let character_id = session.character_id.ok_or(GameFlowError::Unauthenticated)?;
         let mut character = self
@@ -6608,31 +6918,32 @@ impl GameApplication {
             .map_err(|error| GameFlowError::Storage(error.to_string()))?
             .ok_or(GameFlowError::CharacterNotFound(character_id))?;
 
+        if item_slot < 0 || count == 0 {
+            return Ok(Vec::new());
+        }
         let idx = item_slot as usize;
-        if item_slot < 0 || idx >= character.inventory.items.len() {
+        let Some(existing) = character.inventory.items.get(idx) else {
+            return Ok(Vec::new());
+        };
+        if existing.item_id <= 0 || existing.amount < i32::from(count) {
             return Ok(Vec::new());
         }
 
-        // Legacy default refund: 100 bits. Remove the item from the slot.
-        let refund = 100i32;
-        let previous_bits = character.inventory_bits;
-        let new_bits = previous_bits + refund as i64;
+        let item_assets = self.repository.item_assets().unwrap_or_default();
+        let unit_price = resolve_sell_unit_price(None, &item_assets, existing.item_id, true);
+        let Some((refund, _, _)) =
+            apply_sell_delta(&mut character.inventory, None, idx, count, unit_price)
+        else {
+            return Ok(Vec::new());
+        };
 
-        // Clear the slot.
-        character.inventory.items[idx] = odmo_types::ItemRecord::new(0, 0);
-
-        let inventory = character.inventory.clone();
-        self.repository
-            .update_inventory(character_id, inventory)
-            .map_err(|error| GameFlowError::Storage(error.to_string()))?;
-        self.repository
-            .update_inventory_bits(character_id, new_bits)
-            .map_err(|error| GameFlowError::Storage(error.to_string()))?;
+        let new_bits = effective_inventory_bits(&character).saturating_add(refund);
+        sync_bits_and_inventory(&*self.repository, &mut character, new_bits)?;
 
         Ok(vec![
             ItemReturnPacket {
-                received_bits: refund,
-                previous_bits,
+                received_bits: refund.clamp(0, i32::MAX as i64) as i32,
+                previous_bits: new_bits,
             }
             .encode(),
         ])
@@ -10977,6 +11288,410 @@ fn add_stackable_inventory_item(
     true
 }
 
+#[derive(Debug, Clone, Copy)]
+struct CraftRecipeSpec {
+    material_item_id: i32,
+    material_amount: i32,
+    output_item_id: i32,
+    output_amount: i32,
+    cost: i64,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct QuestRewardSpec {
+    bits: i64,
+    items: &'static [(i32, i32)],
+}
+
+fn effective_inventory_bits(character: &odmo_types::CharacterSummary) -> i64 {
+    if character.inventory.bits > 0 || character.inventory_bits == 0 {
+        character.inventory.bits
+    } else {
+        character.inventory_bits
+    }
+}
+
+fn sync_bits_and_inventory(
+    repo: &dyn GameRepository,
+    character: &mut odmo_types::CharacterSummary,
+    new_bits: i64,
+) -> Result<(), GameFlowError> {
+    character.inventory.bits = new_bits;
+    character.inventory_bits = new_bits;
+    repo.update_inventory(character.id, character.inventory.clone())
+        .map_err(|error| GameFlowError::Storage(error.to_string()))?;
+    repo.update_inventory_bits(character.id, new_bits)
+        .map_err(|error| GameFlowError::Storage(error.to_string()))
+}
+
+fn max_overlap_for_item(item_assets: &[odmo_types::ItemAsset], item_id: i32) -> i32 {
+    item_assets
+        .iter()
+        .find(|asset| asset.item_id == item_id && asset.overlap > 0)
+        .map_or(999, |asset| i32::from(asset.overlap))
+        .max(1)
+}
+
+fn record_has_custom_attrs(record: &ItemRecord) -> bool {
+    record.record.get(6..).is_some_and(|tail| tail.iter().any(|&b| b != 0))
+}
+
+fn place_item_delta(
+    inventory: &mut odmo_types::InventorySnapshot,
+    item_id: i32,
+    amount: i32,
+    max_overlap: i32,
+) -> Option<Vec<(usize, ItemRecord)>> {
+    if item_id <= 0 || amount <= 0 {
+        return None;
+    }
+
+    let original = inventory.clone();
+    let cap = max_overlap.max(1);
+    let max_slots = usize::from(inventory.size.max(0) as u16);
+    if inventory.items.len() < max_slots {
+        inventory.items.resize(max_slots, ItemRecord::default());
+    }
+
+    let mut remaining = amount;
+    let mut changed = Vec::new();
+
+    if cap > 1 {
+        for (idx, slot) in inventory.items.iter_mut().take(max_slots).enumerate() {
+            if remaining <= 0 {
+                break;
+            }
+            if slot.item_id == item_id
+                && slot.amount > 0
+                && slot.amount < cap
+                && !record_has_custom_attrs(slot)
+            {
+                let add = remaining.min(cap - slot.amount);
+                slot.amount += add;
+                slot.sync_record();
+                remaining -= add;
+                changed.push((idx, slot.clone()));
+            }
+        }
+    }
+
+    for (idx, slot) in inventory.items.iter_mut().take(max_slots).enumerate() {
+        if remaining <= 0 {
+            break;
+        }
+        if slot.item_id <= 0 || slot.amount <= 0 {
+            let add = remaining.min(cap);
+            *slot = ItemRecord::new(item_id, add);
+            remaining -= add;
+            changed.push((idx, slot.clone()));
+        }
+    }
+
+    if remaining > 0 {
+        *inventory = original;
+        return None;
+    }
+
+    Some(changed)
+}
+
+fn place_exact_item_record(
+    inventory: &mut odmo_types::InventorySnapshot,
+    record: ItemRecord,
+) -> Option<usize> {
+    let max_slots = usize::from(inventory.size.max(0) as u16);
+    if inventory.items.len() < max_slots {
+        inventory.items.resize(max_slots, ItemRecord::default());
+    }
+    let idx = inventory
+        .items
+        .iter()
+        .take(max_slots)
+        .position(|slot| slot.item_id <= 0 || slot.amount <= 0)?;
+    inventory.items[idx] = record;
+    Some(idx)
+}
+
+fn consume_item_across_inventory(
+    inventory: &mut odmo_types::InventorySnapshot,
+    item_id: i32,
+    amount: i32,
+) -> bool {
+    consume_item_across_inventory_tracked(inventory, item_id, amount).is_some()
+}
+
+fn consume_item_across_inventory_tracked(
+    inventory: &mut odmo_types::InventorySnapshot,
+    item_id: i32,
+    amount: i32,
+) -> Option<Vec<(usize, ItemRecord)>> {
+    if item_id <= 0 || amount <= 0 {
+        return None;
+    }
+    let total_available: i64 = inventory
+        .items
+        .iter()
+        .filter(|slot| slot.item_id == item_id && slot.amount > 0)
+        .map(|slot| i64::from(slot.amount))
+        .sum();
+    if total_available < i64::from(amount) {
+        return None;
+    }
+
+    let mut remaining = amount;
+    let mut changed = Vec::new();
+    for (idx, slot) in inventory.items.iter_mut().enumerate() {
+        if remaining <= 0 {
+            break;
+        }
+        if slot.item_id == item_id && slot.amount > 0 {
+            let take = remaining.min(slot.amount);
+            slot.amount -= take;
+            remaining -= take;
+            if slot.amount <= 0 {
+                *slot = ItemRecord::default();
+            } else {
+                slot.sync_record();
+            }
+            changed.push((idx, slot.clone()));
+        }
+    }
+    Some(changed)
+}
+
+fn resolve_shop_item<'a>(
+    shop: &'a NpcShopDefinition,
+    shop_slot: i32,
+    item_index: Option<u16>,
+) -> Option<&'a NpcShopItem> {
+    if shop.shop_type == 14 {
+        if let Some(index) = item_index {
+            if let Some(item) = shop.items.iter().find(|entry| entry.item_index == index) {
+                return Some(item);
+            }
+        }
+    }
+    usize::try_from(shop_slot)
+        .ok()
+        .and_then(|idx| shop.items.get(idx))
+}
+
+fn resolve_sell_unit_price(
+    shop: Option<&NpcShopDefinition>,
+    item_assets: &[odmo_types::ItemAsset],
+    item_id: i32,
+    for_return: bool,
+) -> i64 {
+    if !for_return {
+        if let Some(shop) = shop {
+            if let Some(entry) = shop.items.iter().find(|entry| entry.item_id == item_id) {
+                return i64::from(entry.sell_price.max(0));
+            }
+        }
+    }
+    if let Some(asset) = item_assets.iter().find(|asset| asset.item_id == item_id) {
+        if for_return && asset.scan_price > 0 {
+            return i64::from(asset.scan_price);
+        }
+        if asset.sell_price > 0 {
+            return asset.sell_price;
+        }
+    }
+    100
+}
+
+fn apply_sell_delta(
+    inventory: &mut odmo_types::InventorySnapshot,
+    repurchase_log: Option<&mut Vec<ItemRecord>>,
+    slot_idx: usize,
+    sell_amount: u16,
+    unit_price: i64,
+) -> Option<(i64, u32, u16)> {
+    if sell_amount == 0 {
+        return None;
+    }
+    let item = inventory.items.get_mut(slot_idx)?;
+    let qty = i32::from(sell_amount);
+    if item.item_id <= 0 || item.amount < qty {
+        return None;
+    }
+
+    let mut sold_record = item.clone();
+    sold_record.amount = qty;
+    sold_record.sync_record();
+
+    let remaining = item.amount - qty;
+    let (rem_item_id, rem_stack) = if remaining <= 0 {
+        *item = ItemRecord::default();
+        (0u32, 0u16)
+    } else {
+        item.amount = remaining;
+        item.sync_record();
+        (
+            item.item_id.max(0) as u32,
+            remaining.clamp(0, u16::MAX as i32) as u16,
+        )
+    };
+
+    if let Some(log) = repurchase_log {
+        log.push(sold_record);
+        if log.len() > 10 {
+            let excess = log.len() - 10;
+            log.drain(..excess);
+        }
+    }
+
+    Some((unit_price.saturating_mul(i64::from(sell_amount)), rem_item_id, rem_stack))
+}
+
+fn craft_recipe(recipe_id: u32) -> Option<CraftRecipeSpec> {
+    match recipe_id {
+        4702..=4707 => Some(CraftRecipeSpec {
+            material_item_id: 70261,
+            material_amount: 1,
+            output_item_id: (70262 + (recipe_id - 4702)) as i32,
+            output_amount: 1,
+            cost: 0,
+        }),
+        _ => None,
+    }
+}
+
+fn quest_apply_items(quest_id: i16) -> &'static [(i32, i32)] {
+    match quest_id {
+        4021 => &[(70259, 1), (70260, 1)],
+        4046 => &[(80907, 1)],
+        _ => &[],
+    }
+}
+
+fn quest_reward_spec(quest_id: i16) -> Option<QuestRewardSpec> {
+    let spec = match quest_id {
+        4020 | 4021 | 4054 | 4022 => QuestRewardSpec { bits: 0, items: &[] },
+        4404 => QuestRewardSpec {
+            bits: 0,
+            items: &[(114240, 1), (98431, 25), (70272, 1), (41002, 50), (9003, 9)],
+        },
+        4405 => QuestRewardSpec {
+            bits: 0,
+            items: &[(114241, 1), (98421, 15), (70268, 1), (41002, 50), (9003, 9)],
+        },
+        4406 => QuestRewardSpec {
+            bits: 0,
+            items: &[(114242, 1), (98441, 25), (70270, 1), (41002, 50), (9003, 9)],
+        },
+        4407 => QuestRewardSpec {
+            bits: 0,
+            items: &[(114243, 1), (98401, 50), (70269, 1), (41002, 50), (9003, 11)],
+        },
+        4408 => QuestRewardSpec {
+            bits: 0,
+            items: &[(114244, 1), (98471, 25), (70271, 1), (41002, 50), (9003, 9)],
+        },
+        4409 => QuestRewardSpec {
+            bits: 0,
+            items: &[(114245, 1), (98401, 25), (70273, 1), (41002, 50), (9003, 9)],
+        },
+        4023 => QuestRewardSpec {
+            bits: 0,
+            items: &[
+                (40001, 1),
+                (9588, 1),
+                (11035, 1),
+                (9007, 20),
+                (9008, 8),
+                (70051, 1),
+            ],
+        },
+        4024 => QuestRewardSpec {
+            bits: 0,
+            items: &[
+                (129094, 30),
+                (129096, 30),
+                (154050, 1),
+                (36001, 1),
+                (36003, 2),
+            ],
+        },
+        4034 => QuestRewardSpec {
+            bits: 0,
+            items: &[(47053, 1), (9919, 1)],
+        },
+        4036 => QuestRewardSpec {
+            bits: 0,
+            items: &[(129094, 30), (129096, 30)],
+        },
+        4046 => QuestRewardSpec {
+            bits: 0,
+            items: &[(9067, 3), (91306, 5)],
+        },
+        4047 => QuestRewardSpec {
+            bits: 0,
+            items: &[(47075, 1), (9919, 1)],
+        },
+        4050 => QuestRewardSpec {
+            bits: 0,
+            items: &[(129094, 20), (129096, 20)],
+        },
+        4051 => QuestRewardSpec {
+            bits: 0,
+            items: &[(129094, 50), (129096, 50)],
+        },
+        4052 => QuestRewardSpec {
+            bits: 0,
+            items: &[(9694, 1), (9003, 20)],
+        },
+        4053 => QuestRewardSpec {
+            bits: 0,
+            items: &[(9827, 5), (9066, 3)],
+        },
+        622 => QuestRewardSpec {
+            bits: 100,
+            items: &[(90101, 5)],
+        },
+        675 => QuestRewardSpec {
+            bits: 478,
+            items: &[(54007, 1)],
+        },
+        676 => QuestRewardSpec {
+            bits: 478,
+            items: &[(52507, 1)],
+        },
+        750 => QuestRewardSpec { bits: 200, items: &[] },
+        876 => QuestRewardSpec {
+            bits: 478,
+            items: &[(53531, 1)],
+        },
+        1060 | 1063 => QuestRewardSpec {
+            bits: 2_000,
+            items: &[],
+        },
+        1061 | 1062 | 2823 => QuestRewardSpec {
+            bits: 20_000,
+            items: &[],
+        },
+        1228 => QuestRewardSpec {
+            bits: 1_398,
+            items: &[],
+        },
+        1229 | 1231 | 1232 => QuestRewardSpec { bits: 100, items: &[] },
+        2837 => QuestRewardSpec {
+            bits: 1_000,
+            items: &[],
+        },
+        5601 | 5602 | 5794 => QuestRewardSpec {
+            bits: 10_000,
+            items: &[],
+        },
+        5793 | 5795 | 5815 | 5816 => QuestRewardSpec {
+            bits: 5_000,
+            items: &[],
+        },
+        _ => return None,
+    };
+    Some(spec)
+}
+
 fn consume_first_matching_material(
     inventory: &mut odmo_types::InventorySnapshot,
     materials: &[odmo_types::ExtraEvolutionMaterial],
@@ -11193,6 +11908,7 @@ mod tests {
         digi_combine_catalog: odmo_types::DigiCombineCatalog,
         union_combine_catalog: odmo_types::UnionCombineCatalog,
         random_box_rewards: Vec<odmo_types::RandomBoxReward>,
+        npc_shops: Vec<NpcShopDefinition>,
     }
 
     #[derive(Debug, Default)]
@@ -11800,6 +12516,7 @@ mod tests {
                 digi_combine_catalog: demo_combine_catalog(),
                 union_combine_catalog: demo_combine_catalog(),
                 random_box_rewards: demo_random_box_rewards(),
+                npc_shops: Vec::new(),
             }
         }
     }
@@ -12056,6 +12773,28 @@ mod tests {
             character.inventory.bits = character.inventory_bits;
             Ok(())
         }
+        fn update_quest_progress(
+            &self,
+            character_id: u64,
+            quest_progress: odmo_types::QuestProgressSnapshot,
+        ) -> anyhow::Result<()> {
+            let mut guard = self.characters.write().expect("repo poisoned");
+            if let Some(character) = guard.get_mut(&character_id) {
+                character.quest_progress = quest_progress;
+            }
+            Ok(())
+        }
+        fn update_npc_repurchase_log(
+            &self,
+            character_id: u64,
+            log: Vec<ItemRecord>,
+        ) -> anyhow::Result<()> {
+            let mut guard = self.characters.write().expect("repo poisoned");
+            if let Some(character) = guard.get_mut(&character_id) {
+                character.npc_repurchase_log = log;
+            }
+            Ok(())
+        }
         fn update_partner_roster(
             &self,
             character_id: u64,
@@ -12142,10 +12881,14 @@ mod tests {
     impl NpcShopRepository for InMemoryCharacterRepository {
         fn shop_by_npc(
             &self,
-            _npc_id: i32,
-            _map_id: i16,
+            npc_id: i32,
+            map_id: i16,
         ) -> anyhow::Result<Option<NpcShopDefinition>> {
-            Ok(None)
+            Ok(self
+                .npc_shops
+                .iter()
+                .find(|shop| shop.npc_id == npc_id && shop.map_id == map_id)
+                .cloned())
         }
     }
 
@@ -16388,5 +17131,314 @@ mod tests {
         assert_eq!(er.read_u8().unwrap(), 5);
         assert_eq!(er.read_u32().unwrap(), 79_828);
         assert_eq!(er.read_u32().unwrap(), end_time);
+    }
+
+    #[test]
+    fn npc_shop_purchase_sell_repurchase_and_multi_sell() {
+        let mut repo = InMemoryCharacterRepository::demo();
+        repo.npc_shops.push(NpcShopDefinition {
+            npc_id: 90927,
+            map_id: DEFAULT_START_MAP_ID,
+            shop_type: 1,
+            items: vec![NpcShopItem {
+                item_id: 9000,
+                buy_price: 2_000,
+                sell_price: 100,
+                item_index: 0,
+                barter_item_id: 0,
+                barter_count: 0,
+            }],
+        });
+        let mut inventory = odmo_types::InventorySnapshot {
+            bits: 500_000,
+            size: 10,
+            items: vec![ItemRecord::default(); 10],
+        };
+        inventory.items[0] = ItemRecord::new(5101, 2);
+        repo.update_inventory(100, inventory).unwrap();
+        repo.update_inventory_bits(100, 500_000).unwrap();
+        let repo = Arc::new(repo);
+        let app = GameApplication::new(
+            GameServiceConfig {
+                portal_state_dir: unique_test_dir("npc-shop-purchase-sell"),
+            },
+            repo.clone(),
+        );
+        let mut session = GameSession::new(1);
+        session.character_id = Some(100);
+
+        let buy_frames = app
+            .handle_request(
+                &mut session,
+                GameRequest::NpcPurchase {
+                    vip: 0,
+                    npc_id: 90927,
+                    marker: 1,
+                    shop_slot: 0,
+                    purchase_count: 2,
+                    item_index: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(buy_frames.len(), 1);
+        let buy_raw = PacketReader::from_frame(&buy_frames[0]).unwrap();
+        assert_eq!(buy_raw.packet_type, odmo_protocol::opcode::game::NPC_PURCHASE);
+        assert_eq!(buy_raw.payload.len(), 18);
+        assert_eq!(&buy_raw.payload[..8], &496_000i64.to_le_bytes());
+        assert_eq!(buy_raw.payload[8], 1);
+        assert_eq!(buy_raw.payload[9], 1);
+        assert_eq!(&buy_raw.payload[10..14], &9000u32.to_le_bytes());
+        assert_eq!(&buy_raw.payload[14..16], &2u16.to_le_bytes());
+
+        let sell_frames = app
+            .handle_request(
+                &mut session,
+                GameRequest::NpcSell {
+                    vip: 0,
+                    npc_id: 90927,
+                    marker: 1,
+                    item_slot: 1,
+                    sell_amount: 2,
+                },
+            )
+            .unwrap();
+        assert_eq!(sell_frames.len(), 1);
+        let sell_raw = PacketReader::from_frame(&sell_frames[0]).unwrap();
+        assert_eq!(sell_raw.packet_type, odmo_protocol::opcode::game::NPC_SELL);
+        assert_eq!(&sell_raw.payload[..8], &496_200i64.to_le_bytes());
+        assert_eq!(sell_raw.payload[8], 1);
+        assert_eq!(sell_raw.payload[9], 1);
+        assert_eq!(&sell_raw.payload[10..16], &[0, 0, 0, 0, 0, 0]);
+
+        let list_frames = app
+            .handle_request(
+                &mut session,
+                GameRequest::LoadNpcRepurchaseList {
+                    vip: 0,
+                    npc_id: 90927,
+                },
+            )
+            .unwrap();
+        let list_raw = PacketReader::from_frame(&list_frames[0]).unwrap();
+        assert_eq!(
+            list_raw.packet_type,
+            odmo_protocol::opcode::game::LOAD_NPC_REPURCHASE_LIST
+        );
+        assert_eq!(list_raw.payload.len(), 4 + 69);
+
+        let rep_frames = app
+            .handle_request(
+                &mut session,
+                GameRequest::RepurchaseItem {
+                    vip: 0,
+                    npc_id: 90927,
+                    index: 0,
+                },
+            )
+            .unwrap();
+        let rep_raw = PacketReader::from_frame(&rep_frames[0]).unwrap();
+        assert_eq!(
+            rep_raw.packet_type,
+            odmo_protocol::opcode::game::REPURCHASE_ITEM
+        );
+        assert_eq!(rep_raw.payload.len(), 1 + 8 + 1 + 46);
+        assert_eq!(rep_raw.payload[0], 1);
+        assert_eq!(&rep_raw.payload[1..9], &496_000i64.to_le_bytes());
+
+        let multi_frames = app
+            .handle_request(
+                &mut session,
+                GameRequest::NpcMultiSell {
+                    vip: 0,
+                    npc_id: 90927,
+                    items: vec![MultiSellEntry {
+                        item_id: 9000,
+                        slot: 1,
+                        count: 2,
+                    }],
+                },
+            )
+            .unwrap();
+        let multi_raw = PacketReader::from_frame(&multi_frames[0]).unwrap();
+        assert_eq!(
+            multi_raw.packet_type,
+            odmo_protocol::opcode::game::NPC_MULTI_SELL
+        );
+        assert_eq!(multi_raw.payload.len(), 22 + 2);
+        assert_eq!(&multi_raw.payload[4..12], &496_200i64.to_le_bytes());
+        assert_eq!(&multi_raw.payload[12..20], &200i64.to_le_bytes());
+        assert_eq!(&multi_raw.payload[22..24], &1u16.to_le_bytes());
+    }
+
+    #[test]
+    fn npc_item_exchange_91208_and_digitamamon_craft_3982() {
+        let mut repo = InMemoryCharacterRepository::demo();
+        repo.npc_shops.push(NpcShopDefinition {
+            npc_id: 91208,
+            map_id: DEFAULT_START_MAP_ID,
+            shop_type: 14,
+            items: vec![NpcShopItem {
+                item_id: 80901,
+                buy_price: 0,
+                sell_price: 0,
+                item_index: 87,
+                barter_item_id: 80907,
+                barter_count: 1,
+            }],
+        });
+        let mut inventory = odmo_types::InventorySnapshot {
+            bits: 500_000,
+            size: 10,
+            items: vec![ItemRecord::default(); 10],
+        };
+        inventory.items[0] = ItemRecord::new(80907, 1);
+        inventory.items[1] = ItemRecord::new(70261, 2);
+        repo.update_inventory(100, inventory).unwrap();
+        repo.update_inventory_bits(100, 500_000).unwrap();
+        let repo = Arc::new(repo);
+        let app = GameApplication::new(
+            GameServiceConfig {
+                portal_state_dir: unique_test_dir("npc-exchange-craft"),
+            },
+            repo.clone(),
+        );
+        let mut session = GameSession::new(1);
+        session.character_id = Some(100);
+
+        let exch_frames = app
+            .handle_request(
+                &mut session,
+                GameRequest::NpcPurchase {
+                    vip: 0,
+                    npc_id: 91208,
+                    marker: 1,
+                    shop_slot: 0,
+                    purchase_count: 1,
+                    item_index: Some(87),
+                },
+            )
+            .unwrap();
+        let exch_raw = PacketReader::from_frame(&exch_frames[0]).unwrap();
+        assert_eq!(exch_raw.payload.len(), 18);
+        assert_eq!(&exch_raw.payload[10..14], &80901u32.to_le_bytes());
+
+        let craft_frames = app
+            .handle_request(
+                &mut session,
+                GameRequest::ItemCraft {
+                    npc_id: 91199,
+                    recipe_id: 4702,
+                    count: 1,
+                    sub_index: 0,
+                    flag: 0,
+                },
+            )
+            .unwrap();
+        let craft_raw = PacketReader::from_frame(&craft_frames[0]).unwrap();
+        assert_eq!(craft_raw.packet_type, odmo_protocol::opcode::game::ITEM_CRAFT);
+        assert_eq!(&craft_raw.payload[..4], &0u32.to_le_bytes());
+        assert_eq!(&craft_raw.payload[4..6], &2u16.to_le_bytes());
+        let stored = repo.character_by_id(100).unwrap().unwrap();
+        assert_eq!(stored.inventory.items[0].item_id, 80901);
+        assert_eq!(stored.inventory.items[1].item_id, 70261);
+        assert_eq!(stored.inventory.items[1].amount, 1);
+        assert_eq!(stored.inventory.items[2].item_id, 70262);
+        assert_eq!(stored.inventory.items[2].amount, 1);
+    }
+
+    #[test]
+    fn quest_lifecycle_and_item_return_3923_update_snapshot_and_bag() {
+        let repo = Arc::new(InMemoryCharacterRepository::demo());
+        let mut inventory = odmo_types::InventorySnapshot {
+            bits: 500_000,
+            size: 10,
+            items: vec![ItemRecord::default(); 10],
+        };
+        inventory.items[0] = ItemRecord::new(5101, 3);
+        repo.update_inventory(100, inventory).unwrap();
+        repo.update_inventory_bits(100, 500_000).unwrap();
+        let app = GameApplication::new(
+            GameServiceConfig {
+                portal_state_dir: unique_test_dir("quest-lifecycle-return"),
+            },
+            repo.clone(),
+        );
+        let mut session = GameSession::new(1);
+        session.character_id = Some(100);
+
+        let ret_frames = app
+            .handle_request(
+                &mut session,
+                GameRequest::ItemReturn {
+                    kind: 3,
+                    reserved: 0,
+                    item_slot: 0,
+                    count: 2,
+                },
+            )
+            .unwrap();
+        let ret_raw = PacketReader::from_frame(&ret_frames[0]).unwrap();
+        assert_eq!(ret_raw.packet_type, odmo_protocol::opcode::game::ITEM_RETURN);
+        assert_eq!(&ret_raw.payload[..4], &200i32.to_le_bytes());
+        assert_eq!(&ret_raw.payload[4..12], &500_200i64.to_le_bytes());
+
+        assert!(
+            app.handle_request(&mut session, GameRequest::QuestAvailableList { npc_id: 91204 })
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            app.handle_request(&mut session, GameRequest::QuestAccept { quest_id: 4024 })
+                .unwrap()
+                .is_empty()
+        );
+
+        let goal_frames = app
+            .handle_request(
+                &mut session,
+                GameRequest::QuestUpdate {
+                    quest_id: 4024,
+                    cond_index: 0,
+                    value: 1,
+                },
+            )
+            .unwrap();
+        let goal_raw = PacketReader::from_frame(&goal_frames[0]).unwrap();
+        assert_eq!(
+            goal_raw.packet_type,
+            odmo_protocol::opcode::game::QUEST_GOAL_UPDATE
+        );
+        assert_eq!(goal_raw.payload.len(), 4);
+
+        let deliver_frames = app
+            .handle_request(&mut session, GameRequest::QuestDeliver { quest_id: 4024 })
+            .unwrap();
+        let deliver_raw = PacketReader::from_frame(&deliver_frames[0]).unwrap();
+        assert_eq!(
+            deliver_raw.packet_type,
+            odmo_protocol::opcode::game::QUEST_DELIVER
+        );
+        assert_eq!(deliver_raw.payload[0], 0);
+        assert_eq!(&deliver_raw.payload[1..3], &4024u16.to_le_bytes());
+        assert_eq!(deliver_raw.payload[43], 5);
+
+        let stored = repo.character_by_id(100).unwrap().unwrap();
+        assert!(quest_completed(&stored.quest_progress, 4024));
+        assert!(stored.quest_progress.in_progress.is_empty());
+        assert_eq!(stored.inventory.items[1].item_id, 129094);
+        assert_eq!(stored.inventory.items[1].amount, 30);
+
+        assert!(
+            app.handle_request(
+                &mut session,
+                GameRequest::QuestAchievement {
+                    quest_id: 1500,
+                    server_time: 1000,
+                    elapsed: 10,
+                },
+            )
+            .unwrap()
+            .is_empty()
+        );
     }
 }

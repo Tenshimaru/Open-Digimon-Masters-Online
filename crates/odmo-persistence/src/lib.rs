@@ -1276,49 +1276,104 @@ pub(crate) fn smoke_tamer_inventory() -> odmo_types::InventorySnapshot {
     }
 }
 
+pub(crate) fn smoke_tamer_quest_progress() -> odmo_types::QuestProgressSnapshot {
+    let mut progress = odmo_types::QuestProgressSnapshot::default();
+    for quest_id in [4020i32, 4021, 4022, 4023] {
+        let bit_index = (quest_id - 1) as usize;
+        progress.completed_data[bit_index / 32] |= 1i32 << (bit_index % 32);
+    }
+    progress
+}
+
+fn shop_item(item_id: i32, buy_price: i32, sell_price: i32) -> NpcShopItem {
+    NpcShopItem {
+        item_id,
+        buy_price,
+        sell_price,
+        item_index: 0,
+        barter_item_id: 0,
+        barter_count: 0,
+    }
+}
+
 pub(crate) fn get_npc_shops() -> Vec<NpcShopDefinition> {
     vec![
         NpcShopDefinition {
-            npc_id: 1001,
+            npc_id: 90921,
             map_id: DEFAULT_START_MAP_ID,
+            shop_type: 1,
+            items: vec![shop_item(40001, 100, 10)],
+        },
+        NpcShopDefinition {
+            npc_id: 90924,
+            map_id: DEFAULT_START_MAP_ID,
+            shop_type: 1,
             items: vec![
-                NpcShopItem {
-                    item_id: 41001,
-                    buy_price: 200,
-                    sell_price: 100,
-                },
-                NpcShopItem {
-                    item_id: 41002,
-                    buy_price: 200,
-                    sell_price: 100,
-                },
-                NpcShopItem {
-                    item_id: 42001,
-                    buy_price: 500,
-                    sell_price: 250,
-                },
-                NpcShopItem {
-                    item_id: 43001,
-                    buy_price: 300,
-                    sell_price: 150,
-                },
+                shop_item(12001, 1000, 100),
+                shop_item(12008, 1000, 100),
+                shop_item(12015, 1000, 100),
+                shop_item(12022, 1000, 100),
+                shop_item(12029, 1000, 100),
+                shop_item(12036, 1000, 100),
+                shop_item(14001, 1000, 100),
+                shop_item(14007, 1000, 100),
+                shop_item(14013, 1000, 100),
+                shop_item(14019, 1000, 100),
+                shop_item(14025, 1000, 100),
+                shop_item(14031, 1000, 100),
+                shop_item(102, 200, 20),
+                shop_item(104, 400, 40),
+                shop_item(106, 800, 80),
+                shop_item(111, 4000, 400),
+                shop_item(203, 400, 40),
+                shop_item(205, 800, 80),
+                shop_item(207, 4000, 400),
+                shop_item(302, 200, 20),
+                shop_item(304, 400, 40),
+                shop_item(306, 800, 80),
+                shop_item(311, 4000, 400),
+                shop_item(401, 1000, 100),
+                shop_item(501, 400, 40),
+                shop_item(503, 800, 80),
+                shop_item(508, 4000, 400),
             ],
         },
         NpcShopDefinition {
-            npc_id: 1002,
+            npc_id: 90927,
             map_id: DEFAULT_START_MAP_ID,
+            shop_type: 1,
             items: vec![
-                NpcShopItem {
-                    item_id: 51001,
-                    buy_price: 1000,
-                    sell_price: 500,
-                },
-                NpcShopItem {
-                    item_id: 52001,
-                    buy_price: 800,
-                    sell_price: 400,
-                },
+                shop_item(9000, 2000, 100),
+                shop_item(19999, 1000, 1),
+                shop_item(47759, 10000, 1),
+                shop_item(47761, 10000, 1),
+                shop_item(47757, 10000, 1),
             ],
+        },
+        NpcShopDefinition {
+            npc_id: 90932,
+            map_id: DEFAULT_START_MAP_ID,
+            shop_type: 1,
+            items: vec![
+                shop_item(9000, 2000, 100),
+                shop_item(19999, 1000, 1),
+                shop_item(47759, 10000, 1),
+                shop_item(47761, 10000, 1),
+                shop_item(47757, 10000, 1),
+            ],
+        },
+        NpcShopDefinition {
+            npc_id: 91208,
+            map_id: DEFAULT_START_MAP_ID,
+            shop_type: 14,
+            items: vec![NpcShopItem {
+                item_id: 80901,
+                buy_price: 0,
+                sell_price: 0,
+                item_index: 87,
+                barter_item_id: 80907,
+                barter_count: 1,
+            }],
         },
     ]
 }
@@ -1510,6 +1565,7 @@ impl WorldSnapshot {
                         inventory_bits: 500_000,
                         inventory_size: 30,
                         inventory: smoke_tamer_inventory(),
+                        quest_progress: smoke_tamer_quest_progress(),
                         ..CharacterSummary::default()
                     }],
                 ),

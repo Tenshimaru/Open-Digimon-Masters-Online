@@ -1049,7 +1049,7 @@ impl Default for QuestProgressSnapshot {
     fn default() -> Self {
         Self {
             in_progress: Vec::new(),
-            completed_data: vec![0; 256],
+            completed_data: vec![0; 288],
             daily_quest_data: vec![0; 32],
             daily_reset_day: 0,
         }

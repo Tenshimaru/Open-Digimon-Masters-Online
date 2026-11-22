@@ -260,9 +260,10 @@ impl PgRepository {
         ]);
 
         let smoke_inv = serde_json::to_value(crate::smoke_tamer_inventory())?;
+        let smoke_quests = serde_json::to_value(crate::smoke_tamer_quest_progress())?;
 
         sqlx::query(
-            "INSERT INTO characters (id, account_id, slot, name, model, level, current_x, current_y, current_map_id, partner_current_x, partner_current_y, partner_current_slot, general_handler, partner_handler, partner_name, partner_model, bits, inventory, warehouse, extra_inventory, account_warehouse, seal_list, available_channels, partner_slots, encyclopedia, deck_buff_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)",
+            "INSERT INTO characters (id, account_id, slot, name, model, level, current_x, current_y, current_map_id, partner_current_x, partner_current_y, partner_current_slot, general_handler, partner_handler, partner_name, partner_model, bits, inventory, warehouse, extra_inventory, account_warehouse, seal_list, available_channels, partner_slots, encyclopedia, deck_buff_id, quest_progress) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)",
         )
         .bind(300i64)
         .bind(4i64)
@@ -290,6 +291,7 @@ impl PgRepository {
         .bind(&smoke_partner_slots)
         .bind(&default_encyclopedia)
         .bind(0i32)
+        .bind(&smoke_quests)
         .execute(&self.pool)
         .await?;
 

@@ -96,9 +96,9 @@ pub mod game {
     pub const BUDDY_NOT_FOUND: i16 = 2407;
     pub const BUDDY_OFF: i16 = 2409;
     pub const BUDDY_CHANGE_NAME: i16 = 2410;
-    // Item-scan notice on the receive table: {u4; i64; u2 count; count x u2 rows}
-    // feeding the scan list through event 96. The fork's C2S ItemScan request uses
-    // 3987 on the send table, so this notice keeps a distinct constant.
+    // NPC multi-item sell request/response (3988). `ITEM_SCAN_NOTICE` is kept as
+    // a compatibility alias for the existing wire struct name.
+    pub const NPC_MULTI_SELL: i16 = 3988;
     pub const ITEM_SCAN_NOTICE: i16 = 3988;
     pub const UPDATE_STATUS: i16 = 1043;
     pub const SERVER_EXPERIENCE: i16 = 1054;
@@ -464,6 +464,7 @@ pub mod game {
     pub const QUEST_UPDATE: i16 = 11001;
     pub const QUEST_GOAL_UPDATE: i16 = 11001;
     pub const QUEST_DAILY_UPDATE: i16 = 11006;
+    pub const QUEST_ACHIEVEMENT: i16 = 11007;
     // Quest cancellation receipt {u2 count; count x {u4 kind; u2 slot; u4 a; u4
     // b}}: rows with kind 2 or 9 take the direct-cancel path, the rest land on the
     // secondary list and pop events 59/60 with the collected lists.

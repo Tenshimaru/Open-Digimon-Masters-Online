@@ -8,7 +8,10 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use odmo_application::game::{DigiCombineRepository, RandomBoxRepository, UnionCombineRepository};
+use odmo_application::character::CharacterRepository;
+use odmo_application::game::{
+    DigiCombineRepository, NpcShopRepository, RandomBoxRepository, UnionCombineRepository,
+};
 use odmo_persistence::pg::PgRepository;
 use odmo_persistence::{DEMO_CATALOG_ITEM_A, DEMO_CATALOG_ITEM_B, JsonRepository};
 use odmo_types::{DigiCombineCatalog, RandomBoxReward, UnionCombineCatalog};
@@ -104,12 +107,64 @@ fn json_random_box_rewards_returns_seeded_pool() {
     assert_eq!(total, 100);
 }
 
-/// Compile-time proof that the Postgres backend implements the same three
+#[test]
+fn json_map_105_shops_and_smoke_tamer_quest_seed_are_consistent() {
+    let repo = fresh_json_repository();
+
+    let s90921 = repo.shop_by_npc(90921, 105).unwrap().expect("90921 shop");
+    assert_eq!(s90921.items.len(), 1);
+    assert_eq!(s90921.items[0].item_id, 40001);
+
+    let s90924 = repo.shop_by_npc(90924, 105).unwrap().expect("90924 shop");
+    assert_eq!(s90924.items.len(), 27);
+    assert_eq!(s90924.items[0].item_id, 12001);
+    assert_eq!(s90924.items[26].item_id, 508);
+
+    let s90927 = repo.shop_by_npc(90927, 105).unwrap().expect("90927 shop");
+    assert_eq!(s90927.items.len(), 5);
+    assert_eq!(s90927.items[0].item_id, 9000);
+    assert_eq!(s90927.items[0].buy_price, 2000);
+    assert_eq!(s90927.items[0].sell_price, 100);
+
+    let s91208 = repo.shop_by_npc(91208, 105).unwrap().expect("91208 shop");
+    assert_eq!(s91208.shop_type, 14);
+    assert_eq!(s91208.items[0].item_index, 87);
+    assert_eq!(s91208.items[0].item_id, 80901);
+    assert_eq!(s91208.items[0].barter_item_id, 80907);
+
+    let smoke = repo
+        .character_by_id(300)
+        .unwrap()
+        .expect("SmokeTamer should be seeded");
+    assert_eq!(smoke.inventory_bits, 500_000);
+    assert_eq!(smoke.inventory.bits, 500_000);
+    assert_eq!(smoke.inventory.items[5].item_id, 79_828);
+    assert_eq!(smoke.inventory.items[5].record[8], 1);
+    assert_eq!(smoke.quest_progress.completed_data.len(), 288);
+    for qid in [4020usize, 4021, 4022, 4023] {
+        let bit = qid - 1;
+        assert_ne!(
+            smoke.quest_progress.completed_data[bit / 32] & (1 << (bit % 32)),
+            0,
+            "quest {qid} should be completed"
+        );
+    }
+    let bit_4024 = 4024usize - 1;
+    assert_eq!(
+        smoke.quest_progress.completed_data[bit_4024 / 32] & (1 << (bit_4024 % 32)),
+        0
+    );
+}
+
+/// Compile-time proof that the Postgres backend implements the same
 /// persistence-port traits as the JSON backend. Because every trait method
 /// returns an `odmo_types` catalog/reward type, no protocol type can leak
 /// across the persistence boundary. No database connection is required.
 const _: fn() = || {
-    fn assert_impl<T: DigiCombineRepository + UnionCombineRepository + RandomBoxRepository>() {}
+    fn assert_impl<
+        T: DigiCombineRepository + UnionCombineRepository + RandomBoxRepository + NpcShopRepository,
+    >() {
+    }
     assert_impl::<PgRepository>();
     assert_impl::<JsonRepository>();
 };

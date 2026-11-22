@@ -2,7 +2,7 @@ use odmo_types::{
     ActiveBuffSnapshot, AttendanceStatus, ChannelAvailability, CharacterSummary,
     CombineCeilingEntry, CombineItemRef, DailyRewardStatus, DigiCombineReward, DigiSummonProduct,
     DigiSummonReward, DropSummary, GuildHistoricEntry, GuildSnapshot, InventorySnapshot,
-    ItemRecord, MobSummary, RelationEntry, SealListSnapshot, XaiSnapshot,
+    ItemRecord, MobSummary, QuestProgressSnapshot, RelationEntry, SealListSnapshot, XaiSnapshot,
 };
 
 use std::collections::BTreeMap;
@@ -65,6 +65,7 @@ pub enum GameRequest {
         marker: u8,
         shop_slot: i32,
         purchase_count: u16,
+        item_index: Option<u16>,
     },
     NpcSell {
         vip: u8,
@@ -72,6 +73,20 @@ pub enum GameRequest {
         marker: u8,
         item_slot: u8,
         sell_amount: u16,
+    },
+    NpcMultiSell {
+        vip: u8,
+        npc_id: i32,
+        items: Vec<MultiSellEntry>,
+    },
+    LoadNpcRepurchaseList {
+        vip: u8,
+        npc_id: i32,
+    },
+    RepurchaseItem {
+        vip: u8,
+        npc_id: i32,
+        index: u16,
     },
     LootItem {
         drop_handler: u32,
@@ -255,7 +270,11 @@ pub enum GameRequest {
         item_slot: i16,
     },
     ItemCraft {
-        recipe_slot: i16,
+        npc_id: u32,
+        recipe_id: u32,
+        count: u16,
+        sub_index: u32,
+        flag: u32,
     },
     ItemReroll {
         item_slot: i16,
@@ -290,7 +309,10 @@ pub enum GameRequest {
         inven_pos: u16,
     },
     ItemReturn {
+        kind: u8,
+        reserved: u32,
         item_slot: i16,
+        count: u16,
     },
     ItemScan {
         item_slot: i16,
@@ -343,6 +365,11 @@ pub enum GameRequest {
         quest_id: i16,
         cond_index: u8,
         value: u8,
+    },
+    QuestAchievement {
+        quest_id: u32,
+        server_time: u32,
+        elapsed: u32,
     },
     DieConfirm,
     RemoveBuff {
@@ -875,7 +902,7 @@ impl GameInitialInfoPacket {
         write_empty_item_records(&mut writer, 12);
         write_empty_item_records(&mut writer, 1);
         write_empty_item_records(&mut writer, 5);
-        writer.write_zeroes(1_432);
+        writer.write_bytes(&encode_quest_snapshot(&self.character.quest_progress));
         writer.write_u16(0);
         writer.write_u8(self.character.digimon_slots);
         writer.write_i32(non_zero_handler(
@@ -1042,33 +1069,79 @@ impl ItemConsumeFailPacket {
 
 // --- NPC shop packets ---
 
+/// Encode the fixed 1432-byte quest progress snapshot (`1152B` LE completion bitmap +
+/// `40 x 7B` active `[u16 quest_id, 5 x u8 goal_values]`) shared by initial info (`1003`)
+/// and sync condition (`16059`).
+pub fn encode_quest_snapshot(progress: &QuestProgressSnapshot) -> [u8; 1_432] {
+    let mut snapshot = [0u8; 1_432];
+    for (idx, word) in progress.completed_data.iter().take(288).enumerate() {
+        let start = idx * 4;
+        snapshot[start..start + 4].copy_from_slice(&(*word as u32).to_le_bytes());
+    }
+    for (slot_idx, quest) in progress.in_progress.iter().take(40).enumerate() {
+        let start = 1_152 + slot_idx * 7;
+        let qid = quest.quest_id.max(0) as u16;
+        snapshot[start..start + 2].copy_from_slice(&qid.to_le_bytes());
+        for (goal_idx, goal) in quest.goals.iter().enumerate() {
+            snapshot[start + 2 + goal_idx] = (*goal).clamp(0, u8::MAX as i16) as u8;
+        }
+    }
+    snapshot
+}
+
+/// One purchased or updated bag row inside `NpcPurchaseResult` (3915).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NpcPurchaseRow {
+    pub inven_slot: u8,
+    pub item_id: u32,
+    pub total_stack: u16,
+    pub rate: u8,
+    pub limited: u8,
+}
+
+/// `NpcPurchaseResult` — opcode 3915: `{i64 money; u8 count; count x 9B item row}`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NpcPurchaseResultPacket {
-    pub success: bool,
     pub remaining_bits: i64,
+    pub items: Vec<NpcPurchaseRow>,
 }
 
 impl NpcPurchaseResultPacket {
+    pub fn failure(remaining_bits: i64) -> Self {
+        Self {
+            remaining_bits,
+            items: Vec::new(),
+        }
+    }
+
     pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.items.len() <= u8::MAX as usize,
+            "purchase rows overflow u1"
+        );
         let mut writer = PacketWriter::new(game::NPC_PURCHASE);
-        writer.write_u8(if self.success { 1 } else { 0 });
         writer.write_i64(self.remaining_bits);
+        writer.write_u8(self.items.len() as u8);
+        for row in &self.items {
+            writer.write_u8(row.inven_slot);
+            writer.write_u32(row.item_id);
+            writer.write_u16(row.total_stack);
+            writer.write_u8(row.rate);
+            writer.write_u8(row.limited);
+        }
         writer.finalize()
     }
 }
 
-/// One sold-item row on the sell result.
+/// One sold-item inventory slot delta inside `NpcSellResult` (3916).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NpcSellRow {
-    pub kind: u8,    // unresolved
-    pub serial: u32, // unresolved
-    pub stack: u16,  // unresolved
+    pub inven_slot: u8,
+    pub item_id: u32,
+    pub stack: u16,
 }
 
-/// `NpcSellResult` — opcode 3916 (mirrored from the C2S sell request). Modern receive
-/// parser reads the i64 money field, a u1 row count and one {u1 kind; u4 serial; u2
-/// stack} row per counted item, pings event 89 with the money amount and keeps the sold
-/// rows briefly for the UI.
+/// `NpcSellResult` — opcode 3916: `{i64 money; u8 count; count x {u8 slot; u32 rem_item_id; u16 rem_stack}}`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NpcSellResultPacket {
     pub remaining_bits: i64,
@@ -1082,10 +1155,163 @@ impl NpcSellResultPacket {
         writer.write_i64(self.remaining_bits);
         writer.write_u8(self.rows.len() as u8);
         for row in &self.rows {
-            writer.write_u8(row.kind);
-            writer.write_u32(row.serial);
+            writer.write_u8(row.inven_slot);
+            writer.write_u32(row.item_id);
             writer.write_u16(row.stack);
         }
+        writer.finalize()
+    }
+}
+
+/// One entry in a C2S `NpcMultiSell` (3988) batch sell request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MultiSellEntry {
+    pub item_id: u32,
+    pub slot: u16,
+    pub count: u16,
+}
+
+/// `LoadNpcRepurchaseList` response — opcode 3979: `{u32 count; count x 69B ItemRecord}`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NpcRepurchaseListPacket {
+    pub items: Vec<ItemRecord>,
+}
+
+impl NpcRepurchaseListPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.items.len() <= u32::MAX as usize,
+            "repurchase list overflows u4"
+        );
+        let mut writer = PacketWriter::new(game::LOAD_NPC_REPURCHASE_LIST);
+        writer.write_u32(self.items.len() as u32);
+        for item in &self.items {
+            writer.write_bytes(&normalize_item_record(item));
+        }
+        writer.finalize()
+    }
+}
+
+/// One 46-byte restored bag slot row in `NpcRepurchaseBuyPacket` (3978).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RepurchaseBuyRow {
+    pub inven_slot: u8,
+    pub item_id: u32,
+    pub stack: u16,
+    pub rate: u8,
+    pub level: u8,
+    pub limited: u8,
+    pub sockets: [u8; 16],
+    pub attributes: [u8; 16],
+    pub end_time: u32,
+}
+
+impl RepurchaseBuyRow {
+    /// Build a 46-byte repurchase row from a placed bag slot and `ItemRecord`.
+    pub fn from_item_record(inven_slot: u8, record: &ItemRecord) -> Self {
+        let raw = normalize_item_record(record);
+        let mut sockets = [0u8; 16];
+        let mut attributes = [0u8; 16];
+        sockets.copy_from_slice(&raw[21..37]);
+        attributes.copy_from_slice(&raw[37..53]);
+        Self {
+            inven_slot,
+            item_id: record.item_id.max(0) as u32,
+            stack: record.amount.clamp(0, u16::MAX as i32) as u16,
+            rate: raw[6],
+            level: raw[7],
+            limited: raw[8],
+            sockets,
+            attributes,
+            end_time: u32::from_le_bytes(raw[65..69].try_into().unwrap()),
+        }
+    }
+
+    pub fn encode_into(&self, writer: &mut PacketWriter) {
+        writer.write_u8(self.inven_slot);
+        writer.write_u32(self.item_id);
+        writer.write_u16(self.stack);
+        writer.write_u8(self.rate);
+        writer.write_u8(self.level);
+        writer.write_u8(self.limited);
+        writer.write_bytes(&self.sockets);
+        writer.write_bytes(&self.attributes);
+        writer.write_u32(self.end_time);
+    }
+}
+
+/// `RepurchaseItem` response — opcode 3978:
+/// - success (`flag = 1`): `{u8 1; i64 money; u8 count; count x 46B RepurchaseBuyRow}`
+/// - failure (`flag = 0`): `{u8 0; u32 error_code}` (`7` = inventory full)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NpcRepurchaseBuyPacket {
+    Success {
+        remaining_bits: i64,
+        items: Vec<RepurchaseBuyRow>,
+    },
+    Failure {
+        error_code: u32,
+    },
+}
+
+impl NpcRepurchaseBuyPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::REPURCHASE_ITEM);
+        match self {
+            Self::Success {
+                remaining_bits,
+                items,
+            } => {
+                assert!(
+                    items.len() <= u8::MAX as usize,
+                    "repurchase rows overflow u1"
+                );
+                writer.write_u8(1);
+                writer.write_i64(*remaining_bits);
+                writer.write_u8(items.len() as u8);
+                for row in items {
+                    row.encode_into(&mut writer);
+                }
+            }
+            Self::Failure { error_code } => {
+                writer.write_u8(0);
+                writer.write_u32(*error_code);
+            }
+        }
+        writer.finalize()
+    }
+}
+
+/// `ItemCraft` response — opcode 3982:
+/// `{u32 result; u16 item_count; count x 71B SerializedItemRow; i64 money; 4 x u32 meta}`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ItemCraftResponsePacket {
+    pub result: u32,
+    pub items: Vec<SerializedItemRow>,
+    pub money: i64,
+    pub reserved_a: u32,
+    pub crafted_count: u32,
+    pub reserved_b: u32,
+    pub reserved_c: u32,
+}
+
+impl ItemCraftResponsePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.items.len() <= u16::MAX as usize,
+            "craft updated items overflow u2"
+        );
+        let mut writer = PacketWriter::new(game::ITEM_CRAFT);
+        writer.write_u32(self.result);
+        writer.write_u16(self.items.len() as u16);
+        for item in &self.items {
+            item.encode_into(&mut writer);
+        }
+        writer.write_i64(self.money);
+        writer.write_u32(self.reserved_a);
+        writer.write_u32(self.crafted_count);
+        writer.write_u32(self.reserved_b);
+        writer.write_u32(self.reserved_c);
         writer.finalize()
     }
 }
@@ -6055,6 +6281,12 @@ pub struct SyncConditionSnapshotPacket {
 }
 
 impl SyncConditionSnapshotPacket {
+    pub fn from_progress(progress: &QuestProgressSnapshot) -> Self {
+        Self {
+            blob: encode_quest_snapshot(progress).to_vec(),
+        }
+    }
+
     pub fn encode(&self) -> Vec<u8> {
         assert_eq!(
             self.blob.len(),
@@ -9906,13 +10138,12 @@ impl QuestAvailableListPacket {
     }
 }
 
-/// `QuestGoalUpdate` packet — opcode 11001.
-/// Mirrors `QuestGoalUpdatePacket(short questId, byte goalIndex, short currentGoalValue)`.
+/// `QuestGoalUpdate` packet — opcode 11001: `{u16 quest_id; u8 goal_index; u8 value}`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QuestGoalUpdatePacket {
     pub quest_id: i16,
     pub goal_index: u8,
-    pub current_goal_value: i16,
+    pub current_goal_value: u8,
 }
 
 impl QuestGoalUpdatePacket {
@@ -9920,18 +10151,91 @@ impl QuestGoalUpdatePacket {
         let mut writer = PacketWriter::new(game::QUEST_GOAL_UPDATE);
         writer.write_i16(self.quest_id);
         writer.write_u8(self.goal_index);
-        writer.write_i16(self.current_goal_value);
+        writer.write_u8(self.current_goal_value);
         writer.finalize()
     }
 }
 
-/// `QuestDailyUpdate` packet — opcode 11006. Empty payload; signals daily reset.
+/// One reward item slot grant inside `QuestCompletePacket` (11004).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct QuestDailyUpdatePacket;
+pub struct QuestCompleteRewardRow {
+    pub item_id: u32,
+    pub extra: u32,
+    pub new_stack: u32,
+    pub inven_slot: u16,
+}
+
+/// `QuestComplete` response — opcode 11004:
+/// - `flag != 0` (`flag = 2` bag full): `{u8 flag; u16 quest_id}` (`3B`)
+/// - `flag == 0`: `{u8 0; u16 quest_id; 5 x i64 (money_total at index 3); u8 count; count x 14B row}`
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QuestCompletePacket {
+    pub flag: u8,
+    pub quest_id: u16,
+    pub scalars: [i64; 5],
+    pub items: Vec<QuestCompleteRewardRow>,
+}
+
+impl QuestCompletePacket {
+    pub fn success(quest_id: u16, money_total: i64, items: Vec<QuestCompleteRewardRow>) -> Self {
+        Self {
+            flag: 0,
+            quest_id,
+            scalars: [0, 0, 0, money_total, 0],
+            items,
+        }
+    }
+
+    pub fn failure(flag: u8, quest_id: u16) -> Self {
+        Self {
+            flag,
+            quest_id,
+            scalars: [0; 5],
+            items: Vec::new(),
+        }
+    }
+
+    pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.items.len() <= u8::MAX as usize,
+            "quest completion reward items overflow u1"
+        );
+        let mut writer = PacketWriter::new(game::QUEST_DELIVER);
+        writer.write_u8(self.flag);
+        writer.write_u16(self.quest_id);
+        if self.flag == 0 {
+            for scalar in self.scalars {
+                writer.write_i64(scalar);
+            }
+            writer.write_u8(self.items.len() as u8);
+            for row in &self.items {
+                writer.write_u32(row.item_id);
+                writer.write_u32(row.extra);
+                writer.write_u32(row.new_stack);
+                writer.write_u16(row.inven_slot);
+            }
+        }
+        writer.finalize()
+    }
+}
+
+/// `QuestDailyUpdate` packet — opcode 11006: `{u8 reset_type}` (`2` or `9`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QuestDailyUpdatePacket {
+    pub reset_type: u8,
+}
+
+impl Default for QuestDailyUpdatePacket {
+    fn default() -> Self {
+        Self { reset_type: 2 }
+    }
+}
 
 impl QuestDailyUpdatePacket {
     pub fn encode(&self) -> Vec<u8> {
-        PacketWriter::new(game::QUEST_DAILY_UPDATE).finalize()
+        let mut writer = PacketWriter::new(game::QUEST_DAILY_UPDATE);
+        writer.write_u8(self.reset_type);
+        writer.finalize()
     }
 }
 
@@ -11831,21 +12135,28 @@ impl GuildAuthorityUpdatePacket {
     }
 }
 
-/// `ItemScanNotice` notice — opcode 3988 (receive table). Modern parser reads `{u4;
-/// i64; u2 count; count x u2}` and assembles one 12-byte list node per row before event
-/// 96. Field meanings stay unattributed; the row count drives the list length.
+/// `NpcMultiSellResult` notice — opcode 3988 (`22 + 2*N` bytes):
+/// `{u32 result; i64 remaining_bits; i64 sold_bits; u16 count; count x u16 slot}`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ItemScanNoticePacket {
-    pub first: u32,   // unresolved
-    pub second: i64,  // unresolved
+    pub first: u32,
+    pub second: i64,
+    pub third: i64,
     pub entries: Vec<u16>,
 }
 
+pub type MultiSellResultPacket = ItemScanNoticePacket;
+
 impl ItemScanNoticePacket {
     pub fn encode(&self) -> Vec<u8> {
-        let mut writer = PacketWriter::new(game::ITEM_SCAN_NOTICE);
+        assert!(
+            self.entries.len() <= u16::MAX as usize,
+            "multi-sell slot count overflows u2"
+        );
+        let mut writer = PacketWriter::new(game::NPC_MULTI_SELL);
         writer.write_u32(self.first);
         writer.write_i64(self.second);
+        writer.write_i64(self.third);
         writer.write_u16(self.entries.len() as u16);
         for entry in &self.entries {
             writer.write_u16(*entry);
@@ -12880,24 +13191,56 @@ impl TryFrom<RawPacket> for GameRequest {
             }
             game::NPC_PURCHASE => {
                 // On-wire layout:
-                //   [u1 vip][u4 npc_id][u1 marker=0x38][n4 shop_slot][u2 count][u1 marker]
-                // The leading vip byte is decoded first; the trailing marker is optional.
+                //   [u1 vip][u4 npc_id][u1 marker][i4 shop_slot][u2 count][optional u2 item_index]
                 let vip = reader.read_u8()?;
                 let npc_id = reader.read_i32()?;
                 let marker = reader.read_u8()?;
                 let shop_slot = reader.read_i32()?;
                 let purchase_count = reader.read_u16()?;
-                if reader.remaining_len() >= 1 {
-                    // Trailing marker byte.
+                let item_index = if reader.remaining_len() >= 2 {
+                    Some(reader.read_u16()?)
+                } else if reader.remaining_len() >= 1 {
                     let _trailing_marker = reader.read_u8()?;
-                }
+                    None
+                } else {
+                    None
+                };
                 Ok(Self::NpcPurchase {
                     vip,
                     npc_id,
                     marker,
                     shop_slot,
                     purchase_count,
+                    item_index,
                 })
+            }
+            game::NPC_MULTI_SELL => {
+                let vip = reader.read_u8()?;
+                let npc_id = reader.read_i32()?;
+                let count = reader.read_u16()?;
+                if (count as usize).saturating_mul(8) > reader.remaining_len() {
+                    return Err(ProtocolError::UnexpectedEof);
+                }
+                let mut items = Vec::with_capacity(count as usize);
+                for _ in 0..count {
+                    items.push(MultiSellEntry {
+                        item_id: reader.read_u32()?,
+                        slot: reader.read_u16()?,
+                        count: reader.read_u16()?,
+                    });
+                }
+                Ok(Self::NpcMultiSell { vip, npc_id, items })
+            }
+            game::LOAD_NPC_REPURCHASE_LIST => {
+                let vip = reader.read_u8()?;
+                let npc_id = reader.read_i32()?;
+                Ok(Self::LoadNpcRepurchaseList { vip, npc_id })
+            }
+            game::REPURCHASE_ITEM => {
+                let vip = reader.read_u8()?;
+                let npc_id = reader.read_i32()?;
+                let index = reader.read_u16()?;
+                Ok(Self::RepurchaseItem { vip, npc_id, index })
             }
             game::NPC_SELL => {
                 // On-wire layout:
@@ -13179,8 +13522,29 @@ impl TryFrom<RawPacket> for GameRequest {
                 Ok(Self::ItemIdentify { item_slot })
             }
             game::ITEM_CRAFT => {
-                let recipe_slot = reader.read_i16()?;
-                Ok(Self::ItemCraft { recipe_slot })
+                if reader.remaining_len() >= 18 {
+                    let npc_id = reader.read_u32()?;
+                    let recipe_id = reader.read_u32()?;
+                    let count = reader.read_u16()?;
+                    let sub_index = reader.read_u32()?;
+                    let flag = reader.read_u32()?;
+                    Ok(Self::ItemCraft {
+                        npc_id,
+                        recipe_id,
+                        count,
+                        sub_index,
+                        flag,
+                    })
+                } else {
+                    let recipe_slot = reader.read_i16()?;
+                    Ok(Self::ItemCraft {
+                        npc_id: 0,
+                        recipe_id: recipe_slot.max(0) as u32,
+                        count: 1,
+                        sub_index: 0,
+                        flag: 0,
+                    })
+                }
             }
             game::ITEM_REROLL => {
                 let item_slot = reader.read_i16()?;
@@ -13231,8 +13595,26 @@ impl TryFrom<RawPacket> for GameRequest {
                 })
             }
             game::ITEM_RETURN => {
-                let item_slot = reader.read_i16()?;
-                Ok(Self::ItemReturn { item_slot })
+                if reader.remaining_len() >= 9 {
+                    let kind = reader.read_u8()?;
+                    let reserved = reader.read_u32()?;
+                    let item_slot = reader.read_i16()?;
+                    let count = reader.read_u16()?;
+                    Ok(Self::ItemReturn {
+                        kind,
+                        reserved,
+                        item_slot,
+                        count,
+                    })
+                } else {
+                    let item_slot = reader.read_i16()?;
+                    Ok(Self::ItemReturn {
+                        kind: 3,
+                        reserved: 0,
+                        item_slot,
+                        count: 1,
+                    })
+                }
             }
             game::ITEM_SCAN => {
                 let item_slot = reader.read_i16()?;
@@ -13317,6 +13699,16 @@ impl TryFrom<RawPacket> for GameRequest {
                     quest_id,
                     cond_index,
                     value,
+                })
+            }
+            game::QUEST_ACHIEVEMENT => {
+                let quest_id = reader.read_u32()?;
+                let server_time = reader.read_u32()?;
+                let elapsed = reader.read_u32()?;
+                Ok(Self::QuestAchievement {
+                    quest_id,
+                    server_time,
+                    elapsed,
                 })
             }
             game::DIE_CONFIRM => Ok(Self::DieConfirm),
@@ -14010,22 +14402,20 @@ mod tests {
     fn item_scan_notice_writes_header_pairs_then_u16_rows() {
         let packet = ItemScanNoticePacket {
             first: 7,
-            second: -2,
+            second: 3500,
+            third: 1200,
             entries: vec![11, 12],
         }
         .encode();
 
         let raw = PacketReader::from_frame(&packet).expect("frame should decode");
-        assert_eq!(raw.packet_type, game::ITEM_SCAN_NOTICE);
-        assert_eq!(
-            raw.payload,
-            [
-                7, 0, 0, 0, // u4
-                0xFE, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // i64 -2
-                2, 0, // count
-                11, 0, 12, 0, // rows
-            ]
-        );
+        assert_eq!(raw.packet_type, game::NPC_MULTI_SELL);
+        assert_eq!(raw.payload.len(), 22 + 4);
+        assert_eq!(&raw.payload[..4], &7u32.to_le_bytes());
+        assert_eq!(&raw.payload[4..12], &3500i64.to_le_bytes());
+        assert_eq!(&raw.payload[12..20], &1200i64.to_le_bytes());
+        assert_eq!(&raw.payload[20..22], &2u16.to_le_bytes());
+        assert_eq!(&raw.payload[22..26], &[11, 0, 12, 0]);
     }
 
     #[test]
@@ -19764,13 +20154,13 @@ mod tests {
             remaining_bits: 3500,
             rows: vec![
                 NpcSellRow {
-                    kind: 1,
-                    serial: 0xCAFEBABE,
+                    inven_slot: 1,
+                    item_id: 0xCAFEBABE,
                     stack: 2,
                 },
                 NpcSellRow {
-                    kind: 0,
-                    serial: 7,
+                    inven_slot: 0,
+                    item_id: 7,
                     stack: 9,
                 },
             ],
@@ -21364,6 +21754,7 @@ mod tests {
                 marker: 0x38,
                 shop_slot: 4,
                 purchase_count: 2,
+                item_index: None,
             }
         );
     }
@@ -23385,5 +23776,213 @@ mod sync_1006_preservation {
         assert_eq!(reader.read_u32().unwrap(), 150);
         assert_eq!(reader.read_u32().unwrap(), 100);
         assert_eq!(reader.read_u16().unwrap(), 6);
+    }
+
+    #[test]
+    fn quest_snapshot_encodes_completion_bitmap_and_active_slots() {
+        let mut progress = QuestProgressSnapshot::default();
+        // Set bit index (4023 - 1) = 4022.
+        let bit_idx = 4022usize;
+        progress.completed_data[bit_idx / 32] |= 1i32 << (bit_idx % 32);
+        progress.in_progress.push(odmo_types::InProgressQuest {
+            quest_id: 4024,
+            goals: [1, 2, 0, 255, 0],
+        });
+
+        let blob = encode_quest_snapshot(&progress);
+        assert_eq!(blob.len(), 1_432);
+        assert_ne!(blob[bit_idx >> 3] & (1 << (bit_idx & 7)), 0);
+        assert_eq!(&blob[1152..1154], &4024u16.to_le_bytes());
+        assert_eq!(&blob[1154..1159], &[1, 2, 0, 255, 0]);
+
+        let sync = SyncConditionSnapshotPacket::from_progress(&progress).encode();
+        let raw = PacketReader::from_frame(&sync).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::NTF_SYNC_CONDITION);
+        assert_eq!(raw.payload.as_slice(), &blob);
+    }
+
+    #[test]
+    fn npc_purchase_and_repurchase_packets_match_wire_widths() {
+        let buy = NpcPurchaseResultPacket {
+            remaining_bits: 498_000,
+            items: vec![NpcPurchaseRow {
+                inven_slot: 7,
+                item_id: 9000,
+                total_stack: 3,
+                rate: 0,
+                limited: 0,
+            }],
+        }
+        .encode();
+        let raw_buy = PacketReader::from_frame(&buy).expect("frame should decode");
+        assert_eq!(raw_buy.packet_type, game::NPC_PURCHASE);
+        assert_eq!(raw_buy.payload.len(), 18);
+        assert_eq!(&raw_buy.payload[..8], &498_000i64.to_le_bytes());
+        assert_eq!(raw_buy.payload[8], 1);
+        assert_eq!(raw_buy.payload[9], 7);
+        assert_eq!(&raw_buy.payload[10..14], &9000u32.to_le_bytes());
+        assert_eq!(&raw_buy.payload[14..16], &3u16.to_le_bytes());
+        assert_eq!(&raw_buy.payload[16..18], &[0, 0]);
+
+        let list = NpcRepurchaseListPacket {
+            items: vec![ItemRecord::new(9000, 2)],
+        }
+        .encode();
+        let raw_list = PacketReader::from_frame(&list).expect("frame should decode");
+        assert_eq!(raw_list.packet_type, game::LOAD_NPC_REPURCHASE_LIST);
+        assert_eq!(raw_list.payload.len(), 4 + 69);
+        assert_eq!(&raw_list.payload[..4], &1u32.to_le_bytes());
+
+        let rep_ok = NpcRepurchaseBuyPacket::Success {
+            remaining_bits: 498_100,
+            items: vec![RepurchaseBuyRow::from_item_record(7, &ItemRecord::new(9000, 2))],
+        }
+        .encode();
+        let raw_rep_ok = PacketReader::from_frame(&rep_ok).expect("frame should decode");
+        assert_eq!(raw_rep_ok.packet_type, game::REPURCHASE_ITEM);
+        assert_eq!(raw_rep_ok.payload.len(), 1 + 8 + 1 + 46);
+        assert_eq!(raw_rep_ok.payload[0], 1);
+
+        let rep_err = NpcRepurchaseBuyPacket::Failure { error_code: 7 }.encode();
+        let raw_rep_err = PacketReader::from_frame(&rep_err).expect("frame should decode");
+        assert_eq!(raw_rep_err.packet_type, game::REPURCHASE_ITEM);
+        assert_eq!(raw_rep_err.payload, [0, 7, 0, 0, 0]);
+    }
+
+    #[test]
+    fn quest_complete_goal_and_daily_packets_match_wire_layouts() {
+        let ok = QuestCompletePacket::success(
+            4024,
+            500_000,
+            vec![QuestCompleteRewardRow {
+                item_id: 129094,
+                extra: 0,
+                new_stack: 30,
+                inven_slot: 7,
+            }],
+        )
+        .encode();
+        let raw_ok = PacketReader::from_frame(&ok).expect("frame should decode");
+        assert_eq!(raw_ok.packet_type, game::QUEST_DELIVER);
+        assert_eq!(raw_ok.payload.len(), 44 + 14);
+        assert_eq!(raw_ok.payload[0], 0);
+        assert_eq!(&raw_ok.payload[1..3], &4024u16.to_le_bytes());
+        assert_eq!(&raw_ok.payload[27..35], &500_000i64.to_le_bytes());
+        assert_eq!(raw_ok.payload[43], 1);
+        assert_eq!(&raw_ok.payload[44..48], &129094u32.to_le_bytes());
+        assert_eq!(&raw_ok.payload[52..56], &30u32.to_le_bytes());
+        assert_eq!(&raw_ok.payload[56..58], &7u16.to_le_bytes());
+
+        let bag_full = QuestCompletePacket::failure(2, 4024).encode();
+        let raw_full = PacketReader::from_frame(&bag_full).expect("frame should decode");
+        assert_eq!(raw_full.payload, [2, 0xB8, 0x0F]);
+
+        let goal = QuestGoalUpdatePacket {
+            quest_id: 4034,
+            goal_index: 0,
+            current_goal_value: 5,
+        }
+        .encode();
+        let raw_goal = PacketReader::from_frame(&goal).expect("frame should decode");
+        assert_eq!(raw_goal.packet_type, game::QUEST_GOAL_UPDATE);
+        assert_eq!(raw_goal.payload, [0xC2, 0x0F, 0, 5]);
+
+        let daily = QuestDailyUpdatePacket { reset_type: 2 }.encode();
+        let raw_daily = PacketReader::from_frame(&daily).expect("frame should decode");
+        assert_eq!(raw_daily.packet_type, game::QUEST_DAILY_UPDATE);
+        assert_eq!(raw_daily.payload, [2]);
+    }
+
+    #[test]
+    fn item_craft_return_multi_sell_and_achievement_requests_decode() {
+        let mut craft_w = PacketWriter::new(game::ITEM_CRAFT);
+        craft_w.write_u32(91199);
+        craft_w.write_u32(4702);
+        craft_w.write_u16(1);
+        craft_w.write_u32(0);
+        craft_w.write_u32(0);
+        let craft_req =
+            GameRequest::try_from(PacketReader::from_frame(&craft_w.finalize()).unwrap()).unwrap();
+        assert_eq!(
+            craft_req,
+            GameRequest::ItemCraft {
+                npc_id: 91199,
+                recipe_id: 4702,
+                count: 1,
+                sub_index: 0,
+                flag: 0,
+            }
+        );
+
+        let craft_resp = ItemCraftResponsePacket {
+            result: 0,
+            items: vec![SerializedItemRow::from_item_record(
+                7,
+                &ItemRecord::new(70262, 1),
+            )],
+            money: -1,
+            reserved_a: 0,
+            crafted_count: 1,
+            reserved_b: 0,
+            reserved_c: 0,
+        }
+        .encode();
+        let raw_craft_resp = PacketReader::from_frame(&craft_resp).unwrap();
+        assert_eq!(raw_craft_resp.packet_type, game::ITEM_CRAFT);
+        assert_eq!(raw_craft_resp.payload.len(), 4 + 2 + 71 + 8 + 16);
+
+        let mut ret_w = PacketWriter::new(game::ITEM_RETURN);
+        ret_w.write_u8(3);
+        ret_w.write_u32(0);
+        ret_w.write_i16(4);
+        ret_w.write_u16(2);
+        let ret_req =
+            GameRequest::try_from(PacketReader::from_frame(&ret_w.finalize()).unwrap()).unwrap();
+        assert_eq!(
+            ret_req,
+            GameRequest::ItemReturn {
+                kind: 3,
+                reserved: 0,
+                item_slot: 4,
+                count: 2,
+            }
+        );
+
+        let mut multi_w = PacketWriter::new(game::NPC_MULTI_SELL);
+        multi_w.write_u8(0);
+        multi_w.write_u32(90927);
+        multi_w.write_u16(1);
+        multi_w.write_u32(9000);
+        multi_w.write_u16(7);
+        multi_w.write_u16(1);
+        let multi_req =
+            GameRequest::try_from(PacketReader::from_frame(&multi_w.finalize()).unwrap()).unwrap();
+        assert_eq!(
+            multi_req,
+            GameRequest::NpcMultiSell {
+                vip: 0,
+                npc_id: 90927,
+                items: vec![MultiSellEntry {
+                    item_id: 9000,
+                    slot: 7,
+                    count: 1,
+                }],
+            }
+        );
+
+        let mut ach_w = PacketWriter::new(game::QUEST_ACHIEVEMENT);
+        ach_w.write_u32(4024);
+        ach_w.write_u32(1_700_000_000);
+        ach_w.write_u32(1_699_995_976);
+        let ach_req =
+            GameRequest::try_from(PacketReader::from_frame(&ach_w.finalize()).unwrap()).unwrap();
+        assert_eq!(
+            ach_req,
+            GameRequest::QuestAchievement {
+                quest_id: 4024,
+                server_time: 1_700_000_000,
+                elapsed: 1_699_995_976,
+            }
+        );
     }
 }

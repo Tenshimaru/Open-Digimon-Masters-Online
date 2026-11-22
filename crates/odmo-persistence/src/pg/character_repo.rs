@@ -4,7 +4,8 @@ use odmo_types::{
     Account, AccountId, ActiveBuffSnapshot, AttendanceStatus, ChannelAvailability,
     CharacterSummary, DEFAULT_START_MAP_ID, DEFAULT_START_X, DEFAULT_START_Y, DailyRewardStatus,
     DigiviceItemSnapshot, DigiviceSnapshot, EncyclopediaSnapshot, GuildSnapshot, InventorySnapshot,
-    PartnerSlotSnapshot, RelationEntry, SealListSnapshot, UnionHackSlotRow, XaiSnapshot,
+    ItemRecord, PartnerSlotSnapshot, QuestProgressSnapshot, RelationEntry, SealListSnapshot,
+    UnionHackSlotRow, XaiSnapshot,
 };
 
 use super::PgRepository;
@@ -62,6 +63,8 @@ pub(crate) struct CharacterDb {
     pub premium: i32,
     pub silk: i32,
     pub membership_seconds: i64,
+    pub quest_progress: serde_json::Value,
+    pub npc_repurchase_log: serde_json::Value,
 }
 
 const SELECT_COLS: &str = "\
@@ -75,7 +78,8 @@ const SELECT_COLS: &str = "\
     friends, foes, friended_character_ids, map_regions, \
     equipment, digivice, daily_reward, attendance, partner_slots, \
     available_channels, encyclopedia, union_hack_slots, deck_buff_id, \
-    server_experience, premium, silk, membership_seconds";
+    server_experience, premium, silk, membership_seconds, \
+    quest_progress, npc_repurchase_log";
 
 pub(crate) fn row_to_character(row: CharacterDb) -> CharacterSummary {
     let inventory: InventorySnapshot = serde_json::from_value(row.inventory).unwrap_or_default();
@@ -110,6 +114,10 @@ pub(crate) fn row_to_character(row: CharacterDb) -> CharacterSummary {
         serde_json::from_value(row.encyclopedia).unwrap_or_default();
     let union_hack_slots: Vec<UnionHackSlotRow> =
         serde_json::from_value(row.union_hack_slots).unwrap_or_default();
+    let quest_progress: QuestProgressSnapshot =
+        serde_json::from_value(row.quest_progress).unwrap_or_default();
+    let npc_repurchase_log: Vec<ItemRecord> =
+        serde_json::from_value(row.npc_repurchase_log).unwrap_or_default();
     let mut partner_slots: Vec<PartnerSlotSnapshot> =
         serde_json::from_value(row.partner_slots).unwrap_or_default();
     let available_channels: Vec<ChannelAvailability> =
@@ -223,6 +231,8 @@ pub(crate) fn row_to_character(row: CharacterDb) -> CharacterSummary {
         encyclopedia,
         active_deck_buff: row.deck_buff_id,
         union_hack_slots,
+        quest_progress,
+        npc_repurchase_log,
         ..CharacterSummary::default()
     };
 
@@ -883,6 +893,55 @@ impl CharacterRepository for PgRepository {
         self.block_on(async move {
             sqlx::query("UPDATE characters SET deck_buff_id = $1 WHERE id = $2")
                 .bind(deck_buff_id)
+                .bind(character_id as i64)
+                .execute(&pool)
+                .await?;
+            Ok(())
+        })
+    }
+
+    fn update_inventory_bits(&self, character_id: u64, bits: i64) -> anyhow::Result<()> {
+        let clamped = bits.max(0);
+        let pool = self.pool().clone();
+        self.block_on(async move {
+            sqlx::query(
+                "UPDATE characters SET bits = $1, inventory = jsonb_set(inventory, '{bits}', to_jsonb($1::bigint)) WHERE id = $2",
+            )
+            .bind(clamped)
+            .bind(character_id as i64)
+            .execute(&pool)
+            .await?;
+            Ok(())
+        })
+    }
+
+    fn update_quest_progress(
+        &self,
+        character_id: u64,
+        quest_progress: QuestProgressSnapshot,
+    ) -> anyhow::Result<()> {
+        let progress_json = serde_json::to_value(&quest_progress)?;
+        let pool = self.pool().clone();
+        self.block_on(async move {
+            sqlx::query("UPDATE characters SET quest_progress = $1 WHERE id = $2")
+                .bind(&progress_json)
+                .bind(character_id as i64)
+                .execute(&pool)
+                .await?;
+            Ok(())
+        })
+    }
+
+    fn update_npc_repurchase_log(
+        &self,
+        character_id: u64,
+        log: Vec<ItemRecord>,
+    ) -> anyhow::Result<()> {
+        let log_json = serde_json::to_value(&log)?;
+        let pool = self.pool().clone();
+        self.block_on(async move {
+            sqlx::query("UPDATE characters SET npc_repurchase_log = $1 WHERE id = $2")
+                .bind(&log_json)
                 .bind(character_id as i64)
                 .execute(&pool)
                 .await?;
