@@ -78,4 +78,31 @@ impl MapMobRepository for PgRepository {
             Ok(rows.into_iter().map(MobSummary::from).collect())
         })
     }
+
+    fn update_mob_hp(
+        &self,
+        map_id: i16,
+        channel: u8,
+        handler: u32,
+        current_hp: i32,
+    ) -> anyhow::Result<()> {
+        let pool = self.pool().clone();
+        let ch = channel as i16;
+        let hp = current_hp.max(0);
+        self.block_on(async move {
+            sqlx::query(
+                "UPDATE map_mobs SET current_hp = $1, alive = ($1 > 0) \
+                 WHERE map_id = $2 AND channel = $3 AND handler = $4",
+            )
+            .bind(hp)
+            .bind(map_id)
+            .bind(ch)
+            .bind(handler as i32)
+            .execute(&pool)
+            .await
+            .context("failed to update mob hp")?;
+
+            Ok(())
+        })
+    }
 }

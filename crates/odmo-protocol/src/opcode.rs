@@ -145,9 +145,9 @@ pub mod game {
     // Tamer option {r4 target handler; r4 value}; the client looks the target up
     // and applies the option through it.
     pub const TAMER_OPTION: i16 = 1313;
-    // Skill-chip result {r4 handler; r4 skill_id}: the CSkillTable row keyed by
-    // skill_id with kind 1 or 47 pops the buff message.
-    pub const SKILL_RESULT_CHIP: i16 = 1122;
+    // HP-absorb buff feedback {u4 target_handler; u4 skill_id}: triggers buff feedback
+    // when the matching skill entry indicates an HP-absorb effect.
+    pub const BUFF_HP_ABSORB: i16 = 1122;
     // Cross-inventory slot-size update {r4; u2; r4; r4} -> ev491.
     pub const ITEM_CROSS_INVEN_SLOT_SIZE: i16 = 3966;
     // Move-clear removal {r4 handler; r4 item_id}: the client checks the CItemTable
@@ -396,12 +396,11 @@ pub mod game {
     pub const MEGAPHONE_MESSAGE: i16 = 1074;
     pub const TAMER_REACTION: i16 = 1058;
     pub const PARTNER_STOP: i16 = 1033;
-    pub const PARTNER_STOP_RESPONSE: i16 = 1033;
     pub const PARTNER_ATTACK: i16 = 1013;
     pub const PARTNER_ATTACK_RESPONSE: i16 = 1013;
     pub const ATTACK_MISS: i16 = 1014;
     pub const PARTNER_SKILL: i16 = 1015;
-    pub const PARTNER_SKILL_RESPONSE: i16 = 1015;
+    pub const SKILL_USE_MEMORY_CHIP: i16 = 1120;
     pub const KILL_ON_HIT: i16 = 1020;
     pub const KILL_ON_SKILL: i16 = 1021;
     pub const PARTNER_SKILL_ERROR: i16 = 1105;
@@ -662,9 +661,8 @@ pub mod game {
     // selected by the monster row kind: 0 = header only, 1 = {u4 count; count x
     // u4 target}, 2/4/7 = {u4 count; count x {u4 a; u4 b}}.
     pub const GAMETWO_MONSTER_AREA_ATTACK: i16 = 16010;
-    pub const GAMETWO_HACK_SHIELD_CHECK: i16 = 16011;
     pub const GAMETWO_DOOR_OBJECT_OPEN: i16 = 16007;
-    pub const GAMETWO_GAME_GUARD_CHECK: i16 = 16011;
+    pub const MONSTER_AREA_SKILL_HIT: i16 = 16011;
     pub const GAMETWO_SKILL_ACTION: i16 = 16012;
     pub const GAMETWO_X_GUAGE_UPDATE: i16 = 16034;
     // RaidSkillChain {u4 handler; u4 skill; u2 count; count x {u4 value; u4 next;
@@ -748,11 +746,10 @@ pub mod game {
     // skill_index; u4 expected} — direct digimon-table mutation plus an empty
     // event-477 ping.
     pub const SKILL_LIMIT_OPEN: i16 = 3245;
-    // Skill application broadcast {u1 tag; tag body}. Tag 0 is a melee cast with
-    // a caster block, a stat chain and an 18-slot target table; tag 2 is a
-    // damage-over-time tick list; tag 3 is a scene cast. Tag 1 carries a body
-    // whose trailing field meanings are still unbound, so the encoder refuses it
-    // rather than guessing a layout.
+    // Skill application broadcast {u1 tag; tag body}. Tag 0 is a melee/skill cast with
+    // [caster][target][skill], flags, optional caster stat block, two [stat:u8][val:u64]
+    // chains terminated by >=18, and trailing u32 flags; tag 1 updates target stat/HP state
+    // without a trailing u32; tag 2 is a damage-over-time tick list; tag 3 is a scene cast.
     pub const SKILL_APPLY_AROUND: i16 = 1102;
     // Enchant/tactics decrease notice applied to the local digimon: {u2 anchor
     // (client stores value - 1); u2 x14 in two runs of seven}; the loop pairs run
@@ -782,9 +779,7 @@ pub mod game {
     // Portable-item failure {u4 code}: switch 7701 pings ev212, 7702 and 7703 gate
     // on prior portable-item usage.
     pub const ITEM_PORTABLE_FAIL: i16 = 3943;
-    // Crop-money flow {u4; u4; u4; u4}: the first two u4s form one i64 and the
-    // trailing pair feeds the coin delta sums; closes three fixed UI handlers first
-    // (23100/22900/23000), plays the coin sound and pings ev671.
+    // Crop-money flow {u4 picker_uid; u4 base_bits; u4 bonus_bits; u4 extra_bits}.
     pub const ITEM_CROP_MONEY: i16 = 3911;
     // Limited-attribute change {u2; u1} -> event 585 with an u1 gate slot.
     pub const ITEM_CHANGE_LIMITED_ATTRIBUTE: i16 = 3934;
@@ -797,12 +792,12 @@ pub mod game {
     pub const MACRO_FAILURE: i16 = 1066;
     pub const MACRO_SUCCESS: i16 = 1067;
     pub const MACRO_RESULT: i16 = 1068;
-    // Experience-gain notice: five i64 quantity pairs plus two u4 fields, the
-    // fourth read being consumed as u16 and the last one feeding a float exp path;
-    // every quantity enters the same x100 fixed-point conversion.
+    // Experience-gain notice (56 bytes): three i64 x100 fixed-point tamer fields
+    // (bonus, base, cumulative total), partner u32 handle, three i64 x100 fixed-point
+    // partner fields (bonus, base, cumulative total), and trailing u32 skill exp.
     pub const GAME_GET_EXP: i16 = 1018;
-    // Target-tracking notice {u4 target handler; u1 flag; u4; u4} resolved through
-    // the entity lookup and applied only to non-filtered types.
+    // Target-tracking notice {u4 target_handler; u1 hp_rate; u4 owner_uid; u4 expire_ts; u4 created_ts}
+    // resolved through the entity lookup and applied only to non-filtered entity kinds.
     pub const GAME_TARGET_INFO: i16 = 1017;
     // Stat-change notice {u4 handler; u2 count; count x {u2 stat; u4 value}}; stat
     // selector 1.10 and 12 dispatch into distinct setters, then an empty

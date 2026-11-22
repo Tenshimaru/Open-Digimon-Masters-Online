@@ -993,6 +993,29 @@ impl CharacterRepository for JsonRepository {
         self.mutate_character(character_id, |c| c.partner_memory_skills = skills)
     }
 
+    fn update_character_experience(
+        &self,
+        character_id: u64,
+        tamer_level: u8,
+        tamer_exp: i64,
+        partner_level: u8,
+        partner_exp: i64,
+    ) -> anyhow::Result<()> {
+        self.mutate_character(character_id, |c| {
+            c.level = tamer_level.max(1);
+            c.current_experience = tamer_exp.max(0);
+            c.partner_level = partner_level.max(1);
+            c.partner_current_experience = partner_exp.max(0);
+            if let Some(slot) = c
+                .partner_slots
+                .iter_mut()
+                .find(|p| p.slot == c.partner_current_slot)
+            {
+                slot.level = c.partner_level;
+            }
+        })
+    }
+
     fn search_characters_by_name(
         &self,
         name_fragment: &str,
@@ -1027,6 +1050,23 @@ impl MapMobRepository for JsonRepository {
             .cloned()
             .unwrap_or_default())
     }
+
+    fn update_mob_hp(
+        &self,
+        map_id: i16,
+        channel: u8,
+        handler: u32,
+        current_hp: i32,
+    ) -> anyhow::Result<()> {
+        let mut state = self.state.write().expect("repository poisoned");
+        if let Some(mobs) = state.mobs_by_map.get_mut(&map_key(map_id, channel))
+            && let Some(mob) = mobs.iter_mut().find(|mob| mob.handler == handler)
+        {
+            mob.current_hp = current_hp.max(0);
+            self.persist(&state)?;
+        }
+        Ok(())
+    }
 }
 
 impl MapDropRepository for JsonRepository {
@@ -1036,7 +1076,11 @@ impl MapDropRepository for JsonRepository {
             .drops_by_map
             .get(&map_key(map_id, channel))
             .cloned()
-            .unwrap_or_default())
+            .unwrap_or_default()
+            .into_iter()
+            .map(apply_runtime_drop_state)
+            .filter(|drop| !drop.collected)
+            .collect())
     }
 
     fn collect_drop(
@@ -1066,10 +1110,17 @@ impl MapDropRepository for JsonRepository {
             .and_then(|characters| characters.get(character_index))
             .cloned()
             .expect("character should exist");
+        let kind = drop_handler >> 16;
         let Some(drop_index) = state
             .drops_by_map
             .get(&map_key(map_id, channel))
-            .and_then(|drops| drops.iter().position(|drop| drop.handler == drop_handler))
+            .and_then(|drops| {
+                drops.iter().position(|drop| {
+                    drop.handler == drop_handler
+                        || ((kind == 3 || kind == 0)
+                            && (drop.handler & 0xFFFF) == (drop_handler & 0xFFFF))
+                })
+            })
         else {
             return Ok(DropCollectionResult::Missing);
         };
@@ -1152,6 +1203,34 @@ impl MapDropRepository for JsonRepository {
             amount: drop.amount.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
             character: updated_character,
         })
+    }
+
+    fn spawn_drop(&self, mut drop: DropSummary) -> anyhow::Result<DropSummary> {
+        let mut state = self.state.write().expect("repository poisoned");
+        let next_id = state
+            .drops_by_map
+            .values()
+            .flatten()
+            .map(|existing| existing.id)
+            .max()
+            .unwrap_or(500)
+            .saturating_add(1);
+        let key = map_key(drop.map_id, drop.channel);
+        let entry = state.drops_by_map.entry(key).or_default();
+        let next_handler = entry
+            .iter()
+            .map(|existing| existing.handler & 0xFFFF)
+            .max()
+            .map_or(49_200, |h| h.saturating_add(1).max(49_200));
+        drop.id = next_id;
+        drop.handler = if next_handler > 65_000 {
+            49_200 + ((next_id % 15_000) as u32)
+        } else {
+            next_handler
+        };
+        entry.push(drop.clone());
+        self.persist(&state)?;
+        Ok(drop)
     }
 }
 
@@ -1582,10 +1661,12 @@ impl WorldSnapshot {
                         model: 31_033,
                         name: "Goblimon".to_string(),
                         level: 18,
-                        x: DEFAULT_START_X + 66,
-                        y: DEFAULT_START_Y + 45,
-                        previous_x: DEFAULT_START_X + 46,
-                        previous_y: DEFAULT_START_Y + 25,
+                        x: DEFAULT_START_X + 225,
+                        y: DEFAULT_START_Y + 125,
+                        previous_x: DEFAULT_START_X + 205,
+                        previous_y: DEFAULT_START_Y + 105,
+                        current_hp: 300,
+                        max_hp: 300,
                         ..MobSummary::default()
                     },
                     MobSummary {
@@ -1922,17 +2003,32 @@ fn map_distance(xa: i32, ya: i32, xb: i32, yb: i32) -> i64 {
 }
 
 fn add_inventory_item(items: &mut Vec<ItemRecord>, size: u16, drop: &DropSummary) -> bool {
-    if let Some(existing) = items.iter_mut().find(|item| item.item_id == drop.item_id) {
-        existing.amount = existing.amount.saturating_add(drop.amount.max(0));
+    let limit = usize::from(size);
+    let safe_amount = drop.amount.max(1);
+    if let Some(existing) = items
+        .iter_mut()
+        .take(limit)
+        .find(|item| item.item_id == drop.item_id && item.amount > 0)
+    {
+        existing.amount = existing.amount.saturating_add(safe_amount);
         existing.sync_record();
         return true;
     }
 
-    if items.len() >= size as usize {
+    if let Some(empty) = items
+        .iter_mut()
+        .take(limit)
+        .find(|item| item.item_id <= 0 || item.amount <= 0)
+    {
+        *empty = ItemRecord::new(drop.item_id, safe_amount);
+        return true;
+    }
+
+    if items.len() >= limit {
         return false;
     }
 
-    let record = ItemRecord::new(drop.item_id, drop.amount.max(1));
+    let record = ItemRecord::new(drop.item_id, safe_amount);
     items.push(record);
     true
 }

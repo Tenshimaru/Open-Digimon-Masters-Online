@@ -167,6 +167,12 @@ pub enum GameRequest {
         attacker_handler: u32,
         target_handler: u32,
     },
+    PartnerMemorySkill {
+        digimon_uid: u32,
+        evo_idx: u8,
+        skill_code: u32,
+        target_uid: u32,
+    },
     PartnerSwitch {
         slot: u8,
     },
@@ -371,7 +377,12 @@ pub enum GameRequest {
         server_time: u32,
         elapsed: u32,
     },
-    DieConfirm,
+    DieConfirm {
+        masked_token: u32,
+        account_idx: u32,
+        access_code: u32,
+        net_version: u32,
+    },
     RemoveBuff {
         buff_id: i32,
     },
@@ -1378,17 +1389,17 @@ impl TamerOptionPacket {
     }
 }
 
-/// `ResultSkillChip` — opcode 1122: {u4 handler; u4 skill_id}; a skill-row
-/// kind of 1 or 47 pops the buff feedback message.
+/// `BuffHpAbsorb` — opcode 1122: {u4 handler; u4 skill_id}; pops HP-absorb
+/// buff feedback when the skill table entry carries a matching absorb effect.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct SkillResultChipPacket {
-    pub handler: u32,  // entity carrying the chip
+pub struct BuffHpAbsorbPacket {
+    pub handler: u32,  // entity carrying the buff
     pub skill_id: u32, // keyed into CSkillTable
 }
 
-impl SkillResultChipPacket {
+impl BuffHpAbsorbPacket {
     pub fn encode(&self) -> Vec<u8> {
-        let mut writer = PacketWriter::new(game::SKILL_RESULT_CHIP);
+        let mut writer = PacketWriter::new(game::BUFF_HP_ABSORB);
         writer.write_u32(self.handler);
         writer.write_u32(self.skill_id);
         writer.finalize()
@@ -3161,18 +3172,30 @@ pub struct SkillDotRow {
 /// it on a guess would shift every later read on the client.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SkillApplyAroundBody {
-    /// Tag 0: melee cast.
+    /// Tag 0: melee/skill cast.
     Melee {
         caster: u32,
-        skill_id: u32,
         target: u32,
+        skill_id: u32,
         flag: u8,
         /// 40 bytes read only when the caster is nonzero.
         caster_block: Option<[u8; 40]>,
+        target_hp_rate: u8,
         caster_stats: Vec<SkillStatRow>,
         /// Rows that fill the target table, indexed by their own stat selector.
         target_stats: Vec<SkillStatRow>,
         tail: u32,
+    },
+    /// Tag 1: target stat/damage update without trailing attack flags.
+    StatUpdate {
+        caster: u32,
+        target: u32,
+        skill_id: u32,
+        /// Present on the wire only when `caster` is nonzero.
+        caster_flag: Option<u8>,
+        target_hp_rate: u8,
+        caster_stats: Vec<SkillStatRow>,
+        target_stats: Vec<SkillStatRow>,
     },
     /// Tag 2: damage-over-time ticks.
     Dot {
@@ -7098,10 +7121,11 @@ impl SkillApplyAroundPacket {
         match &self.body {
             SkillApplyAroundBody::Melee {
                 caster,
-                skill_id,
                 target,
+                skill_id,
                 flag,
                 caster_block,
+                target_hp_rate,
                 caster_stats,
                 target_stats,
                 tail,
@@ -7111,32 +7135,77 @@ impl SkillApplyAroundPacket {
                     "the caster block rides only when the caster is nonzero"
                 );
                 assert!(
+                    (*caster != 0) || (caster_stats.is_empty() && target_stats.is_empty()),
+                    "stat chains are only read when the caster is nonzero"
+                );
+                assert!(
                     caster_stats.iter().all(|row| row.stat < 18)
                         && target_stats.iter().all(|row| row.stat < 18),
                     "a stat row at or above 18 would terminate the chain early"
                 );
                 writer.write_u8(0);
                 writer.write_u32(*caster);
-                writer.write_u32(*skill_id);
                 writer.write_u32(*target);
+                writer.write_u32(*skill_id);
                 writer.write_u8(*flag);
                 if let Some(block) = caster_block {
                     writer.write_bytes(block);
                 }
-                writer.write_u8(1); // one-byte field between the block and the chain
+                writer.write_u8(*target_hp_rate);
+                if *caster != 0 {
+                    for row in caster_stats {
+                        writer.write_u8(row.stat);
+                        writer.write_u32(row.value as u32);
+                        writer.write_u32(row.extra);
+                    }
+                    writer.write_u8(18); // caster chain terminator
+                    for row in target_stats {
+                        writer.write_u8(row.stat);
+                        writer.write_u32(row.value as u32);
+                        writer.write_u32(row.extra);
+                    }
+                    writer.write_u8(18); // target chain terminator
+                    writer.write_u32(*tail);
+                }
+            }
+            SkillApplyAroundBody::StatUpdate {
+                caster,
+                target,
+                skill_id,
+                caster_flag,
+                target_hp_rate,
+                caster_stats,
+                target_stats,
+            } => {
+                assert!(
+                    (caster_flag.is_some() == (*caster != 0)),
+                    "the caster flag rides only when the caster is nonzero"
+                );
+                assert!(
+                    caster_stats.iter().all(|row| row.stat < 18)
+                        && target_stats.iter().all(|row| row.stat < 18),
+                    "a stat row at or above 18 would terminate the chain early"
+                );
+                writer.write_u8(1);
+                writer.write_u32(*caster);
+                writer.write_u32(*target);
+                writer.write_u32(*skill_id);
+                if let Some(flag) = caster_flag {
+                    writer.write_u8(*flag);
+                }
+                writer.write_u8(*target_hp_rate);
                 for row in caster_stats {
+                    writer.write_u8(row.stat);
                     writer.write_u32(row.value as u32);
                     writer.write_u32(row.extra);
-                    writer.write_u8(row.stat);
                 }
                 writer.write_u8(18); // caster chain terminator
                 for row in target_stats {
+                    writer.write_u8(row.stat);
                     writer.write_u32(row.value as u32);
                     writer.write_u32(row.extra);
-                    writer.write_u8(row.stat);
                 }
                 writer.write_u8(18); // target chain terminator
-                writer.write_u32(*tail);
             }
             SkillApplyAroundBody::Dot { source, flag, rows } => {
                 assert!(rows.len() <= u8::MAX as usize, "dot rows overflow u1");
@@ -7723,34 +7792,31 @@ impl GameTwoDoorObjectOpenPacket {
     }
 }
 
-/// One guard entry of `GameTwo::GameGuardCheck` — opcode 16011: {u1 kind;
-/// u4 c; u4 d; u1 e}. The dispatcher traces c through the guard path and
-/// builds the event-666 message from c; unresolved fields keep their
-/// accumulator offsets.
+/// One target hit entry of `MonsterAreaSkillHit` — opcode 16011: {u1 kind;
+/// u4 target_handler; u4 damage; u1 hit_flag}.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct GameGuardRow {
+pub struct MonsterAreaSkillHitRow {
     pub kind: u8,
     pub c: u32,
     pub d: u32,
     pub e: u8,
 }
 
-/// `GameTwo::GameGuardCheck` — opcode 16011: {u4 a; u4 b; u2 count;
-/// count x rows}. The leading a is matched against the selected/main
-/// monster handler to enable the guard path.
+/// `MonsterAreaSkillHit` — opcode 16011: {u4 attacker; u4 skill_id; u2 count;
+/// count x rows}.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct GameTwoGameGuardCheckPacket {
+pub struct MonsterAreaSkillHitPacket {
     pub a: u32,
     pub b: u32,
-    pub rows: Vec<GameGuardRow>,
+    pub rows: Vec<MonsterAreaSkillHitRow>,
 }
 
-impl GameTwoGameGuardCheckPacket {
+impl MonsterAreaSkillHitPacket {
     pub fn encode(&self) -> Vec<u8> {
-        let mut writer = PacketWriter::new(game::GAMETWO_GAME_GUARD_CHECK);
+        let mut writer = PacketWriter::new(game::MONSTER_AREA_SKILL_HIT);
         assert!(
             self.rows.len() <= u16::MAX as usize,
-            "game guard rows overflow u2"
+            "monster area skill hit rows overflow u2"
         );
         writer.write_u32(self.a);
         writer.write_u32(self.b);
@@ -8750,13 +8816,15 @@ fn entity_handle(raw: u32, fallback_id: u64) -> u16 {
     non_zero_handler(raw, fallback_id) as u16
 }
 
-/// Health-bar fill percentage the entity record carries; an unknown maximum reads as full.
+/// Health-bar fill scaled to `[0, 255]` (`255 = 100%`); an unknown maximum reads as full.
 fn hp_rate_percent(current: i32, max: i32) -> u8 {
     if max <= 0 {
-        return 100;
+        return 255;
     }
-    let percent = (i64::from(current.max(0)) * 100) / i64::from(max);
-    percent.clamp(0, 100) as u8
+    if current <= 0 {
+        return 0;
+    }
+    ((i64::from(current) * 255) / i64::from(max)).clamp(1, 255) as u8
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -8922,49 +8990,66 @@ impl LoadDropsPacket {
     }
 }
 
+/// `LOOT_ITEM` response — opcode 3910 (23 bytes):
+/// `[picker_tamer_idx: u16][receiver_tamer_idx: u16][drop_uid: u32]` followed by
+/// the 15-byte extended item summary `[item_id: u32][slot_or_flags: u16][amount: u16][rate: u8][limited: u8][level: u8][end_time: u32]`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PickItemPacket {
-    pub appearance_handler: u32,
-    pub item_id: i32,
-    pub amount: i16,
+    pub picker_tamer_idx: u16,
+    pub receiver_tamer_idx: u16,
+    pub drop_uid: u32,
+    pub item_id: u32,
+    pub slot_or_flags: u16,
+    pub amount: u16,
+    pub rate: u8,
+    pub limited: u8,
+    pub level: u8,
+    pub end_time: u32,
 }
 
 impl PickItemPacket {
     pub fn encode(&self) -> Vec<u8> {
         let mut writer = PacketWriter::new(game::LOOT_ITEM);
-        writer.write_u32(self.appearance_handler);
-        writer.write_i32(self.item_id);
-        writer.write_i16(self.amount);
-        writer.write_u8(0);
-        writer.write_i32(0);
+        writer.write_u16(self.picker_tamer_idx);
+        writer.write_u16(self.receiver_tamer_idx);
+        writer.write_u32(self.drop_uid);
+        writer.write_u32(self.item_id);
+        writer.write_u16(self.slot_or_flags);
+        writer.write_u16(self.amount);
+        writer.write_u8(self.rate);
+        writer.write_u8(self.limited);
+        writer.write_u8(self.level);
+        writer.write_u32(self.end_time);
         writer.finalize()
     }
 }
 
+/// `PICK_BITS` / `ITEM_CROP_MONEY` response — opcode 3911 (16 bytes):
+/// `{u4 picker_uid; u4 base_bits; u4 bonus_bits; u4 extra_bits}`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PickBitsPacket {
-    pub appearance_handler: u32,
-    pub value: i32,
+    pub picker_uid: u32,
+    pub base_bits: u32,
+    pub bonus_bits: u32,
+    pub extra_bits: u32,
 }
 
 impl PickBitsPacket {
     pub fn encode(&self) -> Vec<u8> {
         let mut writer = PacketWriter::new(game::PICK_BITS);
-        writer.write_u32(self.appearance_handler);
-        writer.write_i32(self.value);
-        writer.write_i32(0);
-        writer.write_i32(0);
-        writer.write_i32(0);
+        writer.write_u32(self.picker_uid);
+        writer.write_u32(self.base_bits);
+        writer.write_u32(self.bonus_bits);
+        writer.write_u32(self.extra_bits);
         writer.finalize()
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PickItemFailReason {
-    Unknown = 1,
-    NotTheOwner = 2,
-    TooFarAway = 3,
-    InventoryFull = 4,
+    InventoryFull = 14,
+    NotTheOwner = 15,
+    TooFarAway = 16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -9033,9 +9118,10 @@ pub struct UnloadDropsPacket {
 impl UnloadDropsPacket {
     pub fn encode(&self) -> Vec<u8> {
         let mut writer = PacketWriter::new(game::LOAD_UNLOAD_ENTITY);
+        let handle = entity_handle(self.drop.handler, self.drop.id);
         writer.write_u8(4);
         writer.write_i16(1);
-        writer.write_u32(non_zero_handler(self.drop.handler, self.drop.id) as u32);
+        writer.write_u32((u32::from(ENTITY_KIND_ITEM) << 16) | u32::from(handle));
         writer.write_i32(self.drop.x);
         writer.write_i32(self.drop.y);
         writer.write_i32(0);
@@ -10047,25 +10133,6 @@ impl KillOnHitPacket {
         writer.write_u32(self.target_handler);
         write_modern_damage_block(&mut writer, -self.final_damage);
         writer.write_i32(self.hit_type as i32);
-        writer.finalize()
-    }
-}
-
-/// Partner skill cast announcement — opcode 1015.
-/// Mirrors `CastSkillPacket(byte skillSlot, int attackerHandler, int targetHandler)`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CastSkillPacket {
-    pub skill_slot: u8,
-    pub attacker_handler: u32,
-    pub target_handler: u32,
-}
-
-impl CastSkillPacket {
-    pub fn encode(&self) -> Vec<u8> {
-        let mut writer = PacketWriter::new(game::PARTNER_SKILL_RESPONSE);
-        writer.write_u8(self.skill_slot);
-        writer.write_u32(self.attacker_handler);
-        writer.write_u32(self.target_handler);
         writer.finalize()
     }
 }
@@ -11728,30 +11795,30 @@ impl LevelUpPacket {
     }
 }
 
-/// `ReceiveExp` — opcode 1018.
+/// `ReceiveExp` — opcode 1018 (56 bytes).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ReceiveExpPacket {
-    pub tamer_exp: i64,
-    pub tamer_bonus: i64,
-    pub tamer_total: i64,
-    pub partner_handler: u32,
-    pub partner_exp: i64,
-    pub partner_bonus: i64,
-    pub partner_total: i64,
-    pub skill_exp: i64,
+    pub tamer_bonus_x100: i64,
+    pub tamer_base_x100: i64,
+    pub tamer_total_x100: i64,
+    pub partner_handle: u32,
+    pub partner_bonus_x100: i64,
+    pub partner_base_x100: i64,
+    pub partner_total_x100: i64,
+    pub skill_exp: u32,
 }
 
 impl ReceiveExpPacket {
     pub fn encode(&self) -> Vec<u8> {
-        let mut writer = PacketWriter::new(1018);
-        writer.write_i64(self.tamer_exp);
-        writer.write_i64(self.tamer_bonus);
-        writer.write_i64(self.tamer_total);
-        writer.write_u32(self.partner_handler);
-        writer.write_i64(self.partner_exp);
-        writer.write_i64(self.partner_bonus);
-        writer.write_i64(self.partner_total);
-        writer.write_i64(self.skill_exp);
+        let mut writer = PacketWriter::new(game::GAME_GET_EXP);
+        writer.write_i64(self.tamer_bonus_x100);
+        writer.write_i64(self.tamer_base_x100);
+        writer.write_i64(self.tamer_total_x100);
+        writer.write_u32(self.partner_handle);
+        writer.write_i64(self.partner_bonus_x100);
+        writer.write_i64(self.partner_base_x100);
+        writer.write_i64(self.partner_total_x100);
+        writer.write_u32(self.skill_exp);
         writer.finalize()
     }
 }
@@ -12297,46 +12364,45 @@ impl DroppedSlotNoticePacket {
     }
 }
 
-/// `GetExp` notice — opcode 1018. Modern parser reads five i64 quantity pairs
-/// interleaved with two u4 fields: `{i64; i64; i64; u4; i64; i64; u4}` (48 bytes). All
-/// five pairs go through the same x100 fixed-point conversion; the first trailing u4 is
-/// consumed as u16 and the last feeds a float exp path. Individual pair meanings stay
-/// unattributed.
+/// `GetExp` notice — opcode 1018 (56 bytes): `{i64 tamer_bonus_x100; i64 tamer_base_x100;
+/// i64 tamer_total_x100; u4 partner_handle; i64 partner_bonus_x100; i64 partner_base_x100;
+/// i64 partner_total_x100; u4 skill_exp}`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GameGetExpNoticePacket {
-    pub first: i64,    // unresolved
-    pub second: i64,   // unresolved
-    pub third: i64,    // unresolved
-    pub flag: u32,     // unresolved (read side uses u16)
-    pub fourth: i64,   // unresolved
-    pub fifth: i64,    // unresolved
-    pub exp_value: u32, // unresolved (feeds the float exp path)
+    pub tamer_bonus_x100: i64,
+    pub tamer_base_x100: i64,
+    pub tamer_total_x100: i64,
+    pub partner_handle: u32,
+    pub partner_bonus_x100: i64,
+    pub partner_base_x100: i64,
+    pub partner_total_x100: i64,
+    pub skill_exp: u32,
 }
 
 impl GameGetExpNoticePacket {
     pub fn encode(&self) -> Vec<u8> {
         let mut writer = PacketWriter::new(game::GAME_GET_EXP);
-        writer.write_i64(self.first);
-        writer.write_i64(self.second);
-        writer.write_i64(self.third);
-        writer.write_u32(self.flag);
-        writer.write_i64(self.fourth);
-        writer.write_i64(self.fifth);
-        writer.write_u32(self.exp_value);
+        writer.write_i64(self.tamer_bonus_x100);
+        writer.write_i64(self.tamer_base_x100);
+        writer.write_i64(self.tamer_total_x100);
+        writer.write_u32(self.partner_handle);
+        writer.write_i64(self.partner_bonus_x100);
+        writer.write_i64(self.partner_base_x100);
+        writer.write_i64(self.partner_total_x100);
+        writer.write_u32(self.skill_exp);
         writer.finalize()
     }
 }
 
-/// `TargetInfo` notice — opcode 1017. Modern parser reads `{u4 target handler; u1 flag;
-/// u4; u4}`; the handler resolves through the entity lookup and the flag feeds a slot
-/// setter, while the last two u4 fields are stored verbatim on the tracked entity
-/// (their delta semantics stay unattributed).
+/// `TargetInfo` notice — opcode 1017 (17 bytes): `{u4 target_handler; u1 flag;
+/// u4 owner_uid; u4 expire_ts; u4 created_ts}`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GameTargetInfoPacket {
-    pub target_handler: u32, // resolved by the client entity lookup
-    pub flag: u8,            // feeds a slot setter
-    pub first: u32,          // stored verbatim on the entity
-    pub second: u32,         // stored as (field - value) on the entity
+    pub target_handler: u32,
+    pub flag: u8,
+    pub owner_uid: u32,
+    pub expire_ts: u32,
+    pub created_ts: u32,
 }
 
 impl GameTargetInfoPacket {
@@ -12344,8 +12410,9 @@ impl GameTargetInfoPacket {
         let mut writer = PacketWriter::new(game::GAME_TARGET_INFO);
         writer.write_u32(self.target_handler);
         writer.write_u8(self.flag);
-        writer.write_u32(self.first);
-        writer.write_u32(self.second);
+        writer.write_u32(self.owner_uid);
+        writer.write_u32(self.expire_ts);
+        writer.write_u32(self.created_ts);
         writer.finalize()
     }
 }
@@ -13355,6 +13422,18 @@ impl TryFrom<RawPacket> for GameRequest {
                     target_handler,
                 })
             }
+            game::SKILL_USE_MEMORY_CHIP => {
+                let digimon_uid = reader.read_u32()?;
+                let evo_idx = reader.read_u8()?;
+                let skill_code = reader.read_u32()?;
+                let target_uid = reader.read_u32()?;
+                Ok(Self::PartnerMemorySkill {
+                    digimon_uid,
+                    evo_idx,
+                    skill_code,
+                    target_uid,
+                })
+            }
             game::PARTNER_SWITCH => {
                 let slot = reader.read_u8()?;
                 Ok(Self::PartnerSwitch { slot })
@@ -13711,7 +13790,18 @@ impl TryFrom<RawPacket> for GameRequest {
                     elapsed,
                 })
             }
-            game::DIE_CONFIRM => Ok(Self::DieConfirm),
+            game::DIE_CONFIRM => {
+                let masked_token = reader.read_u32()?;
+                let account_idx = reader.read_u32()?;
+                let access_code = reader.read_u32()?;
+                let net_version = reader.read_u32()?;
+                Ok(Self::DieConfirm {
+                    masked_token,
+                    account_idx,
+                    access_code,
+                    net_version,
+                })
+            }
             game::REMOVE_BUFF => {
                 let buff_id = reader.read_i32()?;
                 Ok(Self::RemoveBuff { buff_id })
@@ -14467,11 +14557,12 @@ mod tests {
     fn skill_apply_around_bodies_follow_their_tag() {
         let melee = SkillApplyAroundPacket {
             body: SkillApplyAroundBody::Melee {
-                caster: 0,
-                skill_id: 2,
+                caster: 1,
                 target: 3,
+                skill_id: 2,
                 flag: 4,
-                caster_block: None,
+                caster_block: Some([0xAA; 40]),
+                target_hp_rate: 75,
                 caster_stats: vec![SkillStatRow {
                     value: 5,
                     extra: 6,
@@ -14488,20 +14579,71 @@ mod tests {
         .encode();
         let raw = PacketReader::from_frame(&melee).expect("frame should decode");
         assert_eq!(raw.packet_type, game::SKILL_APPLY_AROUND);
+        let mut expected_melee = vec![
+            0, // tag
+            1, 0, 0, 0, // caster
+            3, 0, 0, 0, // target
+            2, 0, 0, 0, // skill
+            4, // flag
+        ];
+        expected_melee.extend_from_slice(&[0xAA; 40]);
+        expected_melee.extend_from_slice(&[
+            75, // target_hp_rate
+            7, 5, 0, 0, 0, 6, 0, 0, 0, // caster stat row: [sel:u8][val:u32][extra:u32]
+            18, // caster terminator
+            10, 8, 0, 0, 0, 9, 0, 0, 0, // target stat row: [sel:u8][val:u32][extra:u32]
+            18, // target terminator
+            11, 0, 0, 0, // tail
+        ]);
+        assert_eq!(raw.payload, expected_melee);
+
+        let melee_no_caster = SkillApplyAroundPacket {
+            body: SkillApplyAroundBody::Melee {
+                caster: 0,
+                target: 3,
+                skill_id: 2,
+                flag: 4,
+                caster_block: None,
+                target_hp_rate: 1,
+                caster_stats: Vec::new(),
+                target_stats: Vec::new(),
+                tail: 0,
+            },
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&melee_no_caster).expect("frame should decode");
+        assert_eq!(raw.payload, [0, 0, 0, 0, 0, 3, 0, 0, 0, 2, 0, 0, 0, 4, 1]);
+
+        let stat_update = SkillApplyAroundPacket {
+            body: SkillApplyAroundBody::StatUpdate {
+                caster: 23_000,
+                target: 34_000,
+                skill_id: 1,
+                caster_flag: Some(100),
+                target_hp_rate: 85,
+                caster_stats: vec![],
+                target_stats: vec![SkillStatRow {
+                    stat: 4,
+                    value: 250,
+                    extra: 0,
+                }],
+            },
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&stat_update).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::SKILL_APPLY_AROUND);
         assert_eq!(
             raw.payload,
             [
-                0, // tag
-                0, 0, 0, 0, // caster
-                2, 0, 0, 0, // skill
-                3, 0, 0, 0, // target
-                4, // flag
-                1, // block marker byte (no 40-byte block: caster is zero)
-                5, 0, 0, 0, 6, 0, 0, 0, 7, // caster stat row
-                18, // caster terminator
-                8, 0, 0, 0, 9, 0, 0, 0, 10, // target stat row
-                18, // target terminator
-                11, 0, 0, 0, // tail
+                1, // tag
+                0xd8, 0x59, 0, 0, // caster 23_000
+                0xd0, 0x84, 0, 0, // target 34_000
+                1, 0, 0, 0, // skill 1
+                100, // caster_flag
+                85, // target_hp_rate
+                18, // empty caster stats terminator
+                4, 250, 0, 0, 0, 0, 0, 0, 0, // target stat 4 = 250
+                18, // target stats terminator
             ]
         );
 
@@ -17035,23 +17177,25 @@ mod tests {
     }
 
     #[test]
-    fn game_get_exp_notice_writes_five_pairs_between_two_u32() {
+    fn game_get_exp_notice_writes_56_byte_exp_payload() {
         let packet = GameGetExpNoticePacket {
-            first: 1,
-            second: 2,
-            third: 3,
-            flag: 7,
-            fourth: 4,
-            fifth: 5,
-            exp_value: 88,
+            tamer_bonus_x100: 10,
+            tamer_base_x100: 200,
+            tamer_total_x100: 300,
+            partner_handle: 23_000,
+            partner_bonus_x100: 40,
+            partner_base_x100: 500,
+            partner_total_x100: 800,
+            skill_exp: 88,
         }
         .encode();
 
         let raw = PacketReader::from_frame(&packet).expect("frame should decode");
         assert_eq!(raw.packet_type, game::GAME_GET_EXP);
-        assert_eq!(raw.payload.len(), 48);
-        assert_eq!(&raw.payload[24..28], &[7, 0, 0, 0]);
-        assert_eq!(&raw.payload[44..48], &[88, 0, 0, 0]);
+        assert_eq!(raw.payload.len(), 56);
+        assert_eq!(&raw.payload[24..28], &23_000u32.to_le_bytes());
+        assert_eq!(&raw.payload[44..52], &800i64.to_le_bytes());
+        assert_eq!(&raw.payload[52..56], &88u32.to_le_bytes());
     }
 
     #[test]
@@ -17059,15 +17203,16 @@ mod tests {
         let target = GameTargetInfoPacket {
             target_handler: 0x100,
             flag: 2,
-            first: 3,
-            second: 4,
+            owner_uid: 3,
+            expire_ts: 4,
+            created_ts: 5,
         }
         .encode();
         let target_raw = PacketReader::from_frame(&target).expect("frame should decode");
         assert_eq!(target_raw.packet_type, game::GAME_TARGET_INFO);
         assert_eq!(
             target_raw.payload,
-            [0, 1, 0, 0, 2, 3, 0, 0, 0, 4, 0, 0, 0]
+            [0, 1, 0, 0, 2, 3, 0, 0, 0, 4, 0, 0, 0, 5, 0, 0, 0]
         );
 
         let change = GameChangeStatPacket {
@@ -17617,9 +17762,9 @@ mod tests {
         assert_eq!(option_raw.packet_type, game::TAMER_OPTION);
         assert_eq!(option_raw.payload, [5, 0, 0, 0, 6, 0, 0, 0]);
 
-        let chip = SkillResultChipPacket { handler: 7, skill_id: 8 }.encode();
+        let chip = BuffHpAbsorbPacket { handler: 7, skill_id: 8 }.encode();
         let chip_raw = PacketReader::from_frame(&chip).expect("frame should decode");
-        assert_eq!(chip_raw.packet_type, game::SKILL_RESULT_CHIP);
+        assert_eq!(chip_raw.packet_type, game::BUFF_HP_ABSORB);
         assert_eq!(chip_raw.payload, [7, 0, 0, 0, 8, 0, 0, 0]);
     }
 
@@ -19560,17 +19705,17 @@ mod tests {
         assert_eq!(&raw.payload[..4], &7u32.to_le_bytes());
         assert_eq!(raw.payload[4], 1);
 
-        let guard = GameTwoGameGuardCheckPacket {
+        let area_hit = MonsterAreaSkillHitPacket {
             a: 1,
             b: 2,
             rows: vec![
-                GameGuardRow {
+                MonsterAreaSkillHitRow {
                     kind: 1,
                     c: 3,
                     d: 4,
                     e: 5,
                 },
-                GameGuardRow {
+                MonsterAreaSkillHitRow {
                     kind: 0,
                     c: 6,
                     d: 7,
@@ -19579,8 +19724,8 @@ mod tests {
             ],
         }
         .encode();
-        let raw = PacketReader::from_frame(&guard).expect("frame should decode");
-        assert_eq!(raw.packet_type, game::GAMETWO_GAME_GUARD_CHECK);
+        let raw = PacketReader::from_frame(&area_hit).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::MONSTER_AREA_SKILL_HIT);
         assert_eq!(raw.payload.len(), 10 + 2 * 10);
         assert_eq!(&raw.payload[..4], &1u32.to_le_bytes());
         assert_eq!(&raw.payload[4..8], &2u32.to_le_bytes());
@@ -20398,24 +20543,35 @@ mod tests {
     #[test]
     fn pick_item_packet_uses_expected_opcode() {
         let packet = PickItemPacket {
-            appearance_handler: 11_000,
+            picker_tamer_idx: 11_000,
+            receiver_tamer_idx: 11_000,
+            drop_uid: (3 << 16) | 49_200,
             item_id: 5101,
+            slot_or_flags: 0,
             amount: 2,
+            rate: 0,
+            limited: 0,
+            level: 0,
+            end_time: 0,
         }
         .encode();
         let raw = PacketReader::from_frame(&packet).expect("frame should decode");
         assert_eq!(raw.packet_type, game::LOOT_ITEM);
+        assert_eq!(raw.payload.len(), 23);
     }
 
     #[test]
     fn pick_bits_packet_uses_expected_opcode() {
         let packet = PickBitsPacket {
-            appearance_handler: 11_000,
-            value: 123,
+            picker_uid: 11_000,
+            base_bits: 123,
+            bonus_bits: 0,
+            extra_bits: 0,
         }
         .encode();
         let raw = PacketReader::from_frame(&packet).expect("frame should decode");
         assert_eq!(raw.packet_type, game::PICK_BITS);
+        assert_eq!(raw.payload.len(), 16);
     }
 
     #[test]
@@ -20426,6 +20582,7 @@ mod tests {
         .encode();
         let raw = PacketReader::from_frame(&packet).expect("frame should decode");
         assert_eq!(raw.packet_type, game::PICK_ITEM_FAIL);
+        assert_eq!(raw.payload, 15u32.to_le_bytes());
     }
 
     #[test]
@@ -21609,17 +21766,48 @@ mod tests {
     }
 
     #[test]
-    fn cast_skill_packet_uses_expected_opcode() {
-        let packet = CastSkillPacket {
-            skill_slot: 2,
-            attacker_handler: 11_000,
-            target_handler: 22_000,
-        }
-        .encode();
-        let raw = PacketReader::from_frame(&packet).expect("frame should decode");
-        assert_eq!(raw.packet_type, game::PARTNER_SKILL_RESPONSE);
-        // [u8 slot][u32 attacker][u32 target] = 1 + 4 + 4 = 9
-        assert_eq!(raw.payload.len(), 9);
+    fn parse_memory_skill_and_die_confirm_requests() {
+        let mut mem_payload = Vec::with_capacity(13);
+        mem_payload.extend_from_slice(&23_000u32.to_le_bytes());
+        mem_payload.push(0);
+        mem_payload.extend_from_slice(&7_001_001u32.to_le_bytes());
+        mem_payload.extend_from_slice(&34_000u32.to_le_bytes());
+        let mem_req = GameRequest::try_from(RawPacket {
+            length: 0,
+            packet_type: game::SKILL_USE_MEMORY_CHIP,
+            payload: mem_payload,
+        })
+        .expect("memory skill request should decode");
+        assert_eq!(
+            mem_req,
+            GameRequest::PartnerMemorySkill {
+                digimon_uid: 23_000,
+                evo_idx: 0,
+                skill_code: 7_001_001,
+                target_uid: 34_000,
+            }
+        );
+
+        let mut die_payload = Vec::with_capacity(16);
+        die_payload.extend_from_slice(&0x1122_3344u32.to_le_bytes());
+        die_payload.extend_from_slice(&4u32.to_le_bytes());
+        die_payload.extend_from_slice(&0xCAFE_BABEu32.to_le_bytes());
+        die_payload.extend_from_slice(&1u32.to_le_bytes());
+        let die_req = GameRequest::try_from(RawPacket {
+            length: 0,
+            packet_type: game::DIE_CONFIRM,
+            payload: die_payload,
+        })
+        .expect("die confirm should decode");
+        assert_eq!(
+            die_req,
+            GameRequest::DieConfirm {
+                masked_token: 0x1122_3344,
+                account_idx: 4,
+                access_code: 0xCAFE_BABE,
+                net_version: 1,
+            }
+        );
     }
 
     #[test]
@@ -22548,28 +22736,37 @@ mod sync_1006_preservation {
 
     fn pick_item_packet() -> PickItemPacket {
         PickItemPacket {
-            appearance_handler: 11_000,
+            picker_tamer_idx: 11_000,
+            receiver_tamer_idx: 11_000,
+            drop_uid: (3 << 16) | 49_200,
             item_id: 5101,
+            slot_or_flags: 0,
             amount: 2,
+            rate: 0,
+            limited: 0,
+            level: 0,
+            end_time: 0,
         }
     }
 
     fn pick_bits_packet() -> PickBitsPacket {
         PickBitsPacket {
-            appearance_handler: 11_000,
-            value: 123,
+            picker_uid: 11_000,
+            base_bits: 123,
+            bonus_bits: 0,
+            extra_bits: 0,
         }
     }
 
     fn receive_exp_packet() -> ReceiveExpPacket {
         ReceiveExpPacket {
-            tamer_exp: 1_000,
-            tamer_bonus: 100,
-            tamer_total: 1_100,
-            partner_handler: 21_000,
-            partner_exp: 2_000,
-            partner_bonus: 200,
-            partner_total: 2_200,
+            tamer_bonus_x100: 100,
+            tamer_base_x100: 1_000,
+            tamer_total_x100: 1_100,
+            partner_handle: 21_000,
+            partner_bonus_x100: 200,
+            partner_base_x100: 2_000,
+            partner_total_x100: 2_200,
             skill_exp: 50,
         }
     }
@@ -22681,14 +22878,14 @@ mod sync_1006_preservation {
 
     const GOLDEN_INVENTORY: &str = "9f00a63e000000000807060504030201000200ed1300000300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a31a";
     const GOLDEN_SERVER_EXPERIENCE: &str = "1a001e040100000040e20100010000000000000040e20100261a";
-    const GOLDEN_PICK_ITEM: &str = "1500460ff82a0000ed13000002000000000000291a";
-    const GOLDEN_PICK_BITS: &str = "1a00470ff82a00007b000000000000000000000000000000261a";
-    const GOLDEN_RECEIVE_EXP: &str = "4200fa03e80300000000000064000000000000004c0400000000000008520000d007000000000000c800000000000000980800000000000032000000000000007e1a";
+    const GOLDEN_PICK_ITEM: &str = "1d00460ff82af82a30c00300ed1300000000020000000000000000211a";
+    const GOLDEN_PICK_BITS: &str = "1600470ff82a00007b00000000000000000000002a1a";
+    const GOLDEN_RECEIVE_EXP: &str = "3e00fa036400000000000000e8030000000000004c0400000000000008520000c800000000000000d007000000000000980800000000000032000000021a";
     const GOLDEN_LEVEL_UP: &str = "0b00fb03f82a00002a371a";
     const GOLDEN_UNLOAD_TAMER: &str =
         "2500ee03040200f82a0000983a00001027000008520000a23a00002427000000000000191a";
     const GOLDEN_UNLOAD_MOBS: &str = "1900ee03040100e1ab0000983a00001027000000000000251a";
-    const GOLDEN_UNLOAD_DROPS: &str = "1900ee0304010030c00000a23a00002427000000000000251a";
+    const GOLDEN_UNLOAD_DROPS: &str = "1900ee0304010030c00300a23a00002427000000000000251a";
     const GOLDEN_LOAD_BUFFS: &str = "3000ee03100100f82a000001f40101001e000000e9157a0001000852000001580201002d000000d2197a000000000c1a";
     const GOLDEN_LOAD_MOB_BUFFS: &str =
         "1f00ee0310000000000100e1ab000001580001001e000000591b000000231a";
@@ -22910,17 +23107,26 @@ mod sync_1006_preservation {
             assert_frame_invariants("ServerExperiencePacket", &a, game::SERVER_EXPERIENCE);
 
             let pick = PickItemPacket {
-                appearance_handler: seeded_handler(seed),
-                item_id: seeded_i32(seed),
-                amount: (seed % i16::MAX as u32) as i16,
+                picker_tamer_idx: seeded_handler(seed) as u16,
+                receiver_tamer_idx: seeded_handler(seed) as u16,
+                drop_uid: (3 << 16) | (49_200 + (seed % 500)),
+                item_id: seeded_i32(seed) as u32,
+                slot_or_flags: 0,
+                amount: (seed % u16::MAX as u32) as u16,
+                rate: 0,
+                limited: 0,
+                level: 0,
+                end_time: 0,
             };
             let b = pick.encode();
             assert_eq!(b, pick.encode(), "PickItemPacket seed={seed} not stable");
             assert_frame_invariants("PickItemPacket", &b, game::LOOT_ITEM);
 
             let bits = PickBitsPacket {
-                appearance_handler: seeded_handler(seed),
-                value: seeded_i32(seed),
+                picker_uid: seeded_handler(seed),
+                base_bits: seeded_i32(seed) as u32,
+                bonus_bits: 0,
+                extra_bits: 0,
             };
             let c = bits.encode();
             assert_eq!(c, bits.encode(), "PickBitsPacket seed={seed} not stable");

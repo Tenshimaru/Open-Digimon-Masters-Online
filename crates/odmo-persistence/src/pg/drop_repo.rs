@@ -16,7 +16,26 @@ impl MapDropRepository for PgRepository {
             .fetch_all(&pool)
             .await?;
 
-            Ok(rows.into_iter().map(map_drop).collect())
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            Ok(rows
+                .into_iter()
+                .map(map_drop)
+                .filter_map(|mut drop| {
+                    if drop.expires_at_unix > 0 && now >= drop.expires_at_unix {
+                        drop.collected = true;
+                    }
+                    if !drop.collected
+                        && drop.owner_expires_at_unix > 0
+                        && now >= drop.owner_expires_at_unix
+                    {
+                        drop.no_owner = true;
+                    }
+                    (!drop.collected).then_some(drop)
+                })
+                .collect())
         })
     }
 
@@ -28,13 +47,21 @@ impl MapDropRepository for PgRepository {
         drop_handler: u32,
     ) -> anyhow::Result<DropCollectionResult> {
         let pool = self.pool().clone();
+        let kind = drop_handler >> 16;
+        let raw_handler = drop_handler as i32;
+        let low_handler = if kind == 3 || kind == 0 {
+            (drop_handler & 0xFFFF) as i32
+        } else {
+            raw_handler
+        };
         self.block_on(async move {
             let drop_row: Option<DropDb> = sqlx::query_as(
-                "SELECT id, map_id, channel, handler, owner_id, owner_handler, item_id, amount, x, y, owner_expires_at_unix, expires_at_unix, bits_drop, no_owner, collected FROM map_drops WHERE map_id = $1 AND channel = $2 AND handler = $3",
+                "SELECT id, map_id, channel, handler, owner_id, owner_handler, item_id, amount, x, y, owner_expires_at_unix, expires_at_unix, bits_drop, no_owner, collected FROM map_drops WHERE map_id = $1 AND channel = $2 AND (handler = $3 OR handler = $4)",
             )
             .bind(map_id)
             .bind(channel as i16)
-            .bind(drop_handler as i32)
+            .bind(raw_handler)
+            .bind(low_handler)
             .fetch_optional(&pool)
             .await?;
 
@@ -146,6 +173,51 @@ impl MapDropRepository for PgRepository {
             Ok(DropCollectionResult::ItemCollected { drop, item_id, amount, character })
         })
     }
+
+    fn spawn_drop(&self, mut drop: DropSummary) -> anyhow::Result<DropSummary> {
+        let pool = self.pool().clone();
+        self.block_on(async move {
+            let max_handler: (Option<i32>,) = sqlx::query_as(
+                "SELECT MAX(handler) FROM map_drops WHERE map_id = $1 AND channel = $2",
+            )
+            .bind(drop.map_id)
+            .bind(drop.channel as i16)
+            .fetch_one(&pool)
+            .await?;
+
+            let mut next_handler = max_handler
+                .0
+                .map_or(49_200, |h| h.saturating_add(1).max(49_200));
+            if next_handler > 65_000 {
+                next_handler = 49_200;
+            }
+            drop.handler = next_handler as u32;
+
+            let row: (i64,) = sqlx::query_as(
+                "INSERT INTO map_drops (map_id, channel, handler, owner_id, owner_handler, item_id, amount, x, y, owner_expires_at_unix, expires_at_unix, bits_drop, no_owner, collected) \
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id",
+            )
+            .bind(drop.map_id)
+            .bind(drop.channel as i16)
+            .bind(drop.handler as i32)
+            .bind(drop.owner_id as i64)
+            .bind(drop.owner_handler as i32)
+            .bind(drop.item_id)
+            .bind(drop.amount)
+            .bind(drop.x)
+            .bind(drop.y)
+            .bind(drop.owner_expires_at_unix as i64)
+            .bind(drop.expires_at_unix as i64)
+            .bind(drop.bits_drop)
+            .bind(drop.no_owner)
+            .bind(drop.collected)
+            .fetch_one(&pool)
+            .await?;
+
+            drop.id = row.0 as u64;
+            Ok(drop)
+        })
+    }
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -188,17 +260,32 @@ fn map_drop(row: DropDb) -> DropSummary {
 }
 
 fn add_inventory_item(items: &mut Vec<ItemRecord>, size: u16, item_id: i32, amount: i32) -> bool {
-    if let Some(existing) = items.iter_mut().find(|item| item.item_id == item_id) {
-        existing.amount = existing.amount.saturating_add(amount.max(0));
+    let limit = usize::from(size);
+    let safe_amount = amount.max(1);
+    if let Some(existing) = items
+        .iter_mut()
+        .take(limit)
+        .find(|item| item.item_id == item_id && item.amount > 0)
+    {
+        existing.amount = existing.amount.saturating_add(safe_amount);
         existing.sync_record();
         return true;
     }
 
-    if items.len() >= size as usize {
+    if let Some(empty) = items
+        .iter_mut()
+        .take(limit)
+        .find(|item| item.item_id <= 0 || item.amount <= 0)
+    {
+        *empty = ItemRecord::new(item_id, safe_amount);
+        return true;
+    }
+
+    if items.len() >= limit {
         return false;
     }
 
-    items.push(ItemRecord::new(item_id, amount.max(1)));
+    items.push(ItemRecord::new(item_id, safe_amount));
     true
 }
 

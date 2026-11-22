@@ -341,6 +341,18 @@ pub trait CharacterRepository: Send + Sync {
         Ok(())
     }
 
+    /// Persist tamer and active partner level and experience totals.
+    fn update_character_experience(
+        &self,
+        _character_id: u64,
+        _tamer_level: u8,
+        _tamer_exp: i64,
+        _partner_level: u8,
+        _partner_exp: i64,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     /// Read the D-Unit (Union hacking tool) slots installed on a character.
     /// Each row represents one unlocked slot. New characters return an empty list.
     fn union_hack_slots(

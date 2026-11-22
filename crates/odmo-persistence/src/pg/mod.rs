@@ -310,12 +310,12 @@ impl PgRepository {
         .bind(31033i32)
         .bind("Goblimon")
         .bind(18i16)
-        .bind(DEFAULT_START_X + 66)
-        .bind(DEFAULT_START_Y + 45)
-        .bind(DEFAULT_START_X + 46)
-        .bind(DEFAULT_START_Y + 25)
-        .bind(1000i32)
-        .bind(1000i32)
+        .bind(DEFAULT_START_X + 225)
+        .bind(DEFAULT_START_Y + 125)
+        .bind(DEFAULT_START_X + 205)
+        .bind(DEFAULT_START_Y + 105)
+        .bind(300i32)
+        .bind(300i32)
         .execute(&self.pool)
         .await?;
 

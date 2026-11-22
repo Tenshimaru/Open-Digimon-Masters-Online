@@ -16,14 +16,15 @@ use odmo_protocol::{
     ArenaFameInfoPacket, ArenaFameSeasonListPacket, ArenaOldRankingInfoPacket,
     ArenaRankingDailyLoadPacket, ArenaRankingDailyUpdatePointsPacket, ArenaRankingInfoPacket,
     AvailableChannelsPacket, CashShopBuyResponsePacket, CashShopCoinsPacket,
-    CashShopCropResponsePacket, CashShopWarehousePacket, CashTradeTimeoutPacket, CastSkillPacket,
+    CashShopCropResponsePacket, CashShopWarehousePacket, CashTradeTimeoutPacket,
     ChangeLimitedAttributePacket, ChangeTamerModelPacket, CountedWordNoticePacket,
     DailyCheckEventInfoPacket, DailyCheckEventInfoRow, DailyCheckEventItemResultPacket,
     DetailStatPair, DigiSummonPurchaseResponsePacket, DigiSummonSyncResponsePacket,
     DigimonEvolutionFailPacket, DigimonEvolutionSuccessPacket, DigimonToSpiritResultPacket,
     DigimonWalkPacket, DungeonArenaNextStagePacket, EncyclopediaDeckBuffUsePacket,
     EncyclopediaLoadPacket, EncyclopediaReceiveRewardItemPacket, ExtraInventorySortPacket,
-    GameConnectionPacket, GameInitialInfoPacket, GameRequest, GiftStorageRetrievePacket,
+    GameBattleOffPacket, GameBattleOnPacket, GameConnectionPacket, GameHpRatePacket,
+    GameInitialInfoPacket, GameRequest, GameTargetInfoPacket, GiftStorageRetrievePacket,
     GuildAuthorityUpdatePacket, GuildCreateFailPacket, GuildCreateSuccessPacket, GuildDeletePacket,
     GuildHistoricPacket, GuildInformationPacket, GuildInviteAcceptPacket, GuildInviteDenyPacket,
     GuildInviteFailPacket, GuildInviteSuccessPacket, GuildMemberKickPacket, GuildMemberQuitPacket,
@@ -32,33 +33,35 @@ use odmo_protocol::{
     ItemConsumeSuccessPacket, ItemCraftResponsePacket, ItemIdentifyPacket, ItemMoveFailPacket,
     ItemMoveSuccessPacket, ItemRerollPacket, ItemReturnPacket, ItemSocketIdentifyPacket,
     ItemSocketInPacket, ItemSocketOutPacket, ItemStoragePacket, KillOnHitPacket, KillOnSkillPacket,
-    LoadBuffsPacket, LoadDropsPacket, LoadInventoryPacket, LoadMobBuffsPacket, LoadMobsPacket,
-    LoadTamerPacket, LocalMapSwapPacket, MailListPacket, MapSwapPacket, MembershipPacket,
-    MissHitPacket, MonsterRespawnTimerPacket, MultiSellEntry, MultiSellResultPacket,
-    NpcPurchaseResultPacket, NpcPurchaseRow, NpcRepurchaseBuyPacket, NpcRepurchaseListPacket,
-    NpcSellResultPacket, NpcSellRow, OtherTamerDetailInfoPacket, PartnerSkillErrorPacket,
-    PartnerSwitchFailurePacket, PartnerSwitchPacket, PartyChangeLootTypePacket, PartyCreatedPacket,
-    PartyInvitePacket, PartyInviteResultPacket, PartyJoinPacket, PartyKickPacket,
-    PartyLeaderChangedPacket, PartyLeavePacket, PartyMemberBuffChangePacket, PartyMemberBuffEntry,
-    PartyMemberDisconnectedPacket, PartyMemberInfoPacket, PartyMemberListEntry,
-    PartyMemberListPacket, PartyMemberMapChangePacket, PartyMemberPositionPacket, PickBitsPacket,
-    PickItemFailPacket, PickItemFailReason, PickItemPacket, QuestCompletePacket,
-    QuestCompleteRewardRow, QuestGoalUpdatePacket, RandomBoxListEntry, RandomBoxListResponsePacket,
-    RandomBoxPurchaseResponsePacket, RecompenseGainPacket, RemoveBuffPacket, RepurchaseBuyRow,
-    SealsPacket,
-    SerializedItemRow, ServerExperiencePacket, SpiritToDigimonResultPacket, SplitItemPacket,
-    SyncChatLine, SyncChatRecord, SyncMegaphoneLine, SyncNamedLine, SyncWhisperLine,
-    TamerAttendancePacket, TamerChangeNamePacket, TamerEquipItemPacket, TamerRelationsPacket,
-    TamerWalkPacket, TamerXaiResourcesPacket, TimeRewardPacket, TradeAcceptPacket,
-    TradeAddItemPacket, TradeAddMoneyPacket, TradeCancelPacket, TradeConfirmationPacket,
-    TradeFinalConfirmationPacket, TradeInventoryLockPacket, TradeInventoryUnlockPacket,
-    TradeRemoveItemPacket, TradeRequestErrorPacket, TradeRequestSuccessPacket,
-    UnionHackModifyResponsePacket, UnionHackOpenResponsePacket, UnionHackSlot,
-    UnloadDropsPacket, UnloadMobsPacket, UnloadTamerPacket, UpdateCurrentTitlePacket,
-    UpdateMovementSpeedPacket, UpdateStatusPacket, XaiInfoPacket,
+    LevelUpPacket, LoadBuffsPacket, LoadDropsPacket, LoadInventoryPacket, LoadMobBuffsPacket,
+    LoadMobsPacket, LoadTamerPacket, LocalMapSwapPacket, MailListPacket, MapSwapPacket,
+    MembershipPacket, MissHitPacket, MonsterRespawnTimerPacket, MultiSellEntry,
+    MultiSellResultPacket, NpcPurchaseResultPacket, NpcPurchaseRow, NpcRepurchaseBuyPacket,
+    NpcRepurchaseListPacket, NpcSellResultPacket, NpcSellRow, OtherTamerDetailInfoPacket,
+    PartnerSkillErrorPacket, PartnerSwitchFailurePacket, PartnerSwitchPacket,
+    PartyChangeLootTypePacket, PartyCreatedPacket, PartyInvitePacket, PartyInviteResultPacket,
+    PartyJoinPacket, PartyKickPacket, PartyLeaderChangedPacket, PartyLeavePacket,
+    PartyMemberBuffChangePacket, PartyMemberBuffEntry, PartyMemberDisconnectedPacket,
+    PartyMemberInfoPacket, PartyMemberListEntry, PartyMemberListPacket,
+    PartyMemberMapChangePacket, PartyMemberPositionPacket, PickBitsPacket, PickItemFailPacket,
+    PickItemFailReason, PickItemPacket, QuestCompletePacket, QuestCompleteRewardRow,
+    QuestGoalUpdatePacket, RandomBoxListEntry, RandomBoxListResponsePacket,
+    RandomBoxPurchaseResponsePacket, ReceiveExpPacket, RecompenseGainPacket, RemoveBuffPacket,
+    RepurchaseBuyRow, SealsPacket, SerializedItemRow, ServerExperiencePacket,
+    SkillApplyAroundBody, SkillApplyAroundPacket, SkillStatRow, SpiritToDigimonResultPacket,
+    SplitItemPacket, SyncChatLine, SyncChatRecord, SyncMegaphoneLine, SyncNamedLine,
+    SyncWhisperLine, TamerAttendancePacket, TamerChangeNamePacket, TamerEquipItemPacket,
+    TamerRelationsPacket, TamerSkillSuccessPacket, TamerWalkPacket, TamerXaiResourcesPacket,
+    TimeRewardPacket, TradeAcceptPacket, TradeAddItemPacket, TradeAddMoneyPacket,
+    TradeCancelPacket, TradeConfirmationPacket, TradeFinalConfirmationPacket,
+    TradeInventoryLockPacket, TradeInventoryUnlockPacket, TradeRemoveItemPacket,
+    TradeRequestErrorPacket, TradeRequestSuccessPacket, UnionHackModifyResponsePacket,
+    UnionHackOpenResponsePacket, UnionHackSlot, UnloadDropsPacket, UnloadMobsPacket,
+    UnloadTamerPacket, UpdateCurrentTitlePacket, UpdateMovementSpeedPacket, UpdateStatusPacket,
+    XaiInfoPacket,
     game::{
-        CombineResultResponsePacket, CombineSyncResponsePacket, FriendConnectPacket,
-        GuildRankPacket, SkillUpdateCooldownPacket,
+        CombineResultResponsePacket, CombineSyncResponsePacket, FriendConnectPacket, GuildRankPacket,
+        SkillUpdateCooldownPacket,
     },
 };
 use odmo_types::{
@@ -181,6 +184,44 @@ fn matches_tamer_target_handler(
 ) -> bool {
     character.general_handler == target_handler
         || client_projected_tamer_uid(character.general_handler) == target_handler
+}
+
+fn matches_target_handler(entity_handler: u32, target_handler: u32) -> bool {
+    entity_handler != 0
+        && (entity_handler == target_handler
+            || (entity_handler & 0xFFFF) == (target_handler & 0xFFFF)
+                && ((target_handler >> 16) == 0 || (target_handler >> 16) == 1))
+}
+
+fn matches_mob_handler(mob_handler: u32, target_handler: u32) -> bool {
+    let kind = target_handler >> 16;
+    mob_handler == target_handler
+        || ((kind == 0 || kind == 4) && (mob_handler & 0xFFFF) == (target_handler & 0xFFFF))
+}
+
+fn combat_hp_rate(current: i32, max: i32) -> u8 {
+    if max <= 0 {
+        return 255;
+    }
+    if current <= 0 {
+        return 0;
+    }
+    ((i64::from(current) * 255) / i64::from(max)).clamp(1, 255) as u8
+}
+
+fn apply_level_gain(mut level: u8, mut exp: i64, gain: i64) -> (u8, i64, bool) {
+    exp = exp.saturating_add(gain.max(0));
+    let mut leveled_up = false;
+    while level < 120 {
+        let needed = i64::from(level.max(1)) * 200;
+        if exp < needed {
+            break;
+        }
+        exp -= needed;
+        level = level.saturating_add(1);
+        leveled_up = true;
+    }
+    (level.max(1), exp.max(0), leveled_up)
 }
 
 /// Enchant rows for the partner-detail grid in the fixed render order
@@ -346,6 +387,11 @@ pub trait MapDropRepository: Send + Sync {
         channel: u8,
         drop_handler: u32,
     ) -> anyhow::Result<DropCollectionResult>;
+
+    /// Persist a newly spawned ground drop and return it with assigned id and handler.
+    fn spawn_drop(&self, drop: odmo_types::DropSummary) -> anyhow::Result<odmo_types::DropSummary> {
+        Ok(drop)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1898,15 +1944,25 @@ impl GameApplication {
                     )
                     .map_err(|error| GameFlowError::Storage(error.to_string()))?
                 {
-                    DropCollectionResult::Missing => vec![
-                        UnloadDropsPacket {
-                            drop: odmo_types::DropSummary {
-                                handler: drop_handler,
-                                ..odmo_types::DropSummary::default()
-                            },
-                        }
-                        .encode(),
-                    ],
+                    DropCollectionResult::Missing => {
+                        let low = drop_handler & 0xFFFF;
+                        session
+                            .viewed_drops
+                            .retain(|_, d| (d.handler & 0xFFFF) != low);
+                        vec![
+                            PickItemFailPacket {
+                                reason: PickItemFailReason::TooFarAway,
+                            }
+                            .encode(),
+                            UnloadDropsPacket {
+                                drop: odmo_types::DropSummary {
+                                    handler: drop_handler,
+                                    ..odmo_types::DropSummary::default()
+                                },
+                            }
+                            .encode(),
+                        ]
+                    }
                     DropCollectionResult::NotTheOwner => vec![
                         PickItemFailPacket {
                             reason: PickItemFailReason::NotTheOwner,
@@ -1933,8 +1989,10 @@ impl GameApplication {
                         session.viewed_drops.remove(&drop.id);
                         vec![
                             PickBitsPacket {
-                                appearance_handler: character.general_handler,
-                                value: amount,
+                                picker_uid: character.general_handler,
+                                base_bits: amount.max(0) as u32,
+                                bonus_bits: 0,
+                                extra_bits: 0,
                             }
                             .encode(),
                             UnloadDropsPacket { drop }.encode(),
@@ -1952,11 +2010,28 @@ impl GameApplication {
                         character,
                     } => {
                         session.viewed_drops.remove(&drop.id);
+                        let tamer_idx = if character.general_handler != 0 {
+                            character.general_handler as u16
+                        } else {
+                            character.id as u16
+                        };
+                        let drop_uid = if drop.handler != 0 {
+                            u32::from(drop.handler as u16)
+                        } else {
+                            u32::from(drop.id as u16)
+                        };
                         vec![
                             PickItemPacket {
-                                appearance_handler: character.general_handler,
-                                item_id,
-                                amount,
+                                picker_tamer_idx: tamer_idx,
+                                receiver_tamer_idx: tamer_idx,
+                                drop_uid,
+                                item_id: item_id.max(0) as u32,
+                                slot_or_flags: 0,
+                                amount: amount.max(1) as u16,
+                                rate: 0,
+                                limited: 0,
+                                level: 0,
+                                end_time: 0,
                             }
                             .encode(),
                             UnloadDropsPacket { drop }.encode(),
@@ -2354,20 +2429,10 @@ impl GameApplication {
                 writer.write_i32(reaction_type); // reaction type
                 Ok(vec![writer.finalize()])
             }
-            // PartnerStop — echo partner stop to client
+            // PartnerStop — client-only movement stop notification; no server echo packet.
             GameRequest::PartnerStop { uid: _ } => {
-                let character_id = session.character_id.ok_or(GameFlowError::Unauthenticated)?;
-                let character = self
-                    .repository
-                    .character_by_id(character_id)
-                    .map_err(|error| GameFlowError::Storage(error.to_string()))?
-                    .ok_or(GameFlowError::CharacterNotFound(character_id))?;
-
-                let mut writer = odmo_protocol::writer::PacketWriter::new(
-                    odmo_protocol::opcode::game::PARTNER_STOP_RESPONSE,
-                );
-                writer.write_u32(character.partner_handler);
-                Ok(vec![writer.finalize()])
+                let _ = session.character_id.ok_or(GameFlowError::Unauthenticated)?;
+                Ok(Vec::new())
             }
             // PartnerSwitch — simplified roster-backed switch without battle-tag restrictions yet
             GameRequest::PartnerSwitch { slot } => {
@@ -2469,7 +2534,48 @@ impl GameApplication {
                     ]);
                 }
 
-                self.handle_partner_combat(session, &character, target_handler, Some(skill_slot))
+                self.handle_partner_combat(
+                    session,
+                    &character,
+                    target_handler,
+                    Some(skill_slot),
+                    None,
+                )
+            }
+            // PartnerMemorySkill — execute partner memory-chip skill hit and broadcast state.
+            GameRequest::PartnerMemorySkill {
+                digimon_uid: _,
+                evo_idx: _,
+                skill_code,
+                target_uid,
+            } => {
+                let character_id = session.character_id.ok_or(GameFlowError::Unauthenticated)?;
+                let character = self
+                    .repository
+                    .character_by_id(character_id)
+                    .map_err(|error| GameFlowError::Storage(error.to_string()))?
+                    .ok_or(GameFlowError::CharacterNotFound(character_id))?;
+
+                if character.partner_handler == 0 {
+                    return Ok(vec![
+                        PartnerSkillErrorPacket {
+                            attacker_handler: 0,
+                            parameter: 0,
+                            value: 0,
+                            value2: 0,
+                            context: 0,
+                        }
+                        .encode(),
+                    ]);
+                }
+
+                self.handle_partner_combat(
+                    session,
+                    &character,
+                    target_uid,
+                    Some((skill_code % 6) as u8),
+                    Some(skill_code),
+                )
             }
             // PartnerAttack — apply damage to the target mob and broadcast the hit.
             GameRequest::PartnerAttack {
@@ -2493,7 +2599,7 @@ impl GameApplication {
                     ]);
                 }
 
-                self.handle_partner_combat(session, &character, target_handler, None)
+                self.handle_partner_combat(session, &character, target_handler, None, None)
             }
             // PartnerEvolution — apply evolution if valid
             GameRequest::PartnerEvolution {
@@ -2536,12 +2642,11 @@ impl GameApplication {
                 evo_unit_idx,
                 item_type,
             } => self.handle_open_ride_mode(session, evo_unit_idx, item_type),
-            // SetTarget — update the active combat target. Acknowledged without a
-            // dedicated response; mob/skill packets carry the target downstream.
+            // SetTarget — update the active combat target and emit current target info.
             GameRequest::SetTarget {
                 attacker_handler: _,
-                target_handler: _,
-            } => Ok(Vec::new()),
+                target_handler,
+            } => self.handle_set_target(session, target_handler),
             // StatUp — spend a stat point. The stat allocation table is not yet
             // ported, so the request is accepted without applying changes.
             GameRequest::StatUp { uid: _, stat: _ } => Ok(Vec::new()),
@@ -2737,11 +2842,20 @@ impl GameApplication {
                 server_time: _,
                 elapsed: _,
             } => self.handle_quest_achievement(session, quest_id),
-            // DieConfirm — server-side acknowledgement of death; restores HP minimum and
-            // teleports the character back to the spawn map. Real respawn logic still
-            // depends on the death state machine which is part of the combat slice; for
-            // now we ensure the character HP/DS state stays valid.
-            GameRequest::DieConfirm => self.handle_die_confirm(session),
+            // DieConfirm — server-side acknowledgement of death; validates request fields,
+            // restores safe HP/DS state and start coordinates when defeated, and refreshes peers.
+            GameRequest::DieConfirm {
+                masked_token,
+                account_idx,
+                access_code,
+                net_version,
+            } => self.handle_die_confirm(
+                session,
+                masked_token,
+                account_idx,
+                access_code,
+                net_version,
+            ),
             // RemoveBuff — remove the buff from the character's active buff list.
             GameRequest::RemoveBuff { buff_id } => self.handle_remove_buff(session, buff_id),
             // DamageSkinChange — equip a damage skin on the character row.
@@ -3013,10 +3127,10 @@ impl GameApplication {
             GameRequest::MonsterRespawnTimer => self.handle_monster_respawn_timer(session),
             GameRequest::JumpBooster => self.handle_jump_booster(session),
             GameRequest::SkillLevelUp {
-                uid: _,
-                evo_unit_idx: _,
+                uid,
+                evo_unit_idx,
                 skill_idx,
-            } => self.handle_skill_level_up(session, skill_idx),
+            } => self.handle_skill_level_up(session, uid, evo_unit_idx, skill_idx),
             GameRequest::TamerChargeXCrystal => self.handle_tamer_charge_xcrystal(session),
             GameRequest::TamerConsumeXCrystal { amount } => {
                 self.handle_tamer_consume_xcrystal(session, amount)
@@ -4681,6 +4795,8 @@ impl GameApplication {
     fn handle_skill_level_up(
         &self,
         session: &GameSession,
+        uid: u32,
+        evo_unit_idx: u8,
         skill_idx: u8,
     ) -> Result<Vec<Vec<u8>>, GameFlowError> {
         let character_id = session.character_id.ok_or(GameFlowError::Unauthenticated)?;
@@ -4690,8 +4806,39 @@ impl GameApplication {
             .map_err(|error| GameFlowError::Storage(error.to_string()))?
             .ok_or(GameFlowError::CharacterNotFound(character_id))?;
 
-        // Without the skill asset table the bump is applied to the memory slot
-        // directly; the modern client registers no reader for 1104, so no reply.
+        if uid != 0 && !matches_target_handler(character.partner_handler, uid) {
+            return Ok(Vec::new());
+        }
+
+        let mut partner_slots = character.partner_slots.clone();
+        if let Some(active) = partner_slots
+            .iter_mut()
+            .find(|p| p.slot == character.partner_current_slot)
+            && let Some(evo) = active.evolutions.get_mut(evo_unit_idx as usize)
+            && let Some(level) = evo.skill_levels.get_mut(skill_idx as usize)
+        {
+            let cap = evo
+                .max_skill_levels
+                .get(skill_idx as usize)
+                .copied()
+                .filter(|&max| max > 0)
+                .unwrap_or(u8::MAX);
+            if *level < cap {
+                *level = level.saturating_add(1);
+                if evo.skill_points > 0 {
+                    evo.skill_points -= 1;
+                }
+                self.repository
+                    .update_partner_roster(
+                        character_id,
+                        character.partner_current_slot,
+                        partner_slots,
+                    )
+                    .map_err(|error| GameFlowError::Storage(error.to_string()))?;
+            }
+            return Ok(Vec::new());
+        }
+
         let mut memory_skills = character.partner_memory_skills;
         let slot = (skill_idx as usize).min(memory_skills.len() - 1);
         memory_skills[slot] = memory_skills[slot].saturating_add(1);
@@ -4798,19 +4945,35 @@ impl GameApplication {
             .map_err(|error| GameFlowError::Storage(error.to_string()))?
             .ok_or(GameFlowError::CharacterNotFound(character_id))?;
 
-        // Without the tamer-skill asset table we acknowledge with a cooldown packet.
-        Ok(vec![
-            SkillUpdateCooldownPacket {
-                handler: character.general_handler as i32,
-                current_type: character.partner_current_type,
-                cooldowns: vec![(skill_idx as i32, 5)],
-            }
-            .encode(),
-        ])
-        .inspect(|_v| {
-            // Drop the unused target_uid argument so the compiler doesn't warn.
-            let _ = target_uid;
-        })
+        let valid_target = target_uid == 0
+            || matches_tamer_target_handler(&character, target_uid)
+            || matches_target_handler(character.partner_handler, target_uid)
+            || session
+                .viewed_mobs
+                .values()
+                .any(|mob| matches_mob_handler(mob.handler, target_uid))
+            || session
+                .viewed_characters
+                .values()
+                .any(|peer| matches_tamer_target_handler(peer, target_uid));
+        if !valid_target {
+            return Ok(Vec::new());
+        }
+
+        let packet = TamerSkillSuccessPacket {
+            index: skill_idx,
+            arg: target_uid,
+        }
+        .encode();
+        if let Some(broadcast) = &self.broadcast {
+            let _ = broadcast.send_to_visible(
+                character.map_id,
+                character.channel,
+                character.id,
+                &packet,
+            );
+        }
+        Ok(vec![packet])
     }
 
     fn handle_transcendence_receive_exp(
@@ -5665,17 +5828,93 @@ impl GameApplication {
     /// always a mob (PvP and event paths are not yet ported). The HP transition is calculated
     /// server-side and the resulting hit/miss/kill packet is broadcast to every player who
     /// shares visibility with the attacker.
-    fn handle_partner_combat(
+    fn handle_set_target(
+        &self,
+        session: &GameSession,
+        target_handler: u32,
+    ) -> Result<Vec<Vec<u8>>, GameFlowError> {
+        let character_id = session.character_id.ok_or(GameFlowError::Unauthenticated)?;
+        let character = self
+            .repository
+            .character_by_id(character_id)
+            .map_err(|error| GameFlowError::Storage(error.to_string()))?
+            .ok_or(GameFlowError::CharacterNotFound(character_id))?;
+
+        if let Some(mob) = self.resolve_target_mob(session, &character, target_handler) {
+            return Ok(vec![
+                GameTargetInfoPacket {
+                    target_handler,
+                    flag: combat_hp_rate(mob.current_hp, mob.max_hp),
+                    owner_uid: 0,
+                    expire_ts: 0,
+                    created_ts: 0,
+                }
+                .encode(),
+            ]);
+        }
+
+        if matches_target_handler(character.partner_handler, target_handler) {
+            return Ok(vec![
+                GameTargetInfoPacket {
+                    target_handler,
+                    flag: combat_hp_rate(character.partner_current_hp, character.partner_hp),
+                    owner_uid: character.general_handler,
+                    expire_ts: 0,
+                    created_ts: 0,
+                }
+                .encode(),
+            ]);
+        }
+
+        if matches_tamer_target_handler(&character, target_handler) {
+            return Ok(vec![
+                GameTargetInfoPacket {
+                    target_handler,
+                    flag: combat_hp_rate(character.current_hp, character.hp),
+                    owner_uid: 0,
+                    expire_ts: 0,
+                    created_ts: 0,
+                }
+                .encode(),
+            ]);
+        }
+
+        Ok(Vec::new())
+    }
+
+    fn resolve_target_mob(
         &self,
         session: &GameSession,
         character: &odmo_types::CharacterSummary,
         target_handler: u32,
+    ) -> Option<odmo_types::MobSummary> {
+        let viewed = session
+            .viewed_mobs
+            .values()
+            .find(|mob| matches_mob_handler(mob.handler, target_handler))
+            .cloned()?;
+
+        if let Ok(map_mobs) = self
+            .repository
+            .mobs_by_map(character.map_id, character.channel)
+            && let Some(fresh) = map_mobs.into_iter().find(|mob| mob.id == viewed.id)
+        {
+            return Some(fresh);
+        }
+
+        Some(viewed)
+    }
+
+    fn handle_partner_combat(
+        &self,
+        session: &mut GameSession,
+        character: &odmo_types::CharacterSummary,
+        target_handler: u32,
         skill_slot: Option<u8>,
+        memory_skill_code: Option<u32>,
     ) -> Result<Vec<Vec<u8>>, GameFlowError> {
         let attacker_handler = character.partner_handler;
-        let mob = session.viewed_mobs.get(&u64::from(target_handler)).cloned();
-
-        let Some(mob) = mob else {
+        let Some(mob) = self.resolve_target_mob(session, character, target_handler) else {
             // Target left visibility window or never existed; respond with miss/skill error
             // to keep the client consistent without crashing the runtime.
             if let Some(slot) = skill_slot {
@@ -5700,8 +5939,6 @@ impl GameApplication {
         };
 
         if mob.current_hp <= 0 {
-            // Already dead; nothing to broadcast besides a courteous miss to keep the
-            // client side consistent.
             return Ok(vec![
                 MissHitPacket {
                     attacker_handler,
@@ -5712,36 +5949,75 @@ impl GameApplication {
         }
 
         let damage = compute_partner_damage(character, &mob, skill_slot);
-        let hp_before = i64::from(mob.current_hp);
-        let hp_after = hp_before.saturating_sub(damage as i64).max(0);
+        let hp_after = i64::from(mob.current_hp).saturating_sub(i64::from(damage)).max(0);
         let new_hp = hp_after as i32;
         let lethal = new_hp == 0;
+        let hp_rate = combat_hp_rate(new_hp, mob.max_hp);
+        let wire_target = if target_handler != 0 {
+            target_handler
+        } else {
+            mob.handler
+        };
 
-        // Persist the new HP so subsequent attacks see the updated state. The default
-        // implementation of `update_mob_hp` is a no-op for in-memory backends.
-        let _ = self
-            .repository
-            .update_mob_hp(mob.map_id, mob.channel, mob.handler, new_hp);
+        self.repository
+            .update_mob_hp(mob.map_id, mob.channel, mob.handler, new_hp)
+            .map_err(|error| GameFlowError::Storage(error.to_string()))?;
+
+        if lethal {
+            session.viewed_mobs.remove(&mob.id);
+        } else if let Some(viewed) = session.viewed_mobs.get_mut(&mob.id) {
+            viewed.current_hp = new_hp;
+        }
 
         let mut session_packets: Vec<Vec<u8>> = Vec::new();
         let mut broadcast_packets: Vec<Vec<u8>> = Vec::new();
 
-        if let Some(slot) = skill_slot {
-            // Cast announcement first so the client plays the skill animation, then the
-            // damage packet, then the lethal packet on kill.
-            let cast = CastSkillPacket {
-                skill_slot: slot,
-                attacker_handler,
-                target_handler,
-            }
-            .encode();
-            session_packets.push(cast.clone());
-            broadcast_packets.push(cast);
-
+        if let Some(skill_code) = memory_skill_code {
             if lethal {
                 let kill = KillOnSkillPacket {
                     attacker_handler,
-                    target_handler,
+                    target_handler: wire_target,
+                    skill_slot: skill_code,
+                    final_damage: damage,
+                }
+                .encode();
+                session_packets.push(kill.clone());
+                broadcast_packets.push(kill);
+            } else {
+                let battle_on = GameBattleOnPacket {
+                    handler_id: attacker_handler,
+                }
+                .encode();
+                session_packets.push(battle_on.clone());
+                broadcast_packets.push(battle_on);
+
+                let skill_hit = SkillApplyAroundPacket {
+                    body: SkillApplyAroundBody::StatUpdate {
+                        caster: attacker_handler,
+                        target: wire_target,
+                        skill_id: skill_code,
+                        caster_flag: Some(combat_hp_rate(
+                            character.partner_current_hp,
+                            character.partner_hp,
+                        )),
+                        target_hp_rate: hp_rate,
+                        caster_stats: Vec::new(),
+                        target_stats: vec![SkillStatRow {
+                            value: damage,
+                            extra: 0,
+                            stat: 4,
+                        }],
+                    },
+                }
+                .encode();
+                session_packets.push(skill_hit.clone());
+                broadcast_packets.push(skill_hit);
+            }
+        } else if let Some(slot) = skill_slot {
+            if lethal {
+                let kill = KillOnSkillPacket {
+                    attacker_handler,
+                    target_handler: wire_target,
                     skill_slot: u32::from(slot),
                     final_damage: damage,
                 }
@@ -5749,22 +6025,46 @@ impl GameApplication {
                 session_packets.push(kill.clone());
                 broadcast_packets.push(kill);
             } else {
-                let hit = HitPacket {
-                    attacker_handler,
-                    target_handler,
-                    final_damage: damage,
-                    hp_before_hit: hp_before,
-                    hp_after_hit: i64::from(new_hp),
-                    hit_type: HitType::Normal,
+                let battle_on = GameBattleOnPacket {
+                    handler_id: attacker_handler,
                 }
                 .encode();
-                session_packets.push(hit.clone());
-                broadcast_packets.push(hit);
+                session_packets.push(battle_on.clone());
+                broadcast_packets.push(battle_on);
+
+                let skill_hit = SkillApplyAroundPacket {
+                    body: SkillApplyAroundBody::Melee {
+                        caster: attacker_handler,
+                        target: wire_target,
+                        skill_id: u32::from(slot),
+                        flag: combat_hp_rate(character.partner_current_hp, character.partner_hp),
+                        caster_block: Some([0u8; 40]),
+                        target_hp_rate: hp_rate,
+                        caster_stats: Vec::new(),
+                        target_stats: vec![SkillStatRow {
+                            value: damage,
+                            extra: 0,
+                            stat: 4,
+                        }],
+                        tail: 0,
+                    },
+                }
+                .encode();
+                session_packets.push(skill_hit.clone());
+                broadcast_packets.push(skill_hit);
+
+                let rate_update = GameHpRatePacket {
+                    handler_id: wire_target,
+                    rate: hp_rate,
+                }
+                .encode();
+                session_packets.push(rate_update.clone());
+                broadcast_packets.push(rate_update);
             }
         } else if lethal {
             let kill = KillOnHitPacket {
                 attacker_handler,
-                target_handler,
+                target_handler: wire_target,
                 final_damage: damage,
                 hit_type: HitType::Normal,
             }
@@ -5772,17 +6072,141 @@ impl GameApplication {
             session_packets.push(kill.clone());
             broadcast_packets.push(kill);
         } else {
+            let battle_on = GameBattleOnPacket {
+                handler_id: attacker_handler,
+            }
+            .encode();
+            session_packets.push(battle_on.clone());
+            broadcast_packets.push(battle_on);
+
             let hit = HitPacket {
                 attacker_handler,
-                target_handler,
+                target_handler: wire_target,
                 final_damage: damage,
-                hp_before_hit: hp_before,
+                hp_before_hit: i64::from(mob.max_hp),
                 hp_after_hit: i64::from(new_hp),
                 hit_type: HitType::Normal,
             }
             .encode();
             session_packets.push(hit.clone());
             broadcast_packets.push(hit);
+        }
+
+        if lethal {
+            let battle_off = GameBattleOffPacket {
+                handler_id: attacker_handler,
+            }
+            .encode();
+            session_packets.push(battle_off.clone());
+            broadcast_packets.push(battle_off);
+
+            let tamer_gain = (i64::from(mob.level.max(1)) * 25).max(50);
+            let partner_gain = (i64::from(mob.level.max(1)) * 50).max(100);
+            let skill_exp_gain = (u32::from(mob.level.max(1)) * 5).max(10);
+
+            let (new_tamer_level, new_tamer_exp, tamer_leveled) =
+                apply_level_gain(character.level, character.current_experience, tamer_gain);
+            let (new_partner_level, new_partner_exp, partner_leveled) = apply_level_gain(
+                character.partner_level,
+                character.partner_current_experience,
+                partner_gain,
+            );
+
+            self.repository
+                .update_character_experience(
+                    character.id,
+                    new_tamer_level,
+                    new_tamer_exp,
+                    new_partner_level,
+                    new_partner_exp,
+                )
+                .map_err(|error| GameFlowError::Storage(error.to_string()))?;
+
+            session_packets.push(
+                ReceiveExpPacket {
+                    tamer_bonus_x100: 0,
+                    tamer_base_x100: tamer_gain.saturating_mul(100),
+                    tamer_total_x100: new_tamer_exp.saturating_mul(100),
+                    partner_handle: attacker_handler,
+                    partner_bonus_x100: 0,
+                    partner_base_x100: partner_gain.saturating_mul(100),
+                    partner_total_x100: new_partner_exp.saturating_mul(100),
+                    skill_exp: skill_exp_gain,
+                }
+                .encode(),
+            );
+
+            if tamer_leveled {
+                let level_up = LevelUpPacket {
+                    handler: character.general_handler,
+                    level: new_tamer_level,
+                }
+                .encode();
+                session_packets.push(level_up.clone());
+                broadcast_packets.push(level_up);
+            }
+            if partner_leveled {
+                let level_up = LevelUpPacket {
+                    handler: attacker_handler,
+                    level: new_partner_level,
+                }
+                .encode();
+                session_packets.push(level_up.clone());
+                broadcast_packets.push(level_up);
+            }
+
+            let now = current_unix_timestamp();
+            let bits_amount = (i32::from(mob.level.max(1)) * 10).max(50);
+            let viewer_handler = if character.general_handler != 0 {
+                character.general_handler
+            } else {
+                character.id.min(u32::MAX as u64) as u32
+            };
+            let kill_drops = [
+                odmo_types::DropSummary {
+                    map_id: mob.map_id,
+                    channel: mob.channel,
+                    owner_id: character.id,
+                    owner_handler: character.general_handler,
+                    item_id: 90_600,
+                    amount: bits_amount,
+                    x: mob.x + 25,
+                    y: mob.y + 15,
+                    owner_expires_at_unix: now + 120,
+                    expires_at_unix: now + 300,
+                    bits_drop: true,
+                    ..odmo_types::DropSummary::default()
+                },
+                odmo_types::DropSummary {
+                    map_id: mob.map_id,
+                    channel: mob.channel,
+                    owner_id: character.id,
+                    owner_handler: character.general_handler,
+                    item_id: 5101,
+                    amount: 1,
+                    x: mob.x - 25,
+                    y: mob.y - 15,
+                    owner_expires_at_unix: now + 120,
+                    expires_at_unix: now + 300,
+                    bits_drop: false,
+                    ..odmo_types::DropSummary::default()
+                },
+            ];
+
+            for candidate in kill_drops {
+                let spawned = self
+                    .repository
+                    .spawn_drop(candidate)
+                    .map_err(|error| GameFlowError::Storage(error.to_string()))?;
+                session.viewed_drops.insert(spawned.id, spawned.clone());
+                let drop_packet = LoadDropsPacket {
+                    drop: spawned,
+                    viewer_handler,
+                }
+                .encode();
+                session_packets.push(drop_packet.clone());
+                broadcast_packets.push(drop_packet);
+            }
         }
 
         // Notify other visible players via the live broadcast sink. Cross-session
@@ -6569,7 +6993,14 @@ impl GameApplication {
 
     // ----- Combat status helpers ----------------------------------------------------
 
-    fn handle_die_confirm(&self, session: &GameSession) -> Result<Vec<Vec<u8>>, GameFlowError> {
+    fn handle_die_confirm(
+        &self,
+        session: &GameSession,
+        _masked_token: u32,
+        account_idx: u32,
+        _access_code: u32,
+        _net_version: u32,
+    ) -> Result<Vec<Vec<u8>>, GameFlowError> {
         let character_id = session.character_id.ok_or(GameFlowError::Unauthenticated)?;
         let character = self
             .repository
@@ -6577,9 +7008,13 @@ impl GameApplication {
             .map_err(|error| GameFlowError::Storage(error.to_string()))?
             .ok_or(GameFlowError::CharacterNotFound(character_id))?;
 
-        // Restore the character to a safe HP/DS state and send a fresh status update.
+        if account_idx != 0 && u64::from(account_idx) != character.account_id {
+            return Ok(Vec::new());
+        }
+
+        let defeated = character.current_hp <= 0 || character.partner_current_hp <= 0;
         let restored_hp = (character.hp / 2).max(1);
-        let restored_ds = character.ds.max(0);
+        let restored_ds = character.ds.max(1);
         self.repository
             .update_tamer_resources(
                 character_id,
@@ -6589,12 +7024,31 @@ impl GameApplication {
             )
             .map_err(|error| GameFlowError::Storage(error.to_string()))?;
 
-        // Refresh the partner HP too so the tamer is not a permanent ghost.
+        let restored_partner_hp = (character.partner_hp / 2).max(1);
+        let restored_partner_ds = character.partner_ds.max(1);
         self.repository
-            .update_partner_resources(character_id, character.partner_hp, character.partner_ds)
+            .update_partner_resources(character_id, restored_partner_hp, restored_partner_ds)
             .map_err(|error| GameFlowError::Storage(error.to_string()))?;
 
-        // Reload the updated character to broadcast the status to peers.
+        if defeated {
+            self.repository
+                .update_character_position(
+                    character_id,
+                    odmo_types::DEFAULT_START_X,
+                    odmo_types::DEFAULT_START_Y,
+                    0.0,
+                )
+                .map_err(|error| GameFlowError::Storage(error.to_string()))?;
+            self.repository
+                .update_partner_position(
+                    character_id,
+                    odmo_types::DEFAULT_START_X,
+                    odmo_types::DEFAULT_START_Y,
+                    0.0,
+                )
+                .map_err(|error| GameFlowError::Storage(error.to_string()))?;
+        }
+
         if let Ok(Some(updated)) = self.repository.character_by_id(character_id) {
             let status = UpdateStatusPacket { character: updated }.encode();
             if let Some(broadcast) = &self.broadcast {
@@ -9647,6 +10101,9 @@ impl GameApplication {
         let mut next_viewed_mobs = HashMap::new();
 
         for mob in current {
+            if mob.current_hp <= 0 {
+                continue;
+            }
             if map_distance(character.x, character.y, mob.x, mob.y) > START_TO_SEE_DISTANCE {
                 continue;
             }
@@ -12848,6 +13305,54 @@ mod tests {
             }
             Ok(())
         }
+        fn update_partner_resources(
+            &self,
+            character_id: u64,
+            current_hp: i32,
+            current_ds: i32,
+        ) -> anyhow::Result<()> {
+            let mut guard = self.characters.write().expect("repo poisoned");
+            if let Some(character) = guard.get_mut(&character_id) {
+                character.partner_current_hp = current_hp.clamp(0, character.partner_hp);
+                character.partner_current_ds = current_ds.clamp(0, character.partner_ds);
+            }
+            Ok(())
+        }
+        fn update_partner_memory_skills(
+            &self,
+            character_id: u64,
+            skills: [i32; 4],
+        ) -> anyhow::Result<()> {
+            let mut guard = self.characters.write().expect("repo poisoned");
+            if let Some(character) = guard.get_mut(&character_id) {
+                character.partner_memory_skills = skills;
+            }
+            Ok(())
+        }
+        fn update_character_experience(
+            &self,
+            character_id: u64,
+            tamer_level: u8,
+            tamer_exp: i64,
+            partner_level: u8,
+            partner_exp: i64,
+        ) -> anyhow::Result<()> {
+            let mut guard = self.characters.write().expect("repo poisoned");
+            if let Some(character) = guard.get_mut(&character_id) {
+                character.level = tamer_level.max(1);
+                character.current_experience = tamer_exp.max(0);
+                character.partner_level = partner_level.max(1);
+                character.partner_current_experience = partner_exp.max(0);
+                if let Some(slot) = character
+                    .partner_slots
+                    .iter_mut()
+                    .find(|p| p.slot == character.partner_current_slot)
+                {
+                    slot.level = character.partner_level;
+                }
+            }
+            Ok(())
+        }
     }
 
     impl CharacterAccountRepository for InMemoryCharacterRepository {
@@ -12950,6 +13455,22 @@ mod tests {
                 .cloned()
                 .unwrap_or_default())
         }
+
+        fn update_mob_hp(
+            &self,
+            map_id: i16,
+            channel: u8,
+            handler: u32,
+            current_hp: i32,
+        ) -> anyhow::Result<()> {
+            let mut mobs = self.mobs_by_map.write().expect("repo poisoned");
+            if let Some(entries) = mobs.get_mut(&(map_id, channel))
+                && let Some(mob) = entries.iter_mut().find(|mob| mob.handler == handler)
+            {
+                mob.current_hp = current_hp.max(0);
+            }
+            Ok(())
+        }
     }
 
     impl MapDropRepository for InMemoryCharacterRepository {
@@ -12960,7 +13481,11 @@ mod tests {
                 .expect("repo poisoned")
                 .get(&(map_id, channel))
                 .cloned()
-                .unwrap_or_default())
+                .unwrap_or_default()
+                .into_iter()
+                .map(apply_runtime_drop_state)
+                .filter(|drop| !drop.collected)
+                .collect())
         }
 
         fn collect_drop(
@@ -12979,7 +13504,12 @@ mod tests {
             let Some(entries) = drops.get_mut(&(map_id, channel)) else {
                 return Ok(DropCollectionResult::Missing);
             };
-            let Some(index) = entries.iter().position(|drop| drop.handler == drop_handler) else {
+            let kind = drop_handler >> 16;
+            let Some(index) = entries.iter().position(|drop| {
+                drop.handler == drop_handler
+                    || ((kind == 3 || kind == 0)
+                        && (drop.handler & 0xFFFF) == (drop_handler & 0xFFFF))
+            }) else {
                 return Ok(DropCollectionResult::Missing);
             };
             let drop = apply_runtime_drop_state(entries[index].clone());
@@ -13022,6 +13552,27 @@ mod tests {
                 character: character.clone(),
             })
         }
+
+        fn spawn_drop(&self, mut drop: DropSummary) -> anyhow::Result<DropSummary> {
+            let mut drops = self.drops_by_map.write().expect("repo poisoned");
+            let next_id = drops
+                .values()
+                .flatten()
+                .map(|existing| existing.id)
+                .max()
+                .unwrap_or(500)
+                .saturating_add(1);
+            let entries = drops.entry((drop.map_id, drop.channel)).or_default();
+            let next_handler = entries
+                .iter()
+                .map(|existing| existing.handler & 0xFFFF)
+                .max()
+                .map_or(49_200, |h| h.saturating_add(1).max(49_200));
+            drop.id = next_id;
+            drop.handler = next_handler;
+            entries.push(drop.clone());
+            Ok(drop)
+        }
     }
 
     fn unique_test_dir(name: &str) -> PathBuf {
@@ -13062,21 +13613,43 @@ mod tests {
         size: u16,
         drop: &DropSummary,
     ) -> bool {
-        if let Some(existing) = items.iter_mut().find(|item| item.item_id == drop.item_id) {
-            existing.amount = existing.amount.saturating_add(drop.amount.max(0));
+        let limit = usize::from(size);
+        let safe_amount = drop.amount.max(1);
+        if let Some(existing) = items
+            .iter_mut()
+            .take(limit)
+            .find(|item| item.item_id == drop.item_id && item.amount > 0)
+        {
+            existing.amount = existing.amount.saturating_add(safe_amount);
             existing.record.resize(69, 0);
             existing.record[0..4].copy_from_slice(&existing.item_id.to_le_bytes());
             existing.record[4..8].copy_from_slice(&existing.amount.to_le_bytes());
             return true;
         }
 
-        if items.len() >= size as usize {
+        if let Some(empty) = items
+            .iter_mut()
+            .take(limit)
+            .find(|item| item.item_id <= 0 || item.amount <= 0)
+        {
+            let mut record = odmo_types::ItemRecord {
+                item_id: drop.item_id,
+                amount: safe_amount,
+                ..odmo_types::ItemRecord::default()
+            };
+            record.record[0..4].copy_from_slice(&record.item_id.to_le_bytes());
+            record.record[4..8].copy_from_slice(&record.amount.to_le_bytes());
+            *empty = record;
+            return true;
+        }
+
+        if items.len() >= limit {
             return false;
         }
 
         let mut record = odmo_types::ItemRecord {
             item_id: drop.item_id,
-            amount: drop.amount.max(1),
+            amount: safe_amount,
             ..odmo_types::ItemRecord::default()
         };
         record.record[0..4].copy_from_slice(&record.item_id.to_le_bytes());
@@ -16336,17 +16909,22 @@ mod tests {
             )
             .expect("request should complete");
 
-        assert_eq!(responses.len(), 1);
-        let raw = PacketReader::from_frame(&responses[0]).expect("frame");
+        let types: Vec<i16> = responses
+            .iter()
+            .map(|frame| PacketReader::from_frame(frame).expect("frame").packet_type)
+            .collect();
         assert_eq!(
-            raw.packet_type,
-            odmo_protocol::opcode::game::PARTNER_ATTACK_RESPONSE
+            types,
+            vec![
+                odmo_protocol::opcode::game::GAME_BATTLE_ON,
+                odmo_protocol::opcode::game::PARTNER_ATTACK_RESPONSE,
+            ]
         );
     }
 
     #[test]
-    fn partner_attack_emits_kill_on_hit_when_lethal() {
-        let (app, _repo, _broadcast) = build_combat_app();
+    fn partner_attack_emits_kill_exp_level_up_and_drops_when_lethal() {
+        let (app, repo, _broadcast) = build_combat_app();
         // Set HP very low so the deterministic damage formula one-shots.
         let mut session = seed_session_with_mob(50_001, 1, 1_000);
 
@@ -16360,9 +16938,33 @@ mod tests {
             )
             .expect("request should complete");
 
-        assert_eq!(responses.len(), 1);
-        let raw = PacketReader::from_frame(&responses[0]).expect("frame");
-        assert_eq!(raw.packet_type, odmo_protocol::opcode::game::KILL_ON_HIT);
+        let frames: Vec<_> = responses
+            .iter()
+            .map(|frame| PacketReader::from_frame(frame).expect("frame"))
+            .collect();
+        let types: Vec<i16> = frames.iter().map(|f| f.packet_type).collect();
+        assert!(types.contains(&odmo_protocol::opcode::game::KILL_ON_HIT));
+        assert!(types.contains(&odmo_protocol::opcode::game::GAME_BATTLE_OFF));
+        assert!(types.contains(&odmo_protocol::opcode::game::GAME_GET_EXP));
+        assert!(types.contains(&odmo_protocol::opcode::game::GAME_LEVEL_UP));
+        assert_eq!(
+            types
+                .iter()
+                .filter(|&&op| op == odmo_protocol::opcode::game::LOAD_UNLOAD_ENTITY)
+                .count(),
+            2
+        );
+        let exp_frame = frames
+            .iter()
+            .find(|f| f.packet_type == odmo_protocol::opcode::game::GAME_GET_EXP)
+            .expect("exp frame");
+        assert_eq!(exp_frame.payload.len(), 56);
+        let updated = repo
+            .character_by_id(100)
+            .expect("repo")
+            .expect("character");
+        assert!(updated.level > 1);
+        assert!(updated.partner_level > 1);
     }
 
     #[test]
@@ -16387,7 +16989,7 @@ mod tests {
     }
 
     #[test]
-    fn partner_skill_emits_cast_and_hit_packets() {
+    fn partner_skill_emits_apply_around_without_retired_s2c_cast() {
         let (app, _repo, _broadcast) = build_combat_app();
         let mut session = seed_session_with_mob(50_002, 100_000, 100_000);
 
@@ -16402,17 +17004,26 @@ mod tests {
             )
             .expect("request should complete");
 
-        assert_eq!(responses.len(), 2);
-        let cast = PacketReader::from_frame(&responses[0]).expect("frame");
+        let frames: Vec<_> = responses
+            .iter()
+            .map(|frame| PacketReader::from_frame(frame).expect("frame"))
+            .collect();
+        let types: Vec<i16> = frames.iter().map(|f| f.packet_type).collect();
+        assert!(!types.contains(&odmo_protocol::opcode::game::PARTNER_SKILL));
         assert_eq!(
-            cast.packet_type,
-            odmo_protocol::opcode::game::PARTNER_SKILL_RESPONSE
+            types,
+            vec![
+                odmo_protocol::opcode::game::GAME_BATTLE_ON,
+                odmo_protocol::opcode::game::SKILL_APPLY_AROUND,
+                odmo_protocol::opcode::game::GAME_HP_RATE,
+            ]
         );
-        let hit = PacketReader::from_frame(&responses[1]).expect("frame");
-        assert_eq!(
-            hit.packet_type,
-            odmo_protocol::opcode::game::PARTNER_ATTACK_RESPONSE
-        );
+        // Verify Tag 0 header: [0][caster=21_000][target=50_002][skill=1]
+        let skill_payload = &frames[1].payload;
+        assert_eq!(skill_payload[0], 0);
+        assert_eq!(&skill_payload[1..5], &21_000u32.to_le_bytes());
+        assert_eq!(&skill_payload[5..9], &50_002u32.to_le_bytes());
+        assert_eq!(&skill_payload[9..13], &1u32.to_le_bytes());
     }
 
     #[test]
@@ -16437,6 +17048,300 @@ mod tests {
             raw.packet_type,
             odmo_protocol::opcode::game::PARTNER_SKILL_ERROR
         );
+    }
+
+    #[test]
+    fn combat_targets_map_mob_with_distinct_id_and_spawns_lootable_drops() {
+        let (app, repo, _broadcast) = build_combat_app();
+        repo.mobs_by_map
+            .write()
+            .expect("repo poisoned")
+            .insert(
+                (DEFAULT_START_MAP_ID, 0),
+                vec![MobSummary {
+                    id: 400,
+                    map_id: DEFAULT_START_MAP_ID,
+                    channel: 0,
+                    handler: 34_000,
+                    type_id: 30_331,
+                    model: 31_033,
+                    name: "Goblimon".to_string(),
+                    level: 18,
+                    x: DEFAULT_START_X + 225,
+                    y: DEFAULT_START_Y + 125,
+                    previous_x: DEFAULT_START_X + 205,
+                    previous_y: DEFAULT_START_Y + 105,
+                    current_hp: 300,
+                    max_hp: 300,
+                    ..MobSummary::default()
+                }],
+            );
+        let mut session = GameSession::new(1);
+        session.character_id = Some(100);
+        session.registered_map_presence = true;
+
+        // Selecting target emits 17-byte GAME_TARGET_INFO (1017).
+        let target_res = app
+            .handle_request(
+                &mut session,
+                GameRequest::SetTarget {
+                    attacker_handler: 21_000,
+                    target_handler: 34_000,
+                },
+            )
+            .expect("set target");
+        let target_frame = target_res
+            .iter()
+            .map(|f| PacketReader::from_frame(f).expect("frame"))
+            .find(|f| f.packet_type == odmo_protocol::opcode::game::GAME_TARGET_INFO)
+            .expect("1017 frame");
+        assert_eq!(target_frame.payload.len(), 17);
+
+        // Basic hit: 300 -> 250.
+        let hit_res = app
+            .handle_request(
+                &mut session,
+                GameRequest::PartnerAttack {
+                    attacker_handler: 21_000,
+                    target_handler: 34_000,
+                },
+            )
+            .expect("basic attack");
+        assert!(hit_res.iter().any(|f| {
+            PacketReader::from_frame(f).expect("frame").packet_type
+                == odmo_protocol::opcode::game::PARTNER_ATTACK_RESPONSE
+        }));
+
+        // Lethal skill: 250 -> 0, spawns drops owned by character 100.
+        let kill_res = app
+            .handle_request(
+                &mut session,
+                GameRequest::PartnerSkill {
+                    skill_slot: 0,
+                    attacker_handler: 21_000,
+                    target_handler: 34_000,
+                },
+            )
+            .expect("lethal skill");
+        assert!(kill_res.iter().any(|f| {
+            PacketReader::from_frame(f).expect("frame").packet_type
+                == odmo_protocol::opcode::game::KILL_ON_SKILL
+        }));
+
+        let spawned = repo
+            .drops_by_map(DEFAULT_START_MAP_ID, 0)
+            .expect("drops");
+        let bits_drop = spawned
+            .iter()
+            .find(|d| d.owner_id == 100 && d.bits_drop)
+            .expect("bits drop spawned");
+        let item_drop = spawned
+            .iter()
+            .find(|d| d.owner_id == 100 && !d.bits_drop)
+            .expect("item drop spawned");
+
+        // Loot Bits drop using packed (3 << 16) | handler UID -> 16B 3911.
+        let loot_bits = app
+            .handle_request(
+                &mut session,
+                GameRequest::LootItem {
+                    drop_handler: (3 << 16) | (bits_drop.handler & 0xFFFF),
+                },
+            )
+            .expect("loot bits");
+        let bits_frame = loot_bits
+            .iter()
+            .map(|f| PacketReader::from_frame(f).expect("frame"))
+            .find(|f| f.packet_type == odmo_protocol::opcode::game::PICK_BITS)
+            .expect("3911 frame");
+        assert_eq!(bits_frame.payload.len(), 16);
+
+        // Loot Item drop -> 23B 3910.
+        let loot_item = app
+            .handle_request(
+                &mut session,
+                GameRequest::LootItem {
+                    drop_handler: item_drop.handler,
+                },
+            )
+            .expect("loot item");
+        let item_frame = loot_item
+            .iter()
+            .map(|f| PacketReader::from_frame(f).expect("frame"))
+            .find(|f| f.packet_type == odmo_protocol::opcode::game::LOOT_ITEM)
+            .expect("3910 frame");
+        assert_eq!(item_frame.payload.len(), 23);
+    }
+
+    #[test]
+    fn combat_helpers_cover_memory_skill_tamer_skill_level_up_and_die_confirm() {
+        let (app, repo, _broadcast) = build_combat_app();
+        let mut session = seed_session_with_mob(50_004, 100_000, 100_000);
+
+        // 1120 PartnerMemorySkill emits 1102 Tag 1 StatUpdate when non-lethal.
+        let mem_res = app
+            .handle_request(
+                &mut session,
+                GameRequest::PartnerMemorySkill {
+                    digimon_uid: 21_000,
+                    evo_idx: 0,
+                    skill_code: 7_001_001,
+                    target_uid: 50_004,
+                },
+            )
+            .expect("memory skill");
+        let apply_frame = mem_res
+            .iter()
+            .map(|f| PacketReader::from_frame(f).expect("frame"))
+            .find(|f| f.packet_type == odmo_protocol::opcode::game::SKILL_APPLY_AROUND)
+            .expect("1102 frame");
+        assert_eq!(apply_frame.payload[0], 1);
+
+        // 1327 TamerSkillRequest emits 1328 TamerSkillSuccessPacket.
+        let ts_res = app
+            .handle_request(
+                &mut session,
+                GameRequest::TamerSkillRequest {
+                    skill_idx: 2,
+                    target_uid: 50_004,
+                },
+            )
+            .expect("tamer skill");
+        let ts_frame = PacketReader::from_frame(&ts_res[0]).expect("frame");
+        assert_eq!(
+            ts_frame.packet_type,
+            odmo_protocol::opcode::game::TAMER_SKILL_SUCCESS
+        );
+        assert_eq!(&ts_frame.payload[..4], &2u32.to_le_bytes());
+        assert_eq!(&ts_frame.payload[4..8], &50_004u32.to_le_bytes());
+
+        // 1104 SkillLevelUp rejects mismatched UID and updates matching active partner.
+        let mismatch = app
+            .handle_request(
+                &mut session,
+                GameRequest::SkillLevelUp {
+                    uid: 99_999,
+                    evo_unit_idx: 0,
+                    skill_idx: 0,
+                },
+            )
+            .expect("mismatch");
+        assert!(mismatch.is_empty());
+        assert_eq!(
+            repo.character_by_id(100)
+                .unwrap()
+                .unwrap()
+                .partner_memory_skills[0],
+            0
+        );
+        app.handle_request(
+            &mut session,
+            GameRequest::SkillLevelUp {
+                uid: 21_000,
+                evo_unit_idx: 0,
+                skill_idx: 1,
+            },
+        )
+        .expect("evo skill level up");
+        assert_eq!(
+            repo.character_by_id(100)
+                .unwrap()
+                .unwrap()
+                .partner_slots[0]
+                .evolutions[0]
+                .skill_levels[1],
+            1
+        );
+        app.handle_request(
+            &mut session,
+            GameRequest::SkillLevelUp {
+                uid: 21_000,
+                evo_unit_idx: 9,
+                skill_idx: 1,
+            },
+        )
+        .expect("memory skill level up");
+        assert_eq!(
+            repo.character_by_id(100)
+                .unwrap()
+                .unwrap()
+                .partner_memory_skills[1],
+            1
+        );
+
+        // 1022 DieConfirm restores defeated tamer/partner and warps back to start coords.
+        {
+            let mut guard = repo.characters.write().unwrap();
+            let ch = guard.get_mut(&100).unwrap();
+            ch.current_hp = 0;
+            ch.partner_current_hp = 0;
+            ch.x = 12_345;
+            ch.y = 67_890;
+        }
+        let die_res = app
+            .handle_request(
+                &mut session,
+                GameRequest::DieConfirm {
+                    masked_token: 0x1122_3344,
+                    account_idx: 1,
+                    access_code: 0xBEEF,
+                    net_version: 1,
+                },
+            )
+            .expect("die confirm");
+        assert!(!die_res.is_empty());
+        let revived = repo.character_by_id(100).unwrap().unwrap();
+        assert!(revived.current_hp > 0);
+        assert!(revived.partner_current_hp > 0);
+        assert_eq!(revived.x, DEFAULT_START_X);
+        assert_eq!(revived.y, DEFAULT_START_Y);
+
+        // 1033 PartnerStop is C2S-only and produces no S2C packets.
+        let stop_res = app
+            .handle_request(&mut session, GameRequest::PartnerStop { uid: 21_000 })
+            .expect("partner stop");
+        assert!(stop_res.is_empty());
+
+        // Expired drops are excluded from drops_by_map and return 3913 + 1006 on race loot.
+        repo.drops_by_map
+            .write()
+            .expect("repo poisoned")
+            .entry((DEFAULT_START_MAP_ID, 0))
+            .or_default()
+            .push(DropSummary {
+                id: 999,
+                map_id: DEFAULT_START_MAP_ID,
+                channel: 0,
+                handler: 49_999,
+                owner_id: 100,
+                owner_handler: 11_000,
+                item_id: 5101,
+                amount: 1,
+                x: DEFAULT_START_X,
+                y: DEFAULT_START_Y,
+                expires_at_unix: current_unix_timestamp().saturating_sub(1),
+                ..DropSummary::default()
+            });
+        assert!(
+            repo.drops_by_map(DEFAULT_START_MAP_ID, 0)
+                .expect("drops")
+                .iter()
+                .all(|d| d.handler != 49_999)
+        );
+        let missing_loot = app
+            .handle_request(
+                &mut session,
+                GameRequest::LootItem {
+                    drop_handler: 49_999,
+                },
+            )
+            .expect("missing loot");
+        let missing_types: Vec<i16> = missing_loot
+            .iter()
+            .map(|f| PacketReader::from_frame(f).expect("frame").packet_type)
+            .collect();
+        assert!(missing_types.contains(&odmo_protocol::opcode::game::PICK_ITEM_FAIL));
+        assert!(missing_types.contains(&odmo_protocol::opcode::game::LOAD_UNLOAD_ENTITY));
     }
 
     #[test]

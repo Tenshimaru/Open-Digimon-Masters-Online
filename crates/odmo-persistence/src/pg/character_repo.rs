@@ -65,6 +65,9 @@ pub(crate) struct CharacterDb {
     pub membership_seconds: i64,
     pub quest_progress: serde_json::Value,
     pub npc_repurchase_log: serde_json::Value,
+    pub current_experience: i64,
+    pub partner_exp: i64,
+    pub partner_transcendence_exp: i64,
 }
 
 const SELECT_COLS: &str = "\
@@ -79,7 +82,8 @@ const SELECT_COLS: &str = "\
     equipment, digivice, daily_reward, attendance, partner_slots, \
     available_channels, encyclopedia, union_hack_slots, deck_buff_id, \
     server_experience, premium, silk, membership_seconds, \
-    quest_progress, npc_repurchase_log";
+    quest_progress, npc_repurchase_log, \
+    current_experience, partner_exp, partner_transcendence_exp";
 
 pub(crate) fn row_to_character(row: CharacterDb) -> CharacterSummary {
     let inventory: InventorySnapshot = serde_json::from_value(row.inventory).unwrap_or_default();
@@ -141,7 +145,7 @@ pub(crate) fn row_to_character(row: CharacterDb) -> CharacterSummary {
         model: row.model,
         level: row.level as u8,
         name: row.name,
-        current_experience: 0,
+        current_experience: row.current_experience.max(0),
         hp: 1000,
         ds: 1000,
         current_hp: 1000,
@@ -201,8 +205,8 @@ pub(crate) fn row_to_character(row: CharacterDb) -> CharacterSummary {
         partner_handler: row.partner_handler as u32,
         partner_size: 12_000,
         partner_hatch_grade: 3,
-        partner_current_experience: 0,
-        partner_transcendence_experience: 0,
+        partner_current_experience: row.partner_exp.max(0),
+        partner_transcendence_experience: row.partner_transcendence_exp.max(0),
         partner_hp: 1000,
         partner_ds: 1000,
         partner_de: 100,
@@ -945,6 +949,68 @@ impl CharacterRepository for PgRepository {
                 .bind(character_id as i64)
                 .execute(&pool)
                 .await?;
+            Ok(())
+        })
+    }
+
+    fn update_partner_resources(
+        &self,
+        character_id: u64,
+        current_hp: i32,
+        current_ds: i32,
+    ) -> anyhow::Result<()> {
+        let pool = self.pool().clone();
+        self.block_on(async move {
+            sqlx::query(
+                "UPDATE characters SET partner_current_hp = $1, partner_current_ds = $2 WHERE id = $3",
+            )
+            .bind(current_hp.max(0))
+            .bind(current_ds.max(0))
+            .bind(character_id as i64)
+            .execute(&pool)
+            .await?;
+            Ok(())
+        })
+    }
+
+    fn update_character_experience(
+        &self,
+        character_id: u64,
+        tamer_level: u8,
+        tamer_exp: i64,
+        partner_level: u8,
+        partner_exp: i64,
+    ) -> anyhow::Result<()> {
+        let pool = self.pool().clone();
+        self.block_on(async move {
+            let current: Option<(i16, serde_json::Value)> = sqlx::query_as(
+                "SELECT partner_current_slot, partner_slots FROM characters WHERE id = $1",
+            )
+            .bind(character_id as i64)
+            .fetch_optional(&pool)
+            .await?;
+
+            let mut partner_slots: Vec<PartnerSlotSnapshot> = current
+                .as_ref()
+                .and_then(|(_, raw)| serde_json::from_value(raw.clone()).ok())
+                .unwrap_or_default();
+            let active_slot = current.map_or(1u8, |(s, _)| s as u8);
+            if let Some(slot) = partner_slots.iter_mut().find(|p| p.slot == active_slot) {
+                slot.level = partner_level.max(1);
+            }
+            let partner_slots_json = serde_json::to_value(&partner_slots)?;
+
+            sqlx::query(
+                "UPDATE characters SET level = $1, current_experience = $2, partner_level = $3, partner_exp = $4, partner_slots = $5 WHERE id = $6",
+            )
+            .bind(i16::from(tamer_level.max(1)))
+            .bind(tamer_exp.max(0))
+            .bind(i16::from(partner_level.max(1)))
+            .bind(partner_exp.max(0))
+            .bind(&partner_slots_json)
+            .bind(character_id as i64)
+            .execute(&pool)
+            .await?;
             Ok(())
         })
     }
