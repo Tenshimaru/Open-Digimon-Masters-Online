@@ -18,7 +18,6 @@ use odmo_protocol::{
 use odmo_types::{
     Account, AccountId, AccountSuspension, CharacterServerTarget, ServerDescriptor, TransferTicket,
 };
-use uuid::Uuid;
 
 use crate::portal::PortalBridge;
 
@@ -211,7 +210,7 @@ impl AccountApplication {
                     .find(|s| s.id == server_id as u32 || (server_id == 0 && s.id == 1))
                     .ok_or(AccountFlowError::UnknownServer(server_id as u32))?;
 
-                self.issue_transfer_ticket(account_id, server.id);
+                let access_code = self.issue_transfer_ticket(account_id, server.id);
 
                 let mut responses = Vec::new();
                 if self.config.use_resource_hash
@@ -222,6 +221,7 @@ impl AccountApplication {
                 responses.push(
                     ConnectCharacterServerPacket {
                         account_id,
+                        access_code,
                         target: self.config.character_server.clone(),
                     }
                     .encode(),
@@ -296,9 +296,12 @@ impl AccountApplication {
             .map(|hash_hex| ResourcesHashPacket { hash_hex }.encode())
     }
 
-    fn issue_transfer_ticket(&self, account_id: AccountId, server_id: u32) {
+    /// Issue the ticket the character service consumes, keyed by a fresh access code
+    /// that only this login's client receives. Returns the access code.
+    fn issue_transfer_ticket(&self, account_id: AccountId, server_id: u32) -> u32 {
+        let access_code = crate::portal::new_access_code();
         let ticket = TransferTicket {
-            token: Uuid::new_v4().to_string(),
+            token: access_code.to_string(),
             account_id,
             server_id,
         };
@@ -306,6 +309,7 @@ impl AccountApplication {
         let mut state = self.write_state();
         state.transfer_tickets.insert(account_id, ticket.clone());
         let _ = self.portal_bridge.store_transfer_ticket(&ticket);
+        access_code
     }
 
     fn write_state(&self) -> std::sync::RwLockWriteGuard<'_, AccountState> {
@@ -556,13 +560,14 @@ mod tests {
 
     #[test]
     fn connect_character_server_uses_selected_target() {
+        let portal_state_dir = unique_test_dir("account-connect-character");
         let app = AccountApplication::new(
             AccountServiceConfig {
                 character_server: CharacterServerTarget {
                     address: "127.0.0.1".to_string(),
                     port: 7002,
                 },
-                portal_state_dir: unique_test_dir("account-connect-character"),
+                portal_state_dir: portal_state_dir.clone(),
                 use_resource_hash: false,
             },
             Arc::new(InMemoryAccountRepository::demo()),
@@ -580,7 +585,20 @@ mod tests {
 
         let raw = PacketReader::from_frame(&responses[0]).expect("frame should decode");
         assert_eq!(raw.packet_type, 901);
-        assert_eq!(i32::from_le_bytes(raw.payload[4..8].try_into().unwrap()), 1);
+        assert_eq!(u32::from_le_bytes(raw.payload[0..4].try_into().unwrap()), 1);
+        // The access code is a fresh secret, not the account id, and the ticket the
+        // character service will consume is issued for it.
+        let access_code = u32::from_le_bytes(raw.payload[4..8].try_into().unwrap());
+        assert_ne!(access_code, 0);
+        let ticket = crate::portal::PortalBridge::from_json(portal_state_dir)
+            .expect("bridge")
+            .consume_transfer_ticket(1)
+            .expect("read ticket")
+            .expect("ticket issued");
+        assert!(crate::portal::access_code_matches(
+            &ticket.token,
+            access_code
+        ));
     }
 
     #[test]

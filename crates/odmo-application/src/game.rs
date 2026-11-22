@@ -595,13 +595,21 @@ impl GameApplication {
             GameRequest::KeepConnection => Ok(Vec::new()),
             GameRequest::InitialInformation {
                 account_id,
-                access_code: _,
+                access_code,
             } => {
                 let ticket = self
                     .portal_bridge
                     .consume_game_session_ticket(account_id)
                     .map_err(|error| GameFlowError::PortalBridge(error.to_string()))?
                     .ok_or(GameFlowError::MissingSessionTicket(account_id))?;
+                // The ticket stays valid for reconnects (map swaps, summons), so it only
+                // admits the client holding the access code it was issued for.
+                if !crate::portal::access_code_matches(&ticket.token, access_code) {
+                    tracing::warn!(
+                        "refused game entry for account {account_id}: access code does not match"
+                    );
+                    return Err(GameFlowError::MissingSessionTicket(account_id));
+                }
 
                 let character = self
                     .repository
@@ -13685,7 +13693,7 @@ mod tests {
         let bridge = PortalBridge::from_json(portal_state_dir.clone()).expect("bridge");
         bridge
             .store_game_session_ticket(&GameSessionTicket {
-                token: "demo".to_string(),
+                token: "0".to_string(),
                 account_id: 1,
                 character_id: 100,
             })
@@ -13724,12 +13732,60 @@ mod tests {
     }
 
     #[test]
+    fn initial_information_requires_the_ticket_access_code() {
+        let portal_state_dir = unique_test_dir("wrong-access-code");
+        let bridge = PortalBridge::from_json(portal_state_dir.clone()).expect("bridge");
+        bridge
+            .store_game_session_ticket(&GameSessionTicket {
+                token: "777".to_string(),
+                account_id: 1,
+                character_id: 100,
+            })
+            .expect("store ticket");
+        let app = GameApplication::new(
+            GameServiceConfig { portal_state_dir },
+            Arc::new(InMemoryCharacterRepository::demo()),
+        );
+
+        // Knowing the account id is not enough.
+        for access_code in [0, 1, 776] {
+            let mut session = GameSession::new(1);
+            assert!(
+                app.handle_request(
+                    &mut session,
+                    GameRequest::InitialInformation {
+                        account_id: 1,
+                        access_code,
+                    },
+                )
+                .is_err(),
+                "access code {access_code}"
+            );
+            assert_eq!(session.character_id, None);
+        }
+
+        // The client holding the code gets in, and again on a reconnect.
+        for seed in [2, 3] {
+            let mut session = GameSession::new(seed);
+            app.handle_request(
+                &mut session,
+                GameRequest::InitialInformation {
+                    account_id: 1,
+                    access_code: 777,
+                },
+            )
+            .expect("matching access code");
+            assert_eq!(session.character_id, Some(100));
+        }
+    }
+
+    #[test]
     fn initial_information_allows_reconnect_with_same_ticket() {
         let portal_state_dir = unique_test_dir("reconnect-ticket");
         let bridge = PortalBridge::from_json(portal_state_dir.clone()).expect("bridge");
         bridge
             .store_game_session_ticket(&GameSessionTicket {
-                token: "demo".to_string(),
+                token: "0".to_string(),
                 account_id: 1,
                 character_id: 100,
             })
@@ -13772,14 +13828,14 @@ mod tests {
         let bridge = PortalBridge::from_json(portal_state_dir.clone()).expect("bridge");
         bridge
             .store_game_session_ticket(&GameSessionTicket {
-                token: "demo".to_string(),
+                token: "0".to_string(),
                 account_id: 1,
                 character_id: 100,
             })
             .expect("store ticket");
         bridge
             .store_game_session_ticket(&GameSessionTicket {
-                token: "friend".to_string(),
+                token: "0".to_string(),
                 account_id: 2,
                 character_id: 200,
             })
@@ -13958,14 +14014,14 @@ mod tests {
         let bridge = PortalBridge::from_json(portal_state_dir.clone()).expect("bridge");
         bridge
             .store_game_session_ticket(&GameSessionTicket {
-                token: "demo".to_string(),
+                token: "0".to_string(),
                 account_id: 1,
                 character_id: 100,
             })
             .expect("store ticket");
         bridge
             .store_game_session_ticket(&GameSessionTicket {
-                token: "demo-friend".to_string(),
+                token: "0".to_string(),
                 account_id: 2,
                 character_id: 200,
             })
@@ -14034,14 +14090,14 @@ mod tests {
         let bridge = PortalBridge::from_json(portal_state_dir.clone()).expect("bridge");
         bridge
             .store_game_session_ticket(&GameSessionTicket {
-                token: "demo".to_string(),
+                token: "0".to_string(),
                 account_id: 1,
                 character_id: 100,
             })
             .expect("store ticket");
         bridge
             .store_game_session_ticket(&GameSessionTicket {
-                token: "friend".to_string(),
+                token: "0".to_string(),
                 account_id: 2,
                 character_id: 200,
             })
@@ -14173,7 +14229,7 @@ mod tests {
         let bridge = PortalBridge::from_json(portal_state_dir.clone()).expect("bridge");
         bridge
             .store_game_session_ticket(&GameSessionTicket {
-                token: "demo".to_string(),
+                token: "0".to_string(),
                 account_id: 1,
                 character_id: 100,
             })
@@ -14281,7 +14337,7 @@ mod tests {
         let bridge = PortalBridge::from_json(portal_state_dir.clone()).expect("bridge");
         bridge
             .store_game_session_ticket(&GameSessionTicket {
-                token: "demo".to_string(),
+                token: "0".to_string(),
                 account_id: 1,
                 character_id: 100,
             })
