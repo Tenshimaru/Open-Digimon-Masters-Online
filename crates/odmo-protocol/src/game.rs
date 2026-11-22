@@ -97,6 +97,12 @@ pub enum GameRequest {
     ExtraInventorySort {
         category: u8,
     },
+    /// Toggle per-slot sort lock in Bag (0) or Warehouse (2) — opcode 3997.
+    InventorySortLock {
+        lock: bool,
+        container: u8,
+        slot: u16,
+    },
     ExtraInventoryUse {
         category: u8,
         extra_slot: u16,
@@ -628,6 +634,9 @@ pub enum GameRequest {
     LoadAccountWarehouse,
     RetrieveAccountWarehouse {
         item_slot: i16,
+    },
+    ItemCashTradeTimeout {
+        slot: u16,
     },
     PartyMemberDisconnect,
     MonsterRespawnTimer,
@@ -3696,7 +3705,7 @@ pub struct SerializedItemRow {
 impl SerializedItemRow {
     pub const WIRE_LEN: usize = 71;
 
-    fn encode_into(&self, writer: &mut PacketWriter) {
+    pub fn encode_into(&self, writer: &mut PacketWriter) {
         writer.write_u32(self.item);
         writer.write_u16(self.first_word);
         writer.write_u16(self.second_word);
@@ -3714,6 +3723,32 @@ impl SerializedItemRow {
         writer.write_u32(self.fourth_word);
         writer.write_u8(self.fifth_flag);
         writer.write_u8(self.sixth_flag);
+    }
+
+    /// Build a 71-byte serialized row from a persisted 69-byte item record and
+    /// its container slot index.
+    pub fn from_item_record(slot: u16, record: &ItemRecord) -> Self {
+        let mut raw = [0u8; 69];
+        let copy_len = record.record.len().min(69);
+        raw[..copy_len].copy_from_slice(&record.record[..copy_len]);
+        Self {
+            item: record.item_id.max(0) as u32,
+            first_word: slot,
+            second_word: record.amount.clamp(0, u16::MAX as i32) as u16,
+            first_flag: raw[6],
+            second_flag: raw[8],
+            third_flag: raw[9],
+            fourth_flag: raw[7],
+            packed_six: raw[12..18].try_into().unwrap(),
+            packed_three: raw[18..21].try_into().unwrap(),
+            first_block: raw[21..37].try_into().unwrap(),
+            second_block: raw[37..53].try_into().unwrap(),
+            wide_value: u64::from_le_bytes(raw[53..61].try_into().unwrap()),
+            third_word: u32::from_le_bytes(raw[61..65].try_into().unwrap()),
+            fourth_word: u32::from_le_bytes(raw[65..69].try_into().unwrap()),
+            fifth_flag: raw[10],
+            sixth_flag: raw[11],
+        }
     }
 }
 
@@ -8526,7 +8561,11 @@ impl LoadTamerPacket {
         writer.write_f32(0.0); // facing direction is owned by the client
         writer.write_u16(c.ms.clamp(0, u16::MAX as i32) as u16);
         writer.write_u8(hp_rate_percent(c.current_hp, c.hp));
-        writer.write_zeroes(TAMER_EQUIPMENT_SLOTS * VISUAL_SLOT_LEN);
+        if c.equipment.len() >= TAMER_EQUIPMENT_SLOTS * VISUAL_SLOT_LEN {
+            writer.write_bytes(&c.equipment[..TAMER_EQUIPMENT_SLOTS * VISUAL_SLOT_LEN]);
+        } else {
+            writer.write_zeroes(TAMER_EQUIPMENT_SLOTS * VISUAL_SLOT_LEN);
+        }
         writer.write_zeroes(VISUAL_SLOT_LEN);
         let condition = c.current_condition as u32;
         writer.write_u32(condition);
@@ -8966,6 +9005,9 @@ impl CashShopCropResponsePacket {
     }
 }
 
+/// Maximum item entries accepted by the client's fixed stack buffer for opcode 3930.
+const CASH_SHOP_WAREHOUSE_MAX_ITEMS: usize = 49;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CashShopWarehousePacket {
     pub items: Vec<ItemRecord>,
@@ -8974,8 +9016,9 @@ pub struct CashShopWarehousePacket {
 impl CashShopWarehousePacket {
     pub fn encode(&self) -> Vec<u8> {
         let mut writer = PacketWriter::new(game::LOAD_ACCOUNT_WAREHOUSE);
-        writer.write_i16(clamp_i16_len(self.items.len()));
-        for item in &self.items {
+        let bounded = &self.items[..self.items.len().min(CASH_SHOP_WAREHOUSE_MAX_ITEMS)];
+        writer.write_i16(clamp_i16_len(bounded.len()));
+        for item in bounded {
             let record = normalize_item_record(item);
             writer.write_bytes(&record);
         }
@@ -11173,6 +11216,25 @@ impl InventorySortPacket {
     }
 }
 
+/// `InventorySortLock` response — opcode 3997.
+/// Acknowledges toggling a container slot's sort-lock state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InventorySortLockResponsePacket {
+    pub result: u32,
+    pub container: u8,
+    pub slot: u16,
+}
+
+impl InventorySortLockResponsePacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::INVENTORY_SORT_LOCK);
+        writer.write_u32(self.result);
+        writer.write_u8(self.container);
+        writer.write_u16(self.slot);
+        writer.finalize()
+    }
+}
+
 /// `ItemReturn` notice — opcode 3923.
 /// Modern read side consumes a fixed 12-byte body `{u4; i64}` and hands both
 /// fields to event 151; the legacy trailing i32 is off the wire. Field
@@ -12094,22 +12156,22 @@ impl UpdateStatusPacket {
         writer.write_i32(self.character.ds);
         writer.write_i32(self.character.current_hp);
         writer.write_i32(self.character.current_ds);
-        writer.write_u16(clamp_u16(self.character.at));
-        writer.write_u16(clamp_u16(self.character.de));
-        writer.write_u16(clamp_u16(self.character.ms));
+        writer.write_u32(clamp_u32(self.character.at));
+        writer.write_u32(clamp_u32(self.character.de));
+        writer.write_u32(clamp_u32(self.character.ms));
         writer.write_i32(self.character.partner_hp);
         writer.write_i32(self.character.partner_ds);
         writer.write_i32(self.character.partner_current_hp);
         writer.write_i32(self.character.partner_current_ds);
-        writer.write_u16(clamp_u16(self.character.partner_fs));
-        writer.write_u16(clamp_u16(self.character.partner_at));
-        writer.write_u16(clamp_u16(self.character.partner_de));
-        writer.write_u16(clamp_u16(self.character.partner_cc));
-        writer.write_u16(clamp_u16(self.character.partner_as));
-        writer.write_u16(clamp_u16(self.character.partner_ev));
-        writer.write_u16(clamp_u16(self.character.partner_ht));
-        writer.write_u16(clamp_u16(self.character.partner_ar));
-        writer.write_u16(clamp_u16(self.character.partner_bl));
+        writer.write_u32(clamp_u32(self.character.partner_fs));
+        writer.write_u32(clamp_u32(self.character.partner_at));
+        writer.write_u32(clamp_u32(self.character.partner_de));
+        writer.write_u32(clamp_u32(self.character.partner_cc));
+        writer.write_u32(clamp_u32(self.character.partner_as));
+        writer.write_u32(clamp_u32(self.character.partner_ev));
+        writer.write_u32(clamp_u32(self.character.partner_ht));
+        writer.write_u32(clamp_u32(self.character.partner_ar));
+        writer.write_u32(clamp_u32(self.character.partner_bl));
         writer.write_u16(self.character.partner_clone_level);
         writer.write_u16(self.character.partner_clone_at_value);
         writer.write_u16(self.character.partner_clone_bl_value);
@@ -12266,8 +12328,8 @@ fn clamp_u8_len(len: usize) -> u8 {
     len.min(u8::MAX as usize) as u8
 }
 
-fn clamp_u16(value: i32) -> u16 {
-    value.clamp(u16::MIN as i32, u16::MAX as i32) as u16
+fn clamp_u32(value: i32) -> u32 {
+    value.max(0) as u32
 }
 
 fn write_active_buff(writer: &mut PacketWriter, buff: &ActiveBuffSnapshot) {
@@ -13661,6 +13723,20 @@ impl TryFrom<RawPacket> for GameRequest {
             game::EXITEM_SORT => {
                 let category = reader.read_u8()?;
                 Ok(Self::ExtraInventorySort { category })
+            }
+            game::INVENTORY_SORT_LOCK => {
+                let lock = reader.read_u8()? != 0;
+                let container = reader.read_u8()?;
+                let slot = reader.read_u16()?;
+                Ok(Self::InventorySortLock {
+                    lock,
+                    container,
+                    slot,
+                })
+            }
+            game::ITEM_CASH_TRADE_TIMEOUT => {
+                let slot = reader.read_u16()?;
+                Ok(Self::ItemCashTradeTimeout { slot })
             }
             game::PARTY_MEMBER_DISCONNECT => Ok(Self::PartyMemberDisconnect),
             game::MONSTER_RESPAWN_TIMER => Ok(Self::MonsterRespawnTimer),
@@ -23166,5 +23242,148 @@ mod sync_1006_preservation {
         assert_eq!(&raw.payload[19..24], &[8, 0, 0, 0, 1]);
         // Trailing wide value is the last eight bytes.
         assert_eq!(raw.payload[90..=97], [9, 0, 0, 0, 0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn inventory_sort_lock_roundtrip_and_response_encode_exact_layout() {
+        let mut req_writer = PacketWriter::new(game::INVENTORY_SORT_LOCK);
+        req_writer.write_u8(1);
+        req_writer.write_u8(2);
+        req_writer.write_u16(17);
+        let req_frame = req_writer.finalize();
+        let raw_req = PacketReader::from_frame(&req_frame).expect("frame should decode");
+        assert_eq!(
+            GameRequest::try_from(raw_req).expect("request should parse"),
+            GameRequest::InventorySortLock {
+                lock: true,
+                container: 2,
+                slot: 17,
+            }
+        );
+
+        let resp = InventorySortLockResponsePacket {
+            result: 0,
+            container: 2,
+            slot: 17,
+        }
+        .encode();
+        let raw_resp = PacketReader::from_frame(&resp).expect("response frame should decode");
+        assert_eq!(raw_resp.packet_type, game::INVENTORY_SORT_LOCK);
+        assert_eq!(raw_resp.payload, vec![0, 0, 0, 0, 2, 17, 0]);
+    }
+
+    #[test]
+    fn item_cash_trade_timeout_request_decodes_slot_u16() {
+        let mut req_writer = PacketWriter::new(game::ITEM_CASH_TRADE_TIMEOUT);
+        req_writer.write_u16(5);
+        let req_frame = req_writer.finalize();
+        let raw_req = PacketReader::from_frame(&req_frame).expect("frame should decode");
+        assert_eq!(
+            GameRequest::try_from(raw_req).expect("request should parse"),
+            GameRequest::ItemCashTradeTimeout { slot: 5 }
+        );
+    }
+
+    #[test]
+    fn serialized_item_row_from_item_record_copies_slot_and_fixed_payload() {
+        let mut record = vec![0u8; 69];
+        record[0..4].copy_from_slice(&20105u32.to_le_bytes());
+        record[4..6].copy_from_slice(&3u16.to_le_bytes());
+        record[8] = 1;
+        record[11] = 1;
+        let item = ItemRecord {
+            item_id: 20105,
+            amount: 3,
+            record: record.clone(),
+        };
+        let row = SerializedItemRow::from_item_record(9, &item);
+        assert_eq!(row.first_word, 9);
+        assert_eq!(row.item, 20105);
+        assert_eq!(row.second_word, 3);
+        assert_eq!(row.second_flag, 1);
+        assert_eq!(row.sixth_flag, 1);
+
+        let extra_sort = ExtraInventorySortPacket {
+            status: 0,
+            kind: 0,
+            items: vec![row],
+        }
+        .encode();
+        let raw = PacketReader::from_frame(&extra_sort).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::EXITEM_SORT);
+        assert_eq!(raw.payload.len(), 7 + 71);
+        let mut reader = PacketReader::new(raw.payload);
+        assert_eq!(reader.read_u32().unwrap(), 0);
+        assert_eq!(reader.read_u8().unwrap(), 0);
+        assert_eq!(reader.read_u16().unwrap(), 1);
+        assert_eq!(reader.read_u32().unwrap(), 20105);
+        assert_eq!(reader.read_u16().unwrap(), 9);
+        assert_eq!(reader.read_u16().unwrap(), 3);
+    }
+
+    #[test]
+    fn cash_shop_warehouse_clamps_to_capacity_49() {
+        let items: Vec<ItemRecord> = (0..60)
+            .map(|idx| ItemRecord::new(90_000 + idx, 1))
+            .collect();
+        let frame = CashShopWarehousePacket { items }.encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::LOAD_ACCOUNT_WAREHOUSE);
+        let mut reader = PacketReader::new(raw.payload);
+        assert_eq!(reader.read_i16().unwrap(), 49);
+    }
+
+    #[test]
+    fn update_status_packet_encodes_110_byte_layout() {
+        let character = CharacterSummary {
+            hp: 1000,
+            ds: 500,
+            current_hp: 950,
+            current_ds: 480,
+            at: 70_000,
+            de: 120,
+            ms: 520,
+            partner_hp: 3000,
+            partner_ds: 1200,
+            partner_current_hp: 2900,
+            partner_current_ds: 1100,
+            partner_fs: 100,
+            partner_at: 85_000,
+            partner_de: 300,
+            partner_cc: 1500,
+            partner_as: 2400,
+            partner_ev: 800,
+            partner_ht: 900,
+            partner_ar: 150,
+            partner_bl: 100,
+            partner_clone_level: 6,
+            ..CharacterSummary::default()
+        };
+        let frame = UpdateStatusPacket { character }.encode();
+        let raw = PacketReader::from_frame(&frame).expect("frame should decode");
+        assert_eq!(raw.packet_type, game::UPDATE_STATUS);
+        assert_eq!(raw.payload.len(), 110);
+        let mut reader = PacketReader::new(raw.payload);
+        assert_eq!(reader.read_i32().unwrap(), 1000);
+        assert_eq!(reader.read_i32().unwrap(), 500);
+        assert_eq!(reader.read_i32().unwrap(), 950);
+        assert_eq!(reader.read_i32().unwrap(), 480);
+        assert_eq!(reader.read_u32().unwrap(), 70_000);
+        assert_eq!(reader.read_u32().unwrap(), 120);
+        assert_eq!(reader.read_u32().unwrap(), 520);
+        assert_eq!(reader.read_i32().unwrap(), 3000);
+        assert_eq!(reader.read_i32().unwrap(), 1200);
+        assert_eq!(reader.read_i32().unwrap(), 2900);
+        assert_eq!(reader.read_i32().unwrap(), 1100);
+        assert_eq!(reader.read_u32().unwrap(), 100);
+        assert_eq!(reader.read_u32().unwrap(), 85_000);
+        assert_eq!(reader.read_u32().unwrap(), 300);
+        assert_eq!(reader.read_u32().unwrap(), 1500);
+        assert_eq!(reader.read_u32().unwrap(), 2400);
+        assert_eq!(reader.read_u32().unwrap(), 800);
+        assert_eq!(reader.read_u32().unwrap(), 900);
+        assert_eq!(reader.read_u32().unwrap(), 150);
+        assert_eq!(reader.read_u32().unwrap(), 100);
+        assert_eq!(reader.read_u16().unwrap(), 6);
     }
 }

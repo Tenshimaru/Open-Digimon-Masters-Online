@@ -1137,6 +1137,8 @@ pub mod game {
     pub const LEVELUP_DIGIMON_IN_INCUBATER: i16 = 3250;
     // Extra inventory slot expansion notice {u1 flag; u2 slots}.
     pub const NTF_EXTRAINVEN_SLOTEXPANSION: i16 = 3702;
+    // Inventory sort lock toggle {u1 lock/container; u1 container; u2 slot}.
+    pub const INVENTORY_SORT_LOCK: i16 = 3997;
     // Ranking play progress {u2 dungeon; u4 value; u1 flag; u4 value; u2 value;
     // u4 value; u2 value; u4 value; u2 count; count x {u2 stage; u2 wave;
     // u4 value}}.

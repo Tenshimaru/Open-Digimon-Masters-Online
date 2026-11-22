@@ -259,6 +259,8 @@ impl PgRepository {
             }
         ]);
 
+        let smoke_inv = serde_json::to_value(crate::smoke_tamer_inventory())?;
+
         sqlx::query(
             "INSERT INTO characters (id, account_id, slot, name, model, level, current_x, current_y, current_map_id, partner_current_x, partner_current_y, partner_current_slot, general_handler, partner_handler, partner_name, partner_model, bits, inventory, warehouse, extra_inventory, account_warehouse, seal_list, available_channels, partner_slots, encyclopedia, deck_buff_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)",
         )
@@ -278,8 +280,8 @@ impl PgRepository {
         .bind(23000i32)
         .bind("Agumon")
         .bind(DEFAULT_PARTNER_MODEL_ID)
-        .bind(0i64)
-        .bind(&default_inv)
+        .bind(500_000i64)
+        .bind(&smoke_inv)
         .bind(&default_warehouse)
         .bind(&default_inv)
         .bind(&default_account_warehouse)
@@ -302,10 +304,10 @@ impl PgRepository {
         .bind(DEFAULT_START_MAP_ID)
         .bind(0i16)
         .bind(34000i32)
-        .bind(51001i32)
-        .bind(51001i32)
+        .bind(30331i32)
+        .bind(31033i32)
         .bind("Goblimon")
-        .bind(12i16)
+        .bind(18i16)
         .bind(DEFAULT_START_X + 66)
         .bind(DEFAULT_START_Y + 45)
         .bind(DEFAULT_START_X + 46)
@@ -321,10 +323,10 @@ impl PgRepository {
         .bind(DEFAULT_START_MAP_ID)
         .bind(0i16)
         .bind(34001i32)
-        .bind(51002i32)
-        .bind(51002i32)
+        .bind(40391i32)
+        .bind(41039i32)
         .bind("Woodmon")
-        .bind(18i16)
+        .bind(12i16)
         .bind(DEFAULT_START_X + 416)
         .bind(DEFAULT_START_Y + 225)
         .bind(DEFAULT_START_X + 386)

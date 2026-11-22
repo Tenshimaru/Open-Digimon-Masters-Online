@@ -1258,6 +1258,24 @@ impl RandomBoxRepository for JsonRepository {
     }
 }
 
+pub(crate) fn smoke_tamer_inventory() -> odmo_types::InventorySnapshot {
+    let mut items = vec![odmo_types::ItemRecord::default(); 30];
+    items[0] = odmo_types::ItemRecord::new(5101, 1);
+    items[1] = odmo_types::ItemRecord::new(90_101, 1);
+    items[2] = odmo_types::ItemRecord::new(5102, 5);
+    items[4] = odmo_types::ItemRecord::new(5832, 1);
+    let mut costume = odmo_types::ItemRecord::new(79_828, 1);
+    // Pre-bind costume so equip choreography skips the client's bind-confirmation modal.
+    costume.record[8] = 1;
+    items[5] = costume;
+    items[6] = odmo_types::ItemRecord::new(5101, 9);
+    odmo_types::InventorySnapshot {
+        bits: 500_000,
+        size: 30,
+        items,
+    }
+}
+
 pub(crate) fn get_npc_shops() -> Vec<NpcShopDefinition> {
     vec![
         NpcShopDefinition {
@@ -1489,6 +1507,9 @@ impl WorldSnapshot {
                         partner_handler: 23_000,
                         model: DEFAULT_TAMER_MODEL_ID,
                         partner_model: DEFAULT_PARTNER_MODEL_ID,
+                        inventory_bits: 500_000,
+                        inventory_size: 30,
+                        inventory: smoke_tamer_inventory(),
                         ..CharacterSummary::default()
                     }],
                 ),
@@ -1501,10 +1522,10 @@ impl WorldSnapshot {
                         map_id: DEFAULT_START_MAP_ID,
                         channel: 0,
                         handler: 34_000,
-                        type_id: 51_001,
-                        model: 51_001,
+                        type_id: 30_331,
+                        model: 31_033,
                         name: "Goblimon".to_string(),
-                        level: 12,
+                        level: 18,
                         x: DEFAULT_START_X + 66,
                         y: DEFAULT_START_Y + 45,
                         previous_x: DEFAULT_START_X + 46,
@@ -1516,10 +1537,10 @@ impl WorldSnapshot {
                         map_id: DEFAULT_START_MAP_ID,
                         channel: 0,
                         handler: 34_001,
-                        type_id: 51_002,
-                        model: 51_002,
+                        type_id: 40_391,
+                        model: 41_039,
                         name: "Woodmon".to_string(),
-                        level: 18,
+                        level: 12,
                         x: DEFAULT_START_X + 416,
                         y: DEFAULT_START_Y + 225,
                         previous_x: DEFAULT_START_X + 386,

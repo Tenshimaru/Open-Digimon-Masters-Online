@@ -16,38 +16,37 @@ use odmo_protocol::{
     ArenaFameInfoPacket, ArenaFameSeasonListPacket, ArenaOldRankingInfoPacket,
     ArenaRankingDailyLoadPacket, ArenaRankingDailyUpdatePointsPacket, ArenaRankingInfoPacket,
     AvailableChannelsPacket, CashShopBuyResponsePacket, CashShopCoinsPacket,
-    CashShopCropResponsePacket, CashShopWarehousePacket, CastSkillPacket,
-    ChangeTamerModelPacket, CountedWordNoticePacket, DailyCheckEventInfoPacket,
-    DailyCheckEventInfoRow,
-    DailyCheckEventItemResultPacket, DetailStatPair, DigiSummonPurchaseResponsePacket,
-    DigiSummonSyncResponsePacket, DigimonEvolutionFailPacket, DigimonEvolutionSuccessPacket,
-    DigimonToSpiritResultPacket, DigimonWalkPacket, DungeonArenaNextStagePacket,
-    EncyclopediaDeckBuffUsePacket, EncyclopediaLoadPacket, EncyclopediaReceiveRewardItemPacket,
+    CashShopCropResponsePacket, CashShopWarehousePacket, CashTradeTimeoutPacket, CastSkillPacket,
+    ChangeLimitedAttributePacket, ChangeTamerModelPacket, CountedWordNoticePacket,
+    DailyCheckEventInfoPacket, DailyCheckEventInfoRow, DailyCheckEventItemResultPacket,
+    DetailStatPair, DigiSummonPurchaseResponsePacket, DigiSummonSyncResponsePacket,
+    DigimonEvolutionFailPacket, DigimonEvolutionSuccessPacket, DigimonToSpiritResultPacket,
+    DigimonWalkPacket, DungeonArenaNextStagePacket, EncyclopediaDeckBuffUsePacket,
+    EncyclopediaLoadPacket, EncyclopediaReceiveRewardItemPacket, ExtraInventorySortPacket,
     GameConnectionPacket, GameInitialInfoPacket, GameRequest, GiftStorageRetrievePacket,
     GuildAuthorityUpdatePacket, GuildCreateFailPacket, GuildCreateSuccessPacket, GuildDeletePacket,
     GuildHistoricPacket, GuildInformationPacket, GuildInviteAcceptPacket, GuildInviteDenyPacket,
     GuildInviteFailPacket, GuildInviteSuccessPacket, GuildMemberKickPacket, GuildMemberQuitPacket,
     GuildMessagePacket, GuildNoticeUpdatePacket, GuildPromotionDemotionPacket, HitPacket, HitType,
-    InitUnionDataPacket, InventoryType, ItemConsumeFailPacket, ItemConsumeSuccessPacket,
-    ItemIdentifyPacket, ItemMoveFailPacket,
-    ItemMoveSuccessPacket, ItemRerollPacket, ItemReturnPacket, ItemSocketIdentifyPacket,
-    ItemSocketInPacket, ItemSocketOutPacket, ItemStoragePacket, KillOnHitPacket, KillOnSkillPacket,
-    LoadBuffsPacket, LoadDropsPacket, LoadInventoryPacket, LoadMobBuffsPacket, LoadMobsPacket,
-    LoadTamerPacket, LocalMapSwapPacket, MailListPacket, MapSwapPacket, MembershipPacket, MissHitPacket,
-    MonsterRespawnTimerPacket,
-    NpcPurchaseResultPacket, NpcSellResultPacket, NpcSellRow, OtherTamerDetailInfoPacket,
-    PartnerSkillErrorPacket, PartnerSwitchFailurePacket, PartnerSwitchPacket,
-    PartyChangeLootTypePacket, PartyCreatedPacket, PartyInvitePacket, PartyInviteResultPacket,
-    PartyJoinPacket, PartyKickPacket, PartyLeaderChangedPacket, PartyLeavePacket,
-    PartyMemberBuffChangePacket, PartyMemberBuffEntry, PartyMemberDisconnectedPacket,
-    PartyMemberInfoPacket, PartyMemberListEntry, PartyMemberListPacket, PartyMemberMapChangePacket,
-    PartyMemberPositionPacket, PickBitsPacket, PickItemFailPacket, PickItemFailReason,
-    PickItemPacket, QuestAvailableListPacket, QuestGoalUpdatePacket, RandomBoxListEntry,
-    RandomBoxListResponsePacket, RandomBoxPurchaseResponsePacket, RecompenseGainPacket,
-    RemoveBuffPacket, SealsPacket, ServerExperiencePacket, SpiritToDigimonResultPacket,
-    SplitItemPacket, SyncChatLine, SyncChatRecord, SyncMegaphoneLine, SyncNamedLine,
-    SyncWhisperLine,
-    TamerAttendancePacket, TamerChangeNamePacket, TamerRelationsPacket,
+    InitUnionDataPacket, InventorySortLockResponsePacket, InventoryType, ItemConsumeFailPacket,
+    ItemConsumeSuccessPacket, ItemIdentifyPacket, ItemMoveFailPacket, ItemMoveSuccessPacket,
+    ItemRerollPacket, ItemReturnPacket, ItemSocketIdentifyPacket, ItemSocketInPacket,
+    ItemSocketOutPacket, ItemStoragePacket, KillOnHitPacket, KillOnSkillPacket, LoadBuffsPacket,
+    LoadDropsPacket, LoadInventoryPacket, LoadMobBuffsPacket, LoadMobsPacket, LoadTamerPacket,
+    LocalMapSwapPacket, MailListPacket, MapSwapPacket, MembershipPacket, MissHitPacket,
+    MonsterRespawnTimerPacket, NpcPurchaseResultPacket, NpcSellResultPacket, NpcSellRow,
+    OtherTamerDetailInfoPacket, PartnerSkillErrorPacket, PartnerSwitchFailurePacket,
+    PartnerSwitchPacket, PartyChangeLootTypePacket, PartyCreatedPacket, PartyInvitePacket,
+    PartyInviteResultPacket, PartyJoinPacket, PartyKickPacket, PartyLeaderChangedPacket,
+    PartyLeavePacket, PartyMemberBuffChangePacket, PartyMemberBuffEntry,
+    PartyMemberDisconnectedPacket, PartyMemberInfoPacket, PartyMemberListEntry,
+    PartyMemberListPacket, PartyMemberMapChangePacket, PartyMemberPositionPacket, PickBitsPacket,
+    PickItemFailPacket, PickItemFailReason, PickItemPacket, QuestAvailableListPacket,
+    QuestGoalUpdatePacket, RandomBoxListEntry, RandomBoxListResponsePacket,
+    RandomBoxPurchaseResponsePacket, RecompenseGainPacket, RemoveBuffPacket, SealsPacket,
+    SerializedItemRow, ServerExperiencePacket, SpiritToDigimonResultPacket, SplitItemPacket,
+    SyncChatLine, SyncChatRecord, SyncMegaphoneLine, SyncNamedLine, SyncWhisperLine,
+    TamerAttendancePacket, TamerChangeNamePacket, TamerEquipItemPacket, TamerRelationsPacket,
     TamerWalkPacket, TamerXaiResourcesPacket, TimeRewardPacket, TradeAcceptPacket,
     TradeAddItemPacket, TradeAddMoneyPacket, TradeCancelPacket, TradeConfirmationPacket,
     TradeFinalConfirmationPacket, TradeInventoryLockPacket, TradeInventoryUnlockPacket,
@@ -842,25 +841,15 @@ impl GameApplication {
                     "processed item move request (Opcode 3904 / MoveItem)"
                 );
 
-                if character.inventory.items.len() < character.inventory.size as usize {
-                    character
-                        .inventory
-                        .items
-                        .resize_with(character.inventory.size as usize, ItemRecord::default);
-                }
-                if character.warehouse.items.len() < character.warehouse.size as usize {
-                    character
-                        .warehouse
-                        .items
-                        .resize_with(character.warehouse.size as usize, ItemRecord::default);
-                }
+                ensure_container_capacity(&mut character.inventory, INVENTORY_MAX_SLOTS);
+                ensure_container_capacity(&mut character.warehouse, WAREHOUSE_MAX_SLOTS);
                 if let Some(aw) = character.account_warehouse.as_mut() {
-                    if aw.items.len() < aw.size as usize {
-                        aw.items.resize_with(aw.size as usize, ItemRecord::default);
-                    }
+                    ensure_container_capacity(aw, ACCOUNT_WAREHOUSE_MAX_SLOTS);
                 }
-                if character.equipment.len() < 16 * 69 {
-                    character.equipment.resize(16 * 69, 0);
+                if character.equipment.len() < TAMER_EQUIPMENT_SLOTS * ITEM_RECORD_LEN {
+                    character
+                        .equipment
+                        .resize(TAMER_EQUIPMENT_SLOTS * ITEM_RECORD_LEN, 0);
                 }
 
                 const TAB_INVENTORY: u16 = 0;
@@ -881,9 +870,13 @@ impl GameApplication {
                 let dst_tab = tab_class(destination_slot);
                 let src_idx = tab_index(origin_slot);
                 let dst_idx = tab_index(destination_slot);
-                let item_assets = if matches!(src_tab, TAB_DIGIVICE | TAB_CHIPSET | TAB_TSKILL)
-                    || matches!(dst_tab, TAB_DIGIVICE | TAB_CHIPSET | TAB_TSKILL)
-                {
+                let item_assets = if matches!(
+                    src_tab,
+                    TAB_EQUIPMENT | TAB_DIGIVICE | TAB_CHIPSET | TAB_TSKILL
+                ) || matches!(
+                    dst_tab,
+                    TAB_EQUIPMENT | TAB_DIGIVICE | TAB_CHIPSET | TAB_TSKILL
+                ) {
                     Some(
                         self.repository
                             .item_assets()
@@ -898,7 +891,17 @@ impl GameApplication {
 
                 // Validate equipment moves
                 if dst_tab == TAB_EQUIPMENT {
-                    if dst_idx >= 16 {
+                    let inv_len = character.inventory.items.len().min(INVENTORY_MAX_SLOTS);
+                    let valid = src_tab == TAB_INVENTORY
+                        && dst_idx < TAMER_EQUIPMENT_SLOTS
+                        && src_idx < inv_len
+                        && can_equip_tamer_item(
+                            character.level,
+                            dst_idx,
+                            &character.inventory.items[src_idx],
+                            item_assets.as_deref().unwrap_or(&[]),
+                        );
+                    if !valid {
                         return Ok(vec![
                             ItemMoveFailPacket {
                                 origin_slot,
@@ -906,37 +909,6 @@ impl GameApplication {
                             }
                             .encode(),
                         ]);
-                    }
-                    let item = &character
-                        .inventory
-                        .items
-                        .get(src_idx)
-                        .cloned()
-                        .unwrap_or_default();
-                    if item.item_id <= 0 {
-                        return Ok(vec![
-                            ItemMoveFailPacket {
-                                origin_slot,
-                                destination_slot,
-                            }
-                            .encode(),
-                        ]);
-                    }
-                    let assets = self.repository.item_assets().unwrap_or_default();
-                    if let Some(asset) = assets.iter().find(|a| a.item_id == item.item_id) {
-                        let tamer_level = character.level as i32;
-                        if tamer_level < asset.tamer_min_level as i32
-                            || (asset.tamer_max_level > 0
-                                && tamer_level > asset.tamer_max_level as i32)
-                        {
-                            return Ok(vec![
-                                ItemMoveFailPacket {
-                                    origin_slot,
-                                    destination_slot,
-                                }
-                                .encode(),
-                            ]);
-                        }
                     }
                 }
 
@@ -946,9 +918,19 @@ impl GameApplication {
                     src_idx: usize,
                     dst_items: &mut [ItemRecord],
                     dst_idx: usize,
-                ) {
+                    reject_bound: bool,
+                ) -> bool {
+                    if src_idx >= src_items.len() || dst_idx >= dst_items.len() {
+                        return false;
+                    }
                     let origin_item = src_items[src_idx].clone();
                     let dest_item = dst_items[dst_idx].clone();
+                    if origin_item.item_id <= 0 && dest_item.item_id <= 0 {
+                        return false;
+                    }
+                    if reject_bound && (is_item_bound(&origin_item) || is_item_bound(&dest_item)) {
+                        return false;
+                    }
 
                     if dest_item.item_id > 0
                         && origin_item.item_id > 0
@@ -956,12 +938,14 @@ impl GameApplication {
                     {
                         let mut merged = dest_item;
                         merged.amount += origin_item.amount;
+                        merged.sync_record();
                         dst_items[dst_idx] = merged;
                         src_items[src_idx] = ItemRecord::default();
                     } else {
                         src_items[src_idx] = dest_item;
                         dst_items[dst_idx] = origin_item;
                     }
+                    true
                 }
 
                 // Same-tab move: swap via indices without double borrow
@@ -974,6 +958,7 @@ impl GameApplication {
                     if dest.item_id > 0 && origin.item_id > 0 && dest.item_id == origin.item_id {
                         let mut merged = dest;
                         merged.amount += origin.amount;
+                        merged.sync_record();
                         items[b] = merged;
                         items[a] = ItemRecord::default();
                     } else {
@@ -1180,30 +1165,29 @@ impl GameApplication {
                     }
                 }
 
+                let mut equip_updates: Vec<(usize, Option<ItemRecord>)> = Vec::new();
+                let mut limited_updates: Vec<u16> = Vec::new();
+                let inv_len = character.inventory.items.len().min(INVENTORY_MAX_SLOTS);
+                let wh_len = character.warehouse.items.len().min(WAREHOUSE_MAX_SLOTS);
+
                 let success = match (src_tab, dst_tab) {
                     (TAB_INVENTORY, TAB_INVENTORY) => {
-                        let len = character.inventory.items.len();
-                        if src_idx < len && dst_idx < len {
-                            swap_within(&mut character.inventory.items, src_idx, dst_idx);
+                        if src_idx < inv_len && dst_idx < inv_len {
+                            swap_within(&mut character.inventory.items[..inv_len], src_idx, dst_idx);
                             true
                         } else {
                             false
                         }
                     }
                     (TAB_INVENTORY, TAB_EQUIPMENT) => {
-                        let len = character.inventory.items.len();
-                        if src_idx < len && dst_idx < 16 {
-                            let item = &character.inventory.items[src_idx];
-                            if item.item_id > 0 {
-                                // Update equipment blob (69 bytes per slot)
-                                if character.equipment.len() < 16 * 69 {
-                                    character.equipment.resize(16 * 69, 0);
-                                }
-                                let offset = dst_idx * 69;
-                                character.equipment[offset..offset + 69]
-                                    .copy_from_slice(&item.record);
-
-                                character.inventory.items[src_idx] = ItemRecord::default();
+                        if src_idx < inv_len && dst_idx < TAMER_EQUIPMENT_SLOTS {
+                            let mut equipped = character.inventory.items[src_idx].clone();
+                            if equipped.item_id > 0 {
+                                let previous = read_equipment_slot(&character.equipment, dst_idx);
+                                set_item_bound(&mut equipped);
+                                write_equipment_slot(&mut character.equipment, dst_idx, &equipped);
+                                character.inventory.items[src_idx] = previous;
+                                equip_updates.push((dst_idx, Some(equipped)));
                                 true
                             } else {
                                 false
@@ -1213,49 +1197,40 @@ impl GameApplication {
                         }
                     }
                     (TAB_EQUIPMENT, TAB_INVENTORY) => {
-                        let len = character.inventory.items.len();
-                        if src_idx < 16 && dst_idx < len {
-                            let target_slot = if character.inventory.items[dst_idx].item_id == 0 {
-                                Some(dst_idx)
-                            } else {
-                                character.inventory.items.iter().position(|i| i.item_id == 0)
-                            };
-                            if let Some(target_idx) = target_slot {
-                                // Read from equipment blob
-                                if character.equipment.len() >= 16 * 69 {
-                                    let offset = src_idx * 69;
-                                    let record = character.equipment[offset..offset + 69].to_vec();
-
-                                    // Extract item_id (u32 LE at +0) and amount (u16 LE at +4) from the 69-byte record.
-                                    if record.len() >= 6 {
-                                        let item_id = u32::from_le_bytes([
-                                            record[0], record[1], record[2], record[3],
-                                        ]) as i32;
-                                        let amount = u16::from_le_bytes([record[4], record[5]]) as i32;
-
-                                        if item_id > 0 {
-                                            let mut unequipped_item = ItemRecord {
-                                                item_id,
-                                                amount,
-                                                record,
-                                            };
-                                            unequipped_item.sync_record(); // Ensure consistency
-                                            character.inventory.items[target_idx] = unequipped_item;
-
-                                            // Clear equipment slot
-                                            character.equipment[offset..offset + 69].fill(0);
-                                            true
-                                        } else {
-                                            false
-                                        }
-                                    } else {
-                                        false
-                                    }
+                        if src_idx < TAMER_EQUIPMENT_SLOTS && dst_idx < inv_len {
+                            let equipped = read_equipment_slot(&character.equipment, src_idx);
+                            if equipped.item_id > 0 {
+                                let dest_item = character.inventory.items[dst_idx].clone();
+                                if dest_item.item_id <= 0 {
+                                    character.inventory.items[dst_idx] = equipped;
+                                    write_equipment_slot(
+                                        &mut character.equipment,
+                                        src_idx,
+                                        &ItemRecord::default(),
+                                    );
+                                    equip_updates.push((src_idx, None));
+                                    true
+                                } else if can_equip_tamer_item(
+                                    character.level,
+                                    src_idx,
+                                    &dest_item,
+                                    item_assets.as_deref().unwrap_or(&[]),
+                                ) {
+                                    let mut replacement = dest_item;
+                                    set_item_bound(&mut replacement);
+                                    write_equipment_slot(
+                                        &mut character.equipment,
+                                        src_idx,
+                                        &replacement,
+                                    );
+                                    character.inventory.items[dst_idx] = equipped;
+                                    equip_updates.push((src_idx, Some(replacement)));
+                                    true
                                 } else {
                                     false
                                 }
                             } else {
-                                false // Inventory full
+                                false
                             }
                         } else {
                             false
@@ -1272,29 +1247,41 @@ impl GameApplication {
                         } else {
                             dst_idx
                         };
-                        if digivice_idx == 0 {
-                            swap_inventory_with_digivice_slot(
+                        if digivice_idx == 0 && inventory_idx < inv_len {
+                            let newly_bound = src_tab == TAB_INVENTORY
+                                && set_item_bound(&mut character.inventory.items[inventory_idx]);
+                            let moved = swap_inventory_with_digivice_slot(
                                 &mut character.inventory,
                                 inventory_idx,
                                 &mut character.digivice.equipped_item,
-                            )
+                            );
+                            if moved && newly_bound {
+                                limited_updates.push(destination_slot);
+                            }
+                            moved
                         } else {
                             false
                         }
                     }
                     (TAB_INVENTORY, TAB_CHIPSET) => {
-                        if dst_idx < character.digivice.chipsets.len() {
-                            swap_inventory_with_digivice_slot(
+                        if src_idx < inv_len && dst_idx < character.digivice.chipsets.len() {
+                            let newly_bound =
+                                set_item_bound(&mut character.inventory.items[src_idx]);
+                            let moved = swap_inventory_with_digivice_slot(
                                 &mut character.inventory,
                                 src_idx,
                                 &mut character.digivice.chipsets[dst_idx],
-                            )
+                            );
+                            if moved && newly_bound {
+                                limited_updates.push(destination_slot);
+                            }
+                            moved
                         } else {
                             false
                         }
                     }
                     (TAB_CHIPSET, TAB_INVENTORY) => {
-                        if src_idx < character.digivice.chipsets.len() {
+                        if dst_idx < inv_len && src_idx < character.digivice.chipsets.len() {
                             swap_inventory_with_digivice_slot(
                                 &mut character.inventory,
                                 dst_idx,
@@ -1314,18 +1301,24 @@ impl GameApplication {
                         }
                     }
                     (TAB_INVENTORY, TAB_TSKILL) => {
-                        if dst_idx < character.digivice.tamer_skills.len() {
-                            swap_inventory_with_digivice_slot(
+                        if src_idx < inv_len && dst_idx < character.digivice.tamer_skills.len() {
+                            let newly_bound =
+                                set_item_bound(&mut character.inventory.items[src_idx]);
+                            let moved = swap_inventory_with_digivice_slot(
                                 &mut character.inventory,
                                 src_idx,
                                 &mut character.digivice.tamer_skills[dst_idx],
-                            )
+                            );
+                            if moved && newly_bound {
+                                limited_updates.push(destination_slot);
+                            }
+                            moved
                         } else {
                             false
                         }
                     }
                     (TAB_TSKILL, TAB_INVENTORY) => {
-                        if src_idx < character.digivice.tamer_skills.len() {
+                        if dst_idx < inv_len && src_idx < character.digivice.tamer_skills.len() {
                             swap_inventory_with_digivice_slot(
                                 &mut character.inventory,
                                 dst_idx,
@@ -1345,80 +1338,92 @@ impl GameApplication {
                         }
                     }
                     (TAB_WAREHOUSE, TAB_WAREHOUSE) => {
-                        let len = character.warehouse.items.len();
-                        if src_idx < len && dst_idx < len {
-                            swap_within(&mut character.warehouse.items, src_idx, dst_idx);
+                        if src_idx < wh_len && dst_idx < wh_len {
+                            swap_within(&mut character.warehouse.items[..wh_len], src_idx, dst_idx);
                             true
                         } else {
                             false
                         }
                     }
-                    (TAB_INVENTORY, TAB_WAREHOUSE) => {
-                        let i_len = character.inventory.items.len();
-                        let w_len = character.warehouse.items.len();
-                        if src_idx < i_len && dst_idx < w_len {
-                            transfer_between(
-                                &mut character.inventory.items,
-                                src_idx,
-                                &mut character.warehouse.items,
-                                dst_idx,
-                            );
-                            true
-                        } else {
-                            false
-                        }
-                    }
-                    (TAB_WAREHOUSE, TAB_INVENTORY) => {
-                        let w_len = character.warehouse.items.len();
-                        let i_len = character.inventory.items.len();
-                        if src_idx < w_len && dst_idx < i_len {
-                            transfer_between(
-                                &mut character.warehouse.items,
-                                src_idx,
-                                &mut character.inventory.items,
-                                dst_idx,
-                            );
-                            true
-                        } else {
-                            false
-                        }
-                    }
-                    (TAB_INVENTORY, TAB_SHARESTASH) => {
-                        let aw = character.account_warehouse.as_mut();
-                        match aw {
-                            Some(aw)
-                                if src_idx < character.inventory.items.len()
-                                    && dst_idx < aw.items.len() =>
-                            {
-                                transfer_between(
-                                    &mut character.inventory.items,
-                                    src_idx,
-                                    &mut aw.items,
-                                    dst_idx,
-                                );
+                    (TAB_INVENTORY, TAB_WAREHOUSE) => transfer_between(
+                        &mut character.inventory.items[..inv_len],
+                        src_idx,
+                        &mut character.warehouse.items[..wh_len],
+                        dst_idx,
+                        false,
+                    ),
+                    (TAB_WAREHOUSE, TAB_INVENTORY) => transfer_between(
+                        &mut character.warehouse.items[..wh_len],
+                        src_idx,
+                        &mut character.inventory.items[..inv_len],
+                        dst_idx,
+                        false,
+                    ),
+                    (TAB_SHARESTASH, TAB_SHARESTASH) => match character.account_warehouse.as_mut()
+                    {
+                        Some(aw) => {
+                            let aw_len = aw.items.len().min(ACCOUNT_WAREHOUSE_MAX_SLOTS);
+                            if src_idx < aw_len && dst_idx < aw_len {
+                                swap_within(&mut aw.items[..aw_len], src_idx, dst_idx);
                                 true
+                            } else {
+                                false
                             }
-                            _ => false,
                         }
-                    }
-                    (TAB_SHARESTASH, TAB_INVENTORY) => {
-                        let aw = character.account_warehouse.as_mut();
-                        match aw {
-                            Some(aw)
-                                if src_idx < aw.items.len()
-                                    && dst_idx < character.inventory.items.len() =>
-                            {
-                                transfer_between(
-                                    &mut aw.items,
-                                    src_idx,
-                                    &mut character.inventory.items,
-                                    dst_idx,
-                                );
-                                true
-                            }
-                            _ => false,
+                        None => false,
+                    },
+                    (TAB_INVENTORY, TAB_SHARESTASH) => match character.account_warehouse.as_mut() {
+                        Some(aw) => {
+                            let aw_len = aw.items.len().min(ACCOUNT_WAREHOUSE_MAX_SLOTS);
+                            transfer_between(
+                                &mut character.inventory.items[..inv_len],
+                                src_idx,
+                                &mut aw.items[..aw_len],
+                                dst_idx,
+                                true,
+                            )
                         }
-                    }
+                        None => false,
+                    },
+                    (TAB_SHARESTASH, TAB_INVENTORY) => match character.account_warehouse.as_mut() {
+                        Some(aw) => {
+                            let aw_len = aw.items.len().min(ACCOUNT_WAREHOUSE_MAX_SLOTS);
+                            transfer_between(
+                                &mut aw.items[..aw_len],
+                                src_idx,
+                                &mut character.inventory.items[..inv_len],
+                                dst_idx,
+                                true,
+                            )
+                        }
+                        None => false,
+                    },
+                    (TAB_WAREHOUSE, TAB_SHARESTASH) => match character.account_warehouse.as_mut() {
+                        Some(aw) => {
+                            let aw_len = aw.items.len().min(ACCOUNT_WAREHOUSE_MAX_SLOTS);
+                            transfer_between(
+                                &mut character.warehouse.items[..wh_len],
+                                src_idx,
+                                &mut aw.items[..aw_len],
+                                dst_idx,
+                                true,
+                            )
+                        }
+                        None => false,
+                    },
+                    (TAB_SHARESTASH, TAB_WAREHOUSE) => match character.account_warehouse.as_mut() {
+                        Some(aw) => {
+                            let aw_len = aw.items.len().min(ACCOUNT_WAREHOUSE_MAX_SLOTS);
+                            transfer_between(
+                                &mut aw.items[..aw_len],
+                                src_idx,
+                                &mut character.warehouse.items[..wh_len],
+                                dst_idx,
+                                true,
+                            )
+                        }
+                        None => false,
+                    },
                     _ => false,
                 };
 
@@ -1454,6 +1459,31 @@ impl GameApplication {
                         }
                         .encode(),
                     );
+                    for (equip_slot, equip_item) in equip_updates {
+                        let pkt = build_tamer_equip_packet(
+                            &character,
+                            equip_slot,
+                            equip_item.as_ref(),
+                        );
+                        if let Some(broadcast) = &self.broadcast {
+                            let _ = broadcast.send_to_visible(
+                                character.map_id,
+                                character.channel,
+                                character.id,
+                                &pkt,
+                            );
+                        }
+                        responses.push(pkt);
+                    }
+                    for bound_slot in limited_updates {
+                        responses.push(
+                            ChangeLimitedAttributePacket {
+                                attribute: bound_slot,
+                                flag: 1,
+                            }
+                            .encode(),
+                        );
+                    }
                     for tab in [Some(src_tab), (dst_tab != src_tab).then_some(dst_tab)]
                         .into_iter()
                         .flatten()
@@ -1510,17 +1540,10 @@ impl GameApplication {
                     "processed item split request (Opcode 3907 / SplitItem)"
                 );
 
-                if character.inventory.items.len() < character.inventory.size as usize {
-                    character
-                        .inventory
-                        .items
-                        .resize_with(character.inventory.size as usize, ItemRecord::default);
-                }
-                if character.warehouse.items.len() < character.warehouse.size as usize {
-                    character
-                        .warehouse
-                        .items
-                        .resize_with(character.warehouse.size as usize, ItemRecord::default);
+                ensure_container_capacity(&mut character.inventory, INVENTORY_MAX_SLOTS);
+                ensure_container_capacity(&mut character.warehouse, WAREHOUSE_MAX_SLOTS);
+                if let Some(aw) = character.account_warehouse.as_mut() {
+                    ensure_container_capacity(aw, ACCOUNT_WAREHOUSE_MAX_SLOTS);
                 }
 
                 fn tab_class(sid: u16) -> u16 {
@@ -1535,45 +1558,55 @@ impl GameApplication {
                 let src_idx = tab_index(origin_slot);
                 let dst_idx = tab_index(destination_slot);
 
-                fn split_within(
-                    items: &mut [ItemRecord],
-                    src: usize,
-                    dst: usize,
+                fn apply_split(
+                    source: ItemRecord,
+                    dest: ItemRecord,
                     amt: i32,
-                ) -> bool {
-                    if src >= items.len() || dst >= items.len() {
-                        return false;
+                    reject_bound: bool,
+                ) -> Option<(ItemRecord, ItemRecord)> {
+                    if amt <= 0 || source.item_id <= 0 || source.amount < amt {
+                        return None;
                     }
-                    let source = items[src].clone();
-                    let dest = items[dst].clone();
-                    if source.item_id <= 0 || source.amount < amt {
-                        return false;
+                    if reject_bound && is_item_bound(&source) {
+                        return None;
                     }
                     if dest.item_id > 0 && dest.item_id != source.item_id {
-                        return false;
+                        return None;
                     }
-
-                    if dest.item_id > 0 {
+                    let new_dest = if dest.item_id > 0 {
                         let mut updated = dest;
                         updated.amount += amt;
                         updated.sync_record();
-                        items[dst] = updated;
+                        updated
                     } else {
                         let mut new_item = source.clone();
                         new_item.amount = amt;
                         new_item.sync_record();
-                        items[dst] = new_item;
-                    }
-
+                        new_item
+                    };
                     let remaining = source.amount - amt;
-                    if remaining <= 0 {
-                        items[src] = ItemRecord::default();
+                    let new_src = if remaining <= 0 {
+                        ItemRecord::default()
                     } else {
                         let mut updated = source;
                         updated.amount = remaining;
                         updated.sync_record();
-                        items[src] = updated;
+                        updated
+                    };
+                    Some((new_src, new_dest))
+                }
+
+                fn split_within(items: &mut [ItemRecord], src: usize, dst: usize, amt: i32) -> bool {
+                    if src == dst || src >= items.len() || dst >= items.len() {
+                        return false;
                     }
+                    let Some((new_src, new_dst)) =
+                        apply_split(items[src].clone(), items[dst].clone(), amt, false)
+                    else {
+                        return false;
+                    };
+                    items[src] = new_src;
+                    items[dst] = new_dst;
                     true
                 }
 
@@ -1583,70 +1616,112 @@ impl GameApplication {
                     dst_items: &mut [ItemRecord],
                     dst_idx: usize,
                     amt: i32,
+                    reject_bound: bool,
                 ) -> bool {
                     if src_idx >= src_items.len() || dst_idx >= dst_items.len() {
                         return false;
                     }
-                    let source = src_items[src_idx].clone();
-                    let dest = dst_items[dst_idx].clone();
-                    if source.item_id <= 0 || source.amount < amt {
+                    let Some((new_src, new_dst)) = apply_split(
+                        src_items[src_idx].clone(),
+                        dst_items[dst_idx].clone(),
+                        amt,
+                        reject_bound,
+                    ) else {
                         return false;
-                    }
-                    if dest.item_id > 0 && dest.item_id != source.item_id {
-                        return false;
-                    }
-
-                    if dest.item_id > 0 {
-                        let mut updated = dest;
-                        updated.amount += amt;
-                        updated.sync_record();
-                        dst_items[dst_idx] = updated;
-                    } else {
-                        let mut new_item = source.clone();
-                        new_item.amount = amt;
-                        new_item.sync_record();
-                        dst_items[dst_idx] = new_item;
-                    }
-
-                    let remaining = source.amount - amt;
-                    if remaining <= 0 {
-                        src_items[src_idx] = ItemRecord::default();
-                    } else {
-                        let mut updated = source;
-                        updated.amount = remaining;
-                        updated.sync_record();
-                        src_items[src_idx] = updated;
-                    }
+                    };
+                    src_items[src_idx] = new_src;
+                    dst_items[dst_idx] = new_dst;
                     true
                 }
 
+                let inv_len = character.inventory.items.len().min(INVENTORY_MAX_SLOTS);
+                let wh_len = character.warehouse.items.len().min(WAREHOUSE_MAX_SLOTS);
+                let amt = amount as i32;
+
                 let success = match (src_tab, dst_tab) {
-                    (0, 0) => split_within(
-                        &mut character.inventory.items,
-                        src_idx,
-                        dst_idx,
-                        amount as i32,
-                    ),
-                    (2000, 2000) => split_within(
-                        &mut character.warehouse.items,
-                        src_idx,
-                        dst_idx,
-                        amount as i32,
-                    ),
+                    (0, 0) => split_within(&mut character.inventory.items[..inv_len], src_idx, dst_idx, amt),
+                    (2000, 2000) => {
+                        split_within(&mut character.warehouse.items[..wh_len], src_idx, dst_idx, amt)
+                    }
+                    (9000, 9000) => match character.account_warehouse.as_mut() {
+                        Some(aw) => {
+                            let aw_len = aw.items.len().min(ACCOUNT_WAREHOUSE_MAX_SLOTS);
+                            split_within(&mut aw.items[..aw_len], src_idx, dst_idx, amt)
+                        }
+                        None => false,
+                    },
                     (0, 2000) => split_cross(
-                        &mut character.inventory.items,
+                        &mut character.inventory.items[..inv_len],
                         src_idx,
-                        &mut character.warehouse.items,
+                        &mut character.warehouse.items[..wh_len],
                         dst_idx,
-                        amount as i32,
+                        amt,
+                        false,
                     ),
                     (2000, 0) => split_cross(
-                        &mut character.warehouse.items,
+                        &mut character.warehouse.items[..wh_len],
                         src_idx,
-                        &mut character.inventory.items,
+                        &mut character.inventory.items[..inv_len],
                         dst_idx,
-                        amount as i32,
+                        amt,
+                        false,
                     ),
+                    (0, 9000) => match character.account_warehouse.as_mut() {
+                        Some(aw) => {
+                            let aw_len = aw.items.len().min(ACCOUNT_WAREHOUSE_MAX_SLOTS);
+                            split_cross(
+                                &mut character.inventory.items[..inv_len],
+                                src_idx,
+                                &mut aw.items[..aw_len],
+                                dst_idx,
+                                amt,
+                                true,
+                            )
+                        }
+                        None => false,
+                    },
+                    (9000, 0) => match character.account_warehouse.as_mut() {
+                        Some(aw) => {
+                            let aw_len = aw.items.len().min(ACCOUNT_WAREHOUSE_MAX_SLOTS);
+                            split_cross(
+                                &mut aw.items[..aw_len],
+                                src_idx,
+                                &mut character.inventory.items[..inv_len],
+                                dst_idx,
+                                amt,
+                                true,
+                            )
+                        }
+                        None => false,
+                    },
+                    (2000, 9000) => match character.account_warehouse.as_mut() {
+                        Some(aw) => {
+                            let aw_len = aw.items.len().min(ACCOUNT_WAREHOUSE_MAX_SLOTS);
+                            split_cross(
+                                &mut character.warehouse.items[..wh_len],
+                                src_idx,
+                                &mut aw.items[..aw_len],
+                                dst_idx,
+                                amt,
+                                true,
+                            )
+                        }
+                        None => false,
+                    },
+                    (9000, 2000) => match character.account_warehouse.as_mut() {
+                        Some(aw) => {
+                            let aw_len = aw.items.len().min(ACCOUNT_WAREHOUSE_MAX_SLOTS);
+                            split_cross(
+                                &mut aw.items[..aw_len],
+                                src_idx,
+                                &mut character.warehouse.items[..wh_len],
+                                dst_idx,
+                                amt,
+                                true,
+                            )
+                        }
+                        None => false,
+                    },
                     _ => false,
                 };
 
@@ -1667,6 +1742,11 @@ impl GameApplication {
                 self.repository
                     .update_warehouse(character_id, character.warehouse.clone())
                     .map_err(|error| GameFlowError::Storage(error.to_string()))?;
+                if let Some(aw) = &character.account_warehouse {
+                    self.repository
+                        .update_account_warehouse(character_id, aw.clone())
+                        .map_err(|error| GameFlowError::Storage(error.to_string()))?;
+                }
 
                 let mut responses = Vec::new();
                 responses.push(
@@ -1684,6 +1764,13 @@ impl GameApplication {
                     let (inv, ty) = match tab {
                         0 => (&character.inventory, InventoryType::Inventory),
                         2000 => (&character.warehouse, InventoryType::Warehouse),
+                        9000 => (
+                            character
+                                .account_warehouse
+                                .as_ref()
+                                .unwrap_or_else(|| unreachable!()),
+                            InventoryType::AccountWarehouse,
+                        ),
                         _ => continue,
                     };
                     responses.push(
@@ -1709,21 +1796,29 @@ impl GameApplication {
                     .map_err(|error| GameFlowError::Storage(error.to_string()))?
                     .ok_or(GameFlowError::CharacterNotFound(character_id))?;
 
-                if character.inventory.items.len() < character.inventory.size as usize {
-                    character
-                        .inventory
-                        .items
-                        .resize_with(character.inventory.size as usize, ItemRecord::default);
-                }
+                ensure_container_capacity(&mut character.inventory, INVENTORY_MAX_SLOTS);
 
                 let slot_idx = slot as usize;
-                if slot_idx >= character.inventory.items.len() {
-                    return Ok(Vec::new());
+                let inv_len = character.inventory.items.len().min(INVENTORY_MAX_SLOTS);
+                if slot_idx >= inv_len || amount == 0 {
+                    return Ok(vec![
+                        LoadInventoryPacket {
+                            inventory: character.inventory,
+                            inventory_type: InventoryType::Inventory,
+                        }
+                        .encode(),
+                    ]);
                 }
 
                 let item = &character.inventory.items[slot_idx];
-                if item.item_id <= 0 || item.amount <= 0 {
-                    return Ok(Vec::new());
+                if item.item_id <= 0 || item.amount < amount as i32 {
+                    return Ok(vec![
+                        LoadInventoryPacket {
+                            inventory: character.inventory,
+                            inventory_type: InventoryType::Inventory,
+                        }
+                        .encode(),
+                    ]);
                 }
 
                 let new_amount = item.amount - amount as i32;
@@ -1740,13 +1835,8 @@ impl GameApplication {
                     .update_inventory(character_id, character.inventory.clone())
                     .map_err(|error| GameFlowError::Storage(error.to_string()))?;
 
-                Ok(vec![
-                    LoadInventoryPacket {
-                        inventory: character.inventory,
-                        inventory_type: InventoryType::Inventory,
-                    }
-                    .encode(),
-                ])
+                // Item-drop is client-optimistic with no confirmation response; resync occurs only on mismatch.
+                Ok(Vec::new())
             }
             GameRequest::NpcPurchase {
                 vip: _,
@@ -2238,8 +2328,8 @@ impl GameApplication {
                 self.handle_extra_inventory_batch_move(session)
             }
             // ExtraInventory — sort items in extra inventory
-            GameRequest::ExtraInventorySort { category: _ } => {
-                self.handle_extra_inventory_sort(session)
+            GameRequest::ExtraInventorySort { category } => {
+                self.handle_extra_inventory_sort(session, category)
             }
             // ExtraInventory — use/consume item from extra inventory
             GameRequest::ExtraInventoryUse {
@@ -2678,6 +2768,14 @@ impl GameApplication {
             // the sorted snapshot back to the client so its local state stays consistent.
             GameRequest::InventorySort { sort_type } => {
                 self.handle_inventory_sort(session, sort_type)
+            }
+            GameRequest::InventorySortLock {
+                lock,
+                container,
+                slot,
+            } => self.handle_inventory_sort_lock(session, lock, container, slot),
+            GameRequest::ItemCashTradeTimeout { slot } => {
+                self.handle_item_cash_trade_timeout(session, slot)
             }
             // ItemIdentify — flip the identification flag on the target accessory and
             // echo the (already random-rolled) accessory stats back to the client.
@@ -6278,35 +6376,42 @@ impl GameApplication {
             .map_err(|error| GameFlowError::Storage(error.to_string()))?
             .ok_or(GameFlowError::CharacterNotFound(character_id))?;
 
-        // Sort the slot vector in-place by item_id ascending. Empty slots (item_id == 0)
-        // are pushed to the back so the UI shows packed inventory first.
-        character
-            .inventory
-            .items
-            .sort_by(|a, b| match (a.item_id, b.item_id) {
-                (0, 0) => std::cmp::Ordering::Equal,
-                (0, _) => std::cmp::Ordering::Greater,
-                (_, 0) => std::cmp::Ordering::Less,
-                (left, right) => left.cmp(&right),
-            });
-
-        // Renumber the slot indices so the inventory is dense — `ItemRecord` does not
-        // expose an explicit slot field; the slot is the array index, so the sort above
-        // is enough to expose the new layout to the client.
-        let _ = sort_type; // silence unused-variable warning when the only mode supported is "by id"
-
-        let inventory = character.inventory.clone();
-        self.repository
-            .update_inventory(character_id, inventory.clone())
-            .map_err(|error| GameFlowError::Storage(error.to_string()))?;
-
-        // Refresh the modified container after sorting.
-        let inv_type = match sort_type {
-            1 | 2 => InventoryType::Warehouse,
-            3 => InventoryType::ExtraInventory,
-            9 => InventoryType::AccountWarehouse,
-            _ => InventoryType::Inventory,
+        let (inventory, inv_type) = match sort_type {
+            1 | 2 => {
+                sort_snapshot_with_locks(&mut character.warehouse, WAREHOUSE_MAX_SLOTS);
+                self.repository
+                    .update_warehouse(character_id, character.warehouse.clone())
+                    .map_err(|error| GameFlowError::Storage(error.to_string()))?;
+                (character.warehouse, InventoryType::Warehouse)
+            }
+            3 => {
+                sort_snapshot_with_locks(&mut character.extra_inventory, usize::MAX);
+                self.repository
+                    .update_extra_inventory(character_id, character.extra_inventory.clone())
+                    .map_err(|error| GameFlowError::Storage(error.to_string()))?;
+                (character.extra_inventory, InventoryType::ExtraInventory)
+            }
+            9 => match character.account_warehouse.as_mut() {
+                Some(aw) => {
+                    sort_snapshot_with_locks(aw, ACCOUNT_WAREHOUSE_MAX_SLOTS);
+                    self.repository
+                        .update_account_warehouse(character_id, aw.clone())
+                        .map_err(|error| GameFlowError::Storage(error.to_string()))?;
+                    (aw.clone(), InventoryType::AccountWarehouse)
+                }
+                None => {
+                    return Ok(Vec::new());
+                }
+            },
+            _ => {
+                sort_snapshot_with_locks(&mut character.inventory, INVENTORY_MAX_SLOTS);
+                self.repository
+                    .update_inventory(character_id, character.inventory.clone())
+                    .map_err(|error| GameFlowError::Storage(error.to_string()))?;
+                (character.inventory, InventoryType::Inventory)
+            }
         };
+
         Ok(vec![
             LoadInventoryPacket {
                 inventory,
@@ -8744,6 +8849,7 @@ impl GameApplication {
     fn handle_extra_inventory_sort(
         &self,
         session: &GameSession,
+        category: u8,
     ) -> Result<Vec<Vec<u8>>, GameFlowError> {
         let character_id = session.character_id.ok_or(GameFlowError::Unauthenticated)?;
         let mut character = self
@@ -8752,28 +8858,210 @@ impl GameApplication {
             .map_err(|error| GameFlowError::Storage(error.to_string()))?
             .ok_or(GameFlowError::CharacterNotFound(character_id))?;
 
-        let mut items: Vec<ItemRecord> = character
-            .extra_inventory
-            .items
+        let items = match category {
+            0 => {
+                sort_snapshot_with_locks(&mut character.inventory, INVENTORY_MAX_SLOTS);
+                self.repository
+                    .update_inventory(character_id, character.inventory.clone())
+                    .map_err(|error| GameFlowError::Storage(error.to_string()))?;
+                snapshot_to_serialized_rows(&character.inventory, INVENTORY_MAX_SLOTS)
+            }
+            2 => {
+                sort_snapshot_with_locks(&mut character.warehouse, WAREHOUSE_MAX_SLOTS);
+                self.repository
+                    .update_warehouse(character_id, character.warehouse.clone())
+                    .map_err(|error| GameFlowError::Storage(error.to_string()))?;
+                snapshot_to_serialized_rows(&character.warehouse, WAREHOUSE_MAX_SLOTS)
+            }
+            9 => match character.account_warehouse.as_mut() {
+                Some(aw) => {
+                    sort_snapshot_with_locks(aw, ACCOUNT_WAREHOUSE_MAX_SLOTS);
+                    self.repository
+                        .update_account_warehouse(character_id, aw.clone())
+                        .map_err(|error| GameFlowError::Storage(error.to_string()))?;
+                    snapshot_to_serialized_rows(aw, ACCOUNT_WAREHOUSE_MAX_SLOTS)
+                }
+                None => {
+                    return Ok(vec![
+                        ExtraInventorySortPacket {
+                            status: 1,
+                            kind: category,
+                            items: Vec::new(),
+                        }
+                        .encode(),
+                    ]);
+                }
+            },
+            11..=15 => {
+                sort_snapshot_with_locks(&mut character.extra_inventory, usize::MAX);
+                self.repository
+                    .update_extra_inventory(character_id, character.extra_inventory.clone())
+                    .map_err(|error| GameFlowError::Storage(error.to_string()))?;
+                snapshot_to_serialized_rows(&character.extra_inventory, usize::MAX)
+            }
+            _ => {
+                return Ok(vec![
+                    ExtraInventorySortPacket {
+                        status: 1,
+                        kind: category,
+                        items: Vec::new(),
+                    }
+                    .encode(),
+                ]);
+            }
+        };
+
+        Ok(vec![
+            ExtraInventorySortPacket {
+                status: 0,
+                kind: category,
+                items,
+            }
+            .encode(),
+        ])
+    }
+
+    fn handle_inventory_sort_lock(
+        &self,
+        session: &GameSession,
+        lock: bool,
+        container: u8,
+        slot: u16,
+    ) -> Result<Vec<Vec<u8>>, GameFlowError> {
+        let character_id = session.character_id.ok_or(GameFlowError::Unauthenticated)?;
+        let mut character = self
+            .repository
+            .character_by_id(character_id)
+            .map_err(|error| GameFlowError::Storage(error.to_string()))?
+            .ok_or(GameFlowError::CharacterNotFound(character_id))?;
+
+        let slot_idx = usize::from(slot);
+        let updated = match container {
+            0 => {
+                ensure_container_capacity(&mut character.inventory, INVENTORY_MAX_SLOTS);
+                if slot_idx < character.inventory.items.len().min(INVENTORY_MAX_SLOTS)
+                    && character.inventory.items[slot_idx].item_id > 0
+                {
+                    set_item_sort_locked(&mut character.inventory.items[slot_idx], lock);
+                    self.repository
+                        .update_inventory(character_id, character.inventory)
+                        .map_err(|error| GameFlowError::Storage(error.to_string()))?;
+                    true
+                } else {
+                    false
+                }
+            }
+            2 => {
+                ensure_container_capacity(&mut character.warehouse, WAREHOUSE_MAX_SLOTS);
+                if slot_idx < character.warehouse.items.len().min(WAREHOUSE_MAX_SLOTS)
+                    && character.warehouse.items[slot_idx].item_id > 0
+                {
+                    set_item_sort_locked(&mut character.warehouse.items[slot_idx], lock);
+                    self.repository
+                        .update_warehouse(character_id, character.warehouse)
+                        .map_err(|error| GameFlowError::Storage(error.to_string()))?;
+                    true
+                } else {
+                    false
+                }
+            }
+            9 => match character.account_warehouse.as_mut() {
+                Some(aw) => {
+                    ensure_container_capacity(aw, ACCOUNT_WAREHOUSE_MAX_SLOTS);
+                    if slot_idx < aw.items.len().min(ACCOUNT_WAREHOUSE_MAX_SLOTS)
+                        && aw.items[slot_idx].item_id > 0
+                    {
+                        set_item_sort_locked(&mut aw.items[slot_idx], lock);
+                        let cloned = aw.clone();
+                        self.repository
+                            .update_account_warehouse(character_id, cloned)
+                            .map_err(|error| GameFlowError::Storage(error.to_string()))?;
+                        true
+                    } else {
+                        false
+                    }
+                }
+                None => false,
+            },
+            _ => false,
+        };
+
+        Ok(vec![
+            InventorySortLockResponsePacket {
+                result: u32::from(!updated),
+                container,
+                slot,
+            }
+            .encode(),
+        ])
+    }
+
+    fn handle_item_cash_trade_timeout(
+        &self,
+        session: &GameSession,
+        slot: u16,
+    ) -> Result<Vec<Vec<u8>>, GameFlowError> {
+        let character_id = session.character_id.ok_or(GameFlowError::Unauthenticated)?;
+        let mut character = self
+            .repository
+            .character_by_id(character_id)
+            .map_err(|error| GameFlowError::Storage(error.to_string()))?
+            .ok_or(GameFlowError::CharacterNotFound(character_id))?;
+
+        ensure_container_capacity(&mut character.inventory, INVENTORY_MAX_SLOTS);
+        let slot_idx = usize::from(slot);
+        let inv_len = character.inventory.items.len().min(INVENTORY_MAX_SLOTS);
+        if slot_idx >= inv_len {
+            return Ok(vec![
+                LoadInventoryPacket {
+                    inventory: character.inventory,
+                    inventory_type: InventoryType::Inventory,
+                }
+                .encode(),
+            ]);
+        }
+
+        let item_id = character.inventory.items[slot_idx].item_id;
+        let amount = character.inventory.items[slot_idx].amount;
+        if item_id <= 0 || amount <= 0 {
+            return Ok(vec![
+                LoadInventoryPacket {
+                    inventory: character.inventory,
+                    inventory_type: InventoryType::Inventory,
+                }
+                .encode(),
+            ]);
+        }
+
+        let assets = self
+            .repository
+            .item_assets()
+            .map_err(|error| GameFlowError::Storage(error.to_string()))?;
+        let duration_secs = assets
             .iter()
-            .filter(|item| item.item_id > 0 && item.amount > 0)
-            .cloned()
-            .collect();
-        items.sort_by_key(|item| item.item_id);
+            .find(|asset| asset.item_id == item_id)
+            .map(|asset| asset.usage_time_minutes)
+            .filter(|&mins| mins > 0)
+            .map(|mins| u32::try_from(mins).unwrap_or(u32::MAX).saturating_mul(60))
+            .unwrap_or(86_400);
+        let end_time = unix_timestamp().saturating_add(duration_secs);
 
-        let empty_count = character.extra_inventory.items.len() - items.len();
-        items.resize(items.len() + empty_count, ItemRecord::default());
-
-        character.extra_inventory.items = items;
+        let item = &mut character.inventory.items[slot_idx];
+        set_item_bound(item);
+        if item.record.len() < ITEM_RECORD_LEN {
+            item.record.resize(ITEM_RECORD_LEN, 0);
+        }
+        item.record[65..69].copy_from_slice(&end_time.to_le_bytes());
 
         self.repository
-            .update_extra_inventory(character_id, character.extra_inventory.clone())
+            .update_inventory(character_id, character.inventory.clone())
             .map_err(|error| GameFlowError::Storage(error.to_string()))?;
 
         Ok(vec![
-            LoadInventoryPacket {
-                inventory: character.extra_inventory,
-                inventory_type: InventoryType::ExtraInventory,
+            CashTradeTimeoutPacket {
+                trade: slot,
+                first: item_id as u32,
+                second: end_time,
             }
             .encode(),
         ])
@@ -9942,6 +10230,190 @@ pub enum GameFlowError {
     PortalBridge(String),
     #[error("storage error: {0}")]
     Storage(String),
+}
+
+const INVENTORY_MAX_SLOTS: usize = 200;
+const WAREHOUSE_MAX_SLOTS: usize = 364;
+const ACCOUNT_WAREHOUSE_MAX_SLOTS: usize = 364;
+const TAMER_EQUIPMENT_SLOTS: usize = 16;
+const ITEM_RECORD_LEN: usize = 69;
+
+fn ensure_container_capacity(snapshot: &mut odmo_types::InventorySnapshot, max_slots: usize) {
+    let cap = (snapshot.size as usize).min(max_slots);
+    if snapshot.items.len() < cap {
+        snapshot.items.resize_with(cap, ItemRecord::default);
+    }
+}
+
+fn read_equipment_slot(equipment: &[u8], slot_idx: usize) -> ItemRecord {
+    if slot_idx >= TAMER_EQUIPMENT_SLOTS {
+        return ItemRecord::default();
+    }
+    let offset = slot_idx * ITEM_RECORD_LEN;
+    if equipment.len() < offset + ITEM_RECORD_LEN {
+        return ItemRecord::default();
+    }
+    let record = equipment[offset..offset + ITEM_RECORD_LEN].to_vec();
+    let item_id = u32::from_le_bytes([record[0], record[1], record[2], record[3]]) as i32;
+    if item_id <= 0 {
+        return ItemRecord::default();
+    }
+    let amount = u16::from_le_bytes([record[4], record[5]]) as i32;
+    let mut item = ItemRecord {
+        item_id,
+        amount: amount.max(1),
+        record,
+    };
+    item.sync_record();
+    item
+}
+
+fn write_equipment_slot(equipment: &mut Vec<u8>, slot_idx: usize, item: &ItemRecord) {
+    if slot_idx >= TAMER_EQUIPMENT_SLOTS {
+        return;
+    }
+    if equipment.len() < TAMER_EQUIPMENT_SLOTS * ITEM_RECORD_LEN {
+        equipment.resize(TAMER_EQUIPMENT_SLOTS * ITEM_RECORD_LEN, 0);
+    }
+    let offset = slot_idx * ITEM_RECORD_LEN;
+    if item.item_id <= 0 {
+        equipment[offset..offset + ITEM_RECORD_LEN].fill(0);
+        return;
+    }
+    let mut normalized = item.clone();
+    normalized.sync_record();
+    equipment[offset..offset + ITEM_RECORD_LEN]
+        .copy_from_slice(&normalized.record[..ITEM_RECORD_LEN]);
+}
+
+fn is_item_bound(item: &ItemRecord) -> bool {
+    item.item_id > 0 && item.record.get(8).copied().unwrap_or(0) != 0
+}
+
+/// Mark an equipped/inserted item record as bound if it was unbound.
+fn set_item_bound(item: &mut ItemRecord) -> bool {
+    if item.item_id <= 0 {
+        return false;
+    }
+    if item.record.len() < ITEM_RECORD_LEN {
+        item.record.resize(ITEM_RECORD_LEN, 0);
+    }
+    let was_unbound = item.record[8] == 0;
+    item.record[8] = 1;
+    was_unbound
+}
+
+fn item_sort_locked(item: &ItemRecord) -> bool {
+    item.item_id > 0 && item.record.get(11).copied().unwrap_or(0) != 0
+}
+
+fn set_item_sort_locked(item: &mut ItemRecord, locked: bool) {
+    if item.record.len() < ITEM_RECORD_LEN {
+        item.record.resize(ITEM_RECORD_LEN, 0);
+    }
+    item.record[11] = u8::from(locked);
+}
+
+fn item_end_time(record: &[u8]) -> u32 {
+    if record.len() >= ITEM_RECORD_LEN {
+        u32::from_le_bytes(record[65..69].try_into().unwrap())
+    } else {
+        0
+    }
+}
+
+fn can_equip_tamer_item(
+    tamer_level: u8,
+    equip_slot: usize,
+    item: &ItemRecord,
+    assets: &[odmo_types::ItemAsset],
+) -> bool {
+    if equip_slot >= TAMER_EQUIPMENT_SLOTS || item.item_id <= 0 {
+        return false;
+    }
+    if let Some(asset) = assets.iter().find(|a| a.item_id == item.item_id) {
+        // Equipment item types 21..=36 correspond directly to slots 0..=15.
+        let expected_type = 21 + equip_slot as i32;
+        if asset.item_type != expected_type {
+            return false;
+        }
+        let level = i32::from(tamer_level);
+        if level < i32::from(asset.tamer_min_level) {
+            return false;
+        }
+        // Item tables encode "no upper cap" by setting max_level <= min_level (or <= 1).
+        if asset.tamer_max_level > asset.tamer_min_level
+            && asset.tamer_max_level > 1
+            && level > i32::from(asset.tamer_max_level)
+        {
+            return false;
+        }
+    }
+    true
+}
+
+fn build_tamer_equip_packet(
+    character: &odmo_types::CharacterSummary,
+    equip_slot: usize,
+    item: Option<&ItemRecord>,
+) -> Vec<u8> {
+    let handler = if character.general_handler != 0 {
+        character.general_handler as u16
+    } else {
+        character.id as u16
+    };
+    let (first, second) = match item {
+        Some(item) if item.item_id > 0 => (item.item_id as u32, item_end_time(&item.record)),
+        _ => (0, 0),
+    };
+    TamerEquipItemPacket {
+        handler,
+        kind: equip_slot as u8,
+        first,
+        second,
+        third: 0,
+        filler: 0,
+        tail: 0,
+    }
+    .encode()
+}
+
+/// Sort all unlocked non-empty slots ascending by `item_id` while pinning
+/// sort-locked slots (`record[11] != 0`) at their original indices.
+fn sort_snapshot_with_locks(snapshot: &mut odmo_types::InventorySnapshot, max_slots: usize) {
+    ensure_container_capacity(snapshot, max_slots);
+    let len = snapshot.items.len().min(max_slots);
+    let mut unlocked_indices = Vec::new();
+    let mut unlocked_items = Vec::new();
+    for (idx, item) in snapshot.items[..len].iter().enumerate() {
+        if !item_sort_locked(item) {
+            unlocked_indices.push(idx);
+            if item.item_id > 0 && item.amount > 0 {
+                unlocked_items.push(item.clone());
+            }
+        }
+    }
+    unlocked_items.sort_by_key(|item| item.item_id);
+    for (pos, idx) in unlocked_indices.into_iter().enumerate() {
+        snapshot.items[idx] = unlocked_items
+            .get(pos)
+            .cloned()
+            .unwrap_or_else(ItemRecord::default);
+    }
+}
+
+fn snapshot_to_serialized_rows(
+    snapshot: &odmo_types::InventorySnapshot,
+    max_slots: usize,
+) -> Vec<SerializedItemRow> {
+    snapshot
+        .items
+        .iter()
+        .take(max_slots)
+        .enumerate()
+        .filter(|(_, item)| item.item_id > 0 && item.amount > 0)
+        .map(|(slot, item)| SerializedItemRow::from_item_record(slot as u16, item))
+        .collect()
 }
 
 fn unix_timestamp() -> u32 {
@@ -11175,10 +11647,10 @@ mod tests {
                             map_id: DEFAULT_START_MAP_ID,
                             channel: 0,
                             handler: 34_000,
-                            type_id: 51_001,
-                            model: 51_001,
+                            type_id: 30_331,
+                            model: 31_033,
                             name: "Goblimon".to_string(),
-                            level: 12,
+                            level: 18,
                             x: DEFAULT_START_X,
                             y: DEFAULT_START_Y,
                             previous_x: DEFAULT_START_X,
@@ -11196,8 +11668,8 @@ mod tests {
                             map_id: DEFAULT_START_MAP_ID,
                             channel: 0,
                             handler: 34_001,
-                            type_id: 51_002,
-                            model: 51_002,
+                            type_id: 40_391,
+                            model: 41_039,
                             name: "FarMob".to_string(),
                             level: 40,
                             x: 99_999,
@@ -11511,23 +11983,35 @@ mod tests {
         }
         fn update_extra_inventory(
             &self,
-            _character_id: u64,
-            _extra_inventory: odmo_types::InventorySnapshot,
+            character_id: u64,
+            extra_inventory: odmo_types::InventorySnapshot,
         ) -> anyhow::Result<()> {
+            let mut characters = self.characters.write().expect("repo poisoned");
+            if let Some(character) = characters.get_mut(&character_id) {
+                character.extra_inventory = extra_inventory;
+            }
             Ok(())
         }
         fn update_warehouse(
             &self,
-            _character_id: u64,
-            _warehouse: odmo_types::InventorySnapshot,
+            character_id: u64,
+            warehouse: odmo_types::InventorySnapshot,
         ) -> anyhow::Result<()> {
+            let mut characters = self.characters.write().expect("repo poisoned");
+            if let Some(character) = characters.get_mut(&character_id) {
+                character.warehouse = warehouse;
+            }
             Ok(())
         }
         fn update_account_warehouse(
             &self,
-            _character_id: u64,
-            _account_warehouse: odmo_types::InventorySnapshot,
+            character_id: u64,
+            account_warehouse: odmo_types::InventorySnapshot,
         ) -> anyhow::Result<()> {
+            let mut characters = self.characters.write().expect("repo poisoned");
+            if let Some(character) = characters.get_mut(&character_id) {
+                character.account_warehouse = Some(account_warehouse);
+            }
             Ok(())
         }
         fn update_character_map_region(
@@ -15321,5 +15805,588 @@ mod tests {
                 .packet_type,
             odmo_protocol::opcode::game::CONSUME_ITEM_FAILURE
         );
+    }
+
+    #[test]
+    fn move_item_tamer_equip_validates_slot_and_level_swaps_and_broadcasts_1310() {
+        let mut repo = InMemoryCharacterRepository::demo();
+        repo.item_assets.extend([
+            ItemAsset {
+                item_id: 71_001,
+                item_type: 29, // Ring -> equipment slot 8 (1008)
+                tamer_min_level: 25,
+                tamer_max_level: 25, // Equal max == min means no upper cap
+                ..Default::default()
+            },
+            ItemAsset {
+                item_id: 71_002,
+                item_type: 29,
+                tamer_min_level: 1,
+                tamer_max_level: 1,
+                ..Default::default()
+            },
+            ItemAsset {
+                item_id: 71_003,
+                item_type: 28, // Necklace -> equipment slot 7 (1007)
+                tamer_min_level: 99,
+                tamer_max_level: 99,
+                ..Default::default()
+            },
+        ]);
+        repo.characters
+            .write()
+            .expect("repo poisoned")
+            .get_mut(&100)
+            .map(|character| {
+                character.level = 50;
+                character.inventory.size = 10;
+                character.inventory.items = vec![ItemRecord::default(); 10];
+                character.inventory.items[0] = ItemRecord::new(71_001, 1);
+                character.inventory.items[1] = ItemRecord::new(71_002, 1);
+                character.inventory.items[2] = ItemRecord::new(71_003, 1);
+                character.equipment = vec![0u8; 16 * 69];
+            })
+            .expect("character");
+        let repo = Arc::new(repo);
+        let broadcast = Arc::new(RecordingBroadcast::with_online([100, 200]));
+        let app = GameApplication::new(
+            GameServiceConfig {
+                portal_state_dir: unique_test_dir("move-item-tamer-equip"),
+            },
+            repo.clone(),
+        )
+        .with_broadcast(broadcast.clone());
+
+        let mut session = GameSession::new(1);
+        session.character_id = Some(100);
+
+        // Wrong slot (Ring into slot 1007 Necklace) -> 3905 failure.
+        let wrong_slot = app
+            .handle_request(
+                &mut session,
+                GameRequest::MoveItem {
+                    origin_slot: 0,
+                    destination_slot: 1007,
+                },
+            )
+            .expect("wrong slot should return move fail");
+        assert_eq!(
+            PacketReader::from_frame(&wrong_slot[0]).unwrap().packet_type,
+            odmo_protocol::opcode::game::MOVE_ITEM_FAILURE
+        );
+
+        // Below tamer_min_level (level 50 < 99) -> 3905 failure.
+        let low_level = app
+            .handle_request(
+                &mut session,
+                GameRequest::MoveItem {
+                    origin_slot: 2,
+                    destination_slot: 1007,
+                },
+            )
+            .expect("low level should return move fail");
+        assert_eq!(
+            PacketReader::from_frame(&low_level[0]).unwrap().packet_type,
+            odmo_protocol::opcode::game::MOVE_ITEM_FAILURE
+        );
+
+        // Valid Ring equip (level 50 >= 25 even though max == min == 25) -> 3904 + 1310 + 16038.
+        let equip_ok = app
+            .handle_request(
+                &mut session,
+                GameRequest::MoveItem {
+                    origin_slot: 0,
+                    destination_slot: 1008,
+                },
+            )
+            .expect("equip should succeed");
+        let equip_opcodes: Vec<i16> = equip_ok
+            .iter()
+            .map(|f| PacketReader::from_frame(f).unwrap().packet_type)
+            .collect();
+        assert_eq!(
+            equip_opcodes,
+            vec![
+                odmo_protocol::opcode::game::MOVE_ITEM,
+                odmo_protocol::opcode::game::TAMER_EQUIP_ITEM,
+                odmo_protocol::opcode::game::LOAD_INVENTORY,
+            ]
+        );
+        let equip_1310 = PacketReader::from_frame(&equip_ok[1]).unwrap();
+        assert_eq!(equip_1310.payload.len(), 17);
+        let mut r = PacketReader::new(equip_1310.payload);
+        let _uid = r.read_u16().unwrap();
+        assert_eq!(r.read_u8().unwrap(), 8);
+        assert_eq!(r.read_u32().unwrap(), 71_001);
+
+        // Visible peer broadcast also received 1310.
+        assert!(
+            broadcast
+                .visible
+                .read()
+                .expect("visible")
+                .iter()
+                .any(|(_, _, excluded, pkt)| {
+                    *excluded == 100
+                        && PacketReader::from_frame(pkt).unwrap().packet_type
+                            == odmo_protocol::opcode::game::TAMER_EQUIP_ITEM
+                }),
+            "visible map peers must receive 1310 equip broadcast",
+        );
+
+        // Equipping second Ring into occupied slot 1008 swaps first Ring back to slot 1.
+        let swap_ok = app
+            .handle_request(
+                &mut session,
+                GameRequest::MoveItem {
+                    origin_slot: 1,
+                    destination_slot: 1008,
+                },
+            )
+            .expect("swap equip should succeed");
+        assert_eq!(
+            PacketReader::from_frame(&swap_ok[0]).unwrap().packet_type,
+            odmo_protocol::opcode::game::MOVE_ITEM
+        );
+        let stored = repo.character_by_id(100).unwrap().unwrap();
+        assert_eq!(stored.inventory.items[1].item_id, 71_001);
+        assert_eq!(stored.inventory.items[1].record[8], 1);
+        assert_eq!(
+            u32::from_le_bytes(stored.equipment[8 * 69..8 * 69 + 4].try_into().unwrap()),
+            71_002
+        );
+
+        // Unequip onto occupied incompatible slot 2 -> 3905 without moving item.
+        let bad_unequip = app
+            .handle_request(
+                &mut session,
+                GameRequest::MoveItem {
+                    origin_slot: 1008,
+                    destination_slot: 2,
+                },
+            )
+            .expect("incompatible swap should fail");
+        assert_eq!(
+            PacketReader::from_frame(&bad_unequip[0]).unwrap().packet_type,
+            odmo_protocol::opcode::game::MOVE_ITEM_FAILURE
+        );
+
+        // Unequip onto empty slot 0 -> clears slot 8 and sends 1310 with item_id 0.
+        let unequip_ok = app
+            .handle_request(
+                &mut session,
+                GameRequest::MoveItem {
+                    origin_slot: 1008,
+                    destination_slot: 0,
+                },
+            )
+            .expect("unequip to empty slot should succeed");
+        let unequip_1310 = PacketReader::from_frame(&unequip_ok[1]).unwrap();
+        let mut r = PacketReader::new(unequip_1310.payload);
+        let _uid = r.read_u16().unwrap();
+        assert_eq!(r.read_u8().unwrap(), 8);
+        assert_eq!(r.read_u32().unwrap(), 0);
+        let stored_after = repo.character_by_id(100).unwrap().unwrap();
+        assert_eq!(stored_after.inventory.items[0].item_id, 71_002);
+        assert_eq!(
+            u32::from_le_bytes(
+                stored_after.equipment[8 * 69..8 * 69 + 4]
+                    .try_into()
+                    .unwrap()
+            ),
+            0
+        );
+    }
+
+    #[test]
+    fn move_and_split_account_warehouse_routes_and_bound_guard() {
+        let repo = InMemoryCharacterRepository::demo();
+        repo.characters
+            .write()
+            .expect("repo poisoned")
+            .get_mut(&100)
+            .map(|character| {
+                character.inventory.size = 10;
+                character.inventory.items = vec![ItemRecord::default(); 10];
+                character.inventory.items[0] = ItemRecord::new(5101, 5);
+                let mut bound = ItemRecord::new(5102, 4);
+                bound.record[8] = 1;
+                character.inventory.items[1] = bound;
+
+                character.warehouse.size = 10;
+                character.warehouse.items = vec![ItemRecord::default(); 10];
+
+                let mut aw = odmo_types::InventorySnapshot {
+                    bits: 0,
+                    size: 14,
+                    items: vec![ItemRecord::default(); 14],
+                };
+                let mut aw_bound = ItemRecord::new(5103, 1);
+                aw_bound.record[8] = 1;
+                aw.items[5] = aw_bound;
+                character.account_warehouse = Some(aw);
+            })
+            .expect("character");
+        let repo = Arc::new(repo);
+        let app = GameApplication::new(
+            GameServiceConfig {
+                portal_state_dir: unique_test_dir("move-split-account-warehouse"),
+            },
+            repo.clone(),
+        );
+        let mut session = GameSession::new(1);
+        session.character_id = Some(100);
+
+        // Bound item 0 -> 9000 must reject (3905).
+        let bound_move = app
+            .handle_request(
+                &mut session,
+                GameRequest::MoveItem {
+                    origin_slot: 1,
+                    destination_slot: 9000,
+                },
+            )
+            .expect("bound transfer should fail");
+        assert_eq!(
+            PacketReader::from_frame(&bound_move[0]).unwrap().packet_type,
+            odmo_protocol::opcode::game::MOVE_ITEM_FAILURE
+        );
+
+        // Bound item split 0 -> 9000 must reject (3905).
+        let bound_split = app
+            .handle_request(
+                &mut session,
+                GameRequest::SplitItem {
+                    origin_slot: 1,
+                    destination_slot: 9000,
+                    amount: 1,
+                },
+            )
+            .expect("bound split should fail");
+        assert_eq!(
+            PacketReader::from_frame(&bound_split[0]).unwrap().packet_type,
+            odmo_protocol::opcode::game::MOVE_ITEM_FAILURE
+        );
+
+        // Unbound split 0 -> 9000 succeeds and syncs both Bag and AccountWarehouse.
+        let split_ok = app
+            .handle_request(
+                &mut session,
+                GameRequest::SplitItem {
+                    origin_slot: 0,
+                    destination_slot: 9000,
+                    amount: 2,
+                },
+            )
+            .expect("unbound split to 9000 should succeed");
+        let opcodes: Vec<i16> = split_ok
+            .iter()
+            .map(|f| PacketReader::from_frame(f).unwrap().packet_type)
+            .collect();
+        assert_eq!(
+            opcodes,
+            vec![
+                odmo_protocol::opcode::game::SPLIT_ITEM,
+                odmo_protocol::opcode::game::LOAD_INVENTORY,
+                odmo_protocol::opcode::game::LOAD_INVENTORY,
+            ]
+        );
+
+        // 9000 -> 2000 move transfers into Warehouse.
+        let aw_to_wh = app
+            .handle_request(
+                &mut session,
+                GameRequest::MoveItem {
+                    origin_slot: 9000,
+                    destination_slot: 2001,
+                },
+            )
+            .expect("9000 -> 2000 should succeed");
+        assert_eq!(
+            PacketReader::from_frame(&aw_to_wh[0]).unwrap().packet_type,
+            odmo_protocol::opcode::game::MOVE_ITEM
+        );
+
+        // 9000 -> 9000 allows rearranging items already in AccountWarehouse even if limited=1.
+        let aw_internal = app
+            .handle_request(
+                &mut session,
+                GameRequest::MoveItem {
+                    origin_slot: 9005,
+                    destination_slot: 9006,
+                },
+            )
+            .expect("9000 -> 9000 should succeed");
+        assert_eq!(
+            PacketReader::from_frame(&aw_internal[0]).unwrap().packet_type,
+            odmo_protocol::opcode::game::MOVE_ITEM
+        );
+
+        let stored = repo.character_by_id(100).unwrap().unwrap();
+        assert_eq!(stored.inventory.items[0].amount, 3);
+        assert_eq!(stored.warehouse.items[1].item_id, 5101);
+        assert_eq!(stored.warehouse.items[1].amount, 2);
+        let aw = stored.account_warehouse.unwrap();
+        assert_eq!(aw.items[0].item_id, 0);
+        assert_eq!(aw.items[6].item_id, 5103);
+    }
+
+    #[test]
+    fn move_item_chipset_emits_3934_and_remove_item_matches_client_optimistic_contract() {
+        let mut repo = InMemoryCharacterRepository::demo();
+        repo.item_assets.extend([
+            ItemAsset {
+                item_id: 40_100,
+                item_type: 53,
+                digivice_chipset_slots: 2,
+                digivice_skill_slots: 0,
+                ..Default::default()
+            },
+            ItemAsset {
+                item_id: 40_200,
+                item_type: 52,
+                ..Default::default()
+            },
+        ]);
+        repo.characters
+            .write()
+            .expect("repo poisoned")
+            .get_mut(&100)
+            .map(|character| {
+                character.inventory.size = 10;
+                character.inventory.items = vec![ItemRecord::default(); 10];
+                character.inventory.items[0] = ItemRecord::new(40_200, 1);
+                character.inventory.items[1] = ItemRecord::new(5101, 5);
+                character.digivice.equipped_item = odmo_types::DigiviceItemSnapshot {
+                    item_id: 40_100,
+                    amount: 1,
+                    ..odmo_types::DigiviceItemSnapshot::default()
+                };
+                character.digivice.equipped_item.sync_record();
+            })
+            .expect("character");
+        let repo = Arc::new(repo);
+        let app = GameApplication::new(
+            GameServiceConfig {
+                portal_state_dir: unique_test_dir("chipset-bind-and-remove"),
+            },
+            repo.clone(),
+        );
+        let mut session = GameSession::new(1);
+        session.character_id = Some(100);
+
+        let bind_resp = app
+            .handle_request(
+                &mut session,
+                GameRequest::MoveItem {
+                    origin_slot: 0,
+                    destination_slot: 4000,
+                },
+            )
+            .expect("chipset move should succeed");
+        assert!(
+            bind_resp.iter().any(|frame| {
+                PacketReader::from_frame(frame).unwrap().packet_type
+                    == odmo_protocol::opcode::game::ITEM_CHANGE_LIMITED_ATTRIBUTE
+            }),
+            "equipping unbound chipset must emit 3934 bind notice",
+        );
+
+        // Valid RemoveItem mutates silently (0 packets returned).
+        let drop_ok = app
+            .handle_request(
+                &mut session,
+                GameRequest::RemoveItem {
+                    slot: 1,
+                    x: 0,
+                    y: 0,
+                    amount: 2,
+                },
+            )
+            .expect("valid drop should succeed");
+        assert!(drop_ok.is_empty());
+        assert_eq!(repo.character_by_id(100).unwrap().unwrap().inventory.items[1].amount, 3);
+
+        // Over-dropping (> remaining amount) resyncs via LoadInventory without mutating.
+        let drop_mismatch = app
+            .handle_request(
+                &mut session,
+                GameRequest::RemoveItem {
+                    slot: 1,
+                    x: 0,
+                    y: 0,
+                    amount: 99,
+                },
+            )
+            .expect("mismatch drop should resync");
+        assert_eq!(drop_mismatch.len(), 1);
+        assert_eq!(
+            PacketReader::from_frame(&drop_mismatch[0]).unwrap().packet_type,
+            odmo_protocol::opcode::game::LOAD_INVENTORY
+        );
+        assert_eq!(repo.character_by_id(100).unwrap().unwrap().inventory.items[1].amount, 3);
+    }
+
+    #[test]
+    fn sort_lock_3997_and_extra_inventory_sort_3803_and_3980_preserve_locks() {
+        let repo = InMemoryCharacterRepository::demo();
+        repo.characters
+            .write()
+            .expect("repo poisoned")
+            .get_mut(&100)
+            .map(|character| {
+                character.inventory.size = 5;
+                character.inventory.items = vec![
+                    ItemRecord::new(9003, 1),
+                    ItemRecord::new(9002, 2),
+                    ItemRecord::default(),
+                    ItemRecord::new(9001, 1),
+                    ItemRecord::default(),
+                ];
+                character.warehouse.size = 5;
+                character.warehouse.items = vec![
+                    ItemRecord::new(8002, 1),
+                    ItemRecord::default(),
+                    ItemRecord::new(8001, 4),
+                    ItemRecord::default(),
+                    ItemRecord::default(),
+                ];
+            })
+            .expect("character");
+        let repo = Arc::new(repo);
+        let app = GameApplication::new(
+            GameServiceConfig {
+                portal_state_dir: unique_test_dir("sort-lock-and-sort"),
+            },
+            repo.clone(),
+        );
+        let mut session = GameSession::new(1);
+        session.character_id = Some(100);
+
+        // Lock Bag slot 0 (item 9003) via 3997.
+        let lock_resp = app
+            .handle_request(
+                &mut session,
+                GameRequest::InventorySortLock {
+                    lock: true,
+                    container: 0,
+                    slot: 0,
+                },
+            )
+            .expect("sort lock should succeed");
+        let raw_lock = PacketReader::from_frame(&lock_resp[0]).unwrap();
+        assert_eq!(
+            raw_lock.packet_type,
+            odmo_protocol::opcode::game::INVENTORY_SORT_LOCK
+        );
+        assert_eq!(raw_lock.payload, vec![0, 0, 0, 0, 0, 0, 0]);
+
+        // Sort Bag via 3803 -> pinned slot 0 stays 9003, unlocked items sort to slots 1 & 2.
+        let bag_sort = app
+            .handle_request(&mut session, GameRequest::ExtraInventorySort { category: 0 })
+            .expect("3803 sort bag should succeed");
+        let raw_sort = PacketReader::from_frame(&bag_sort[0]).unwrap();
+        assert_eq!(raw_sort.packet_type, odmo_protocol::opcode::game::EXITEM_SORT);
+        let mut r = PacketReader::new(raw_sort.payload);
+        assert_eq!(r.read_u32().unwrap(), 0);
+        assert_eq!(r.read_u8().unwrap(), 0);
+        assert_eq!(r.read_u16().unwrap(), 3);
+        let stored_after_bag = repo.character_by_id(100).unwrap().unwrap();
+        assert_eq!(stored_after_bag.inventory.items[0].item_id, 9003);
+        assert_eq!(stored_after_bag.inventory.items[0].record[11], 1);
+        assert_eq!(stored_after_bag.inventory.items[1].item_id, 9001);
+        assert_eq!(stored_after_bag.inventory.items[2].item_id, 9002);
+
+        // 3980 with sort_type 2 targets Warehouse rather than Inventory.
+        let wh_sort = app
+            .handle_request(&mut session, GameRequest::InventorySort { sort_type: 2 })
+            .expect("3980 warehouse sort should succeed");
+        assert_eq!(
+            PacketReader::from_frame(&wh_sort[0]).unwrap().packet_type,
+            odmo_protocol::opcode::game::LOAD_INVENTORY
+        );
+        let stored_after_wh = repo.character_by_id(100).unwrap().unwrap();
+        assert_eq!(stored_after_wh.warehouse.items[0].item_id, 8001);
+        assert_eq!(stored_after_wh.warehouse.items[1].item_id, 8002);
+    }
+
+    #[test]
+    fn item_cash_trade_timeout_3984_binds_sets_end_time_and_equips_costume_1310() {
+        let mut repo = InMemoryCharacterRepository::demo();
+        repo.item_assets.push(ItemAsset {
+            item_id: 79_828,
+            item_type: 26, // Costume -> equipment slot 5 (1005)
+            tamer_min_level: 1,
+            tamer_max_level: 1,
+            usage_time_minutes: 0,
+            ..Default::default()
+        });
+        repo.characters
+            .write()
+            .expect("repo poisoned")
+            .get_mut(&100)
+            .map(|character| {
+                character.inventory.size = 10;
+                character.inventory.items = vec![ItemRecord::default(); 10];
+                character.inventory.items[5] = ItemRecord::new(79_828, 1);
+                character.equipment = vec![0u8; 16 * 69];
+            })
+            .expect("character");
+        let repo = Arc::new(repo);
+        let app = GameApplication::new(
+            GameServiceConfig {
+                portal_state_dir: unique_test_dir("cash-trade-timeout-3984"),
+            },
+            repo.clone(),
+        );
+        let mut session = GameSession::new(1);
+        session.character_id = Some(100);
+
+        let before = unix_timestamp();
+        let timeout_resp = app
+            .handle_request(&mut session, GameRequest::ItemCashTradeTimeout { slot: 5 })
+            .expect("3984 bind/timer should succeed");
+        let raw_3984 = PacketReader::from_frame(&timeout_resp[0]).unwrap();
+        assert_eq!(
+            raw_3984.packet_type,
+            odmo_protocol::opcode::game::ITEM_CASH_TRADE_TIMEOUT
+        );
+        assert_eq!(raw_3984.payload.len(), 10);
+        let mut r = PacketReader::new(raw_3984.payload);
+        assert_eq!(r.read_u16().unwrap(), 5);
+        assert_eq!(r.read_u32().unwrap(), 79_828);
+        let end_time = r.read_u32().unwrap();
+        assert!(end_time >= before + 86_400);
+
+        let stored = repo.character_by_id(100).unwrap().unwrap();
+        assert_eq!(stored.inventory.items[5].record[8], 1);
+        assert_eq!(
+            u32::from_le_bytes(
+                stored.inventory.items[5].record[65..69]
+                    .try_into()
+                    .unwrap()
+            ),
+            end_time
+        );
+
+        let equip_resp = app
+            .handle_request(
+                &mut session,
+                GameRequest::MoveItem {
+                    origin_slot: 5,
+                    destination_slot: 1005,
+                },
+            )
+            .expect("costume equip after 3984 should succeed");
+        let raw_1310 = PacketReader::from_frame(&equip_resp[1]).unwrap();
+        assert_eq!(
+            raw_1310.packet_type,
+            odmo_protocol::opcode::game::TAMER_EQUIP_ITEM
+        );
+        let mut er = PacketReader::new(raw_1310.payload);
+        let _uid = er.read_u16().unwrap();
+        assert_eq!(er.read_u8().unwrap(), 5);
+        assert_eq!(er.read_u32().unwrap(), 79_828);
+        assert_eq!(er.read_u32().unwrap(), end_time);
     }
 }
