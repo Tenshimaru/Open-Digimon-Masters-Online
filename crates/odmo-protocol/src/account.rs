@@ -132,7 +132,7 @@ impl LoginRequestBannedAnswerPacket {
     pub fn encode(&self) -> Vec<u8> {
         let mut writer = PacketWriter::new(3308);
         writer.write_u32(self.remaining_time_in_seconds);
-        writer.write_string(&self.reason);
+        writer.write_modern_utf8_string(&self.reason);
         writer.finalize()
     }
 }
@@ -234,12 +234,12 @@ impl TryFrom<RawPacket> for AccountRequest {
             account::KEEP_CONNECTION => Ok(Self::KeepConnection),
             account::LOGIN_REQUEST => Ok(Self::Login(parse_login_payload(&mut reader)?)),
             9801 => Ok(Self::SecondaryPasswordRegister {
-                password: reader.read_zstring()?,
+                password: reader.read_modern_utf8_string()?,
             }),
             9804 => Ok(parse_secondary_password_check(&mut reader)?),
             9806 => Ok(Self::SecondaryPasswordChange {
-                current_password: reader.read_zstring()?,
-                new_password: reader.read_zstring()?,
+                current_password: reader.read_modern_utf8_string()?,
+                new_password: reader.read_modern_utf8_string()?,
             }),
             account::LOAD_SERVER_LIST => Ok(Self::LoadServerList),
             account::CONNECT_CHARACTER_SERVER => Ok(Self::ConnectCharacterServer {
@@ -332,7 +332,7 @@ fn parse_secondary_password_check(
     };
 
     let password = if check_mode == SecondaryPasswordCheck::Check {
-        Some(reader.read_zstring()?)
+        Some(reader.read_modern_utf8_string()?)
     } else {
         None
     };
@@ -423,8 +423,8 @@ mod tests {
             payload: {
                 let mut payload = Vec::new();
                 payload.extend_from_slice(&(2_i16).to_le_bytes());
+                payload.extend_from_slice(&(4_u16).to_le_bytes());
                 payload.extend_from_slice(b"4321");
-                payload.push(0);
                 payload
             },
         };

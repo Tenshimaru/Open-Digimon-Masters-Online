@@ -2622,16 +2622,15 @@ proptest! {
             )
             .expect("evolution request should complete");
 
-        // The success path emits HatchFinish, the evolution result, then the
-        // inventory reload.
+        // The success path emits the evolution result, then the inventory reload.
         prop_assert_eq!(
             responses.len(),
-            3,
-            "a successful exchange emits the hatch-finish, result, and inventory frames"
+            2,
+            "a successful exchange emits the result and inventory frames"
         );
 
         // Decode the result frame: `[u32 digimon_id][i64 remaining_bits]`.
-        let raw = PacketReader::from_frame(&responses[1]).expect("result frame should decode");
+        let raw = PacketReader::from_frame(&responses[0]).expect("result frame should decode");
         let mut reader = PacketReader::new(raw.payload);
         let digimon_id = reader.read_u32().expect("digimon id");
         prop_assert_eq!(

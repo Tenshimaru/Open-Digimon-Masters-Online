@@ -284,6 +284,10 @@ pub enum GameRequest {
     },
     ItemReroll {
         item_slot: i16,
+        tamer_uid: u32,
+        stones: Vec<(u32, u16, u16)>,
+        lock_flags: u64,
+        mode: u8,
     },
     /// `pItem::SocketIn` C→S — opcode 3926.
     /// Binary-verified wire (sender 0xF24F0):
@@ -678,7 +682,11 @@ pub enum GameRequest {
     },
     PartyMemberDisconnect,
     MonsterRespawnTimer,
-    JumpBooster,
+    JumpBooster {
+        vip: u32,
+        slot: u16,
+        order: u16,
+    },
     SkillLevelUp {
         uid: u32,
         evo_unit_idx: u8,
@@ -714,6 +722,38 @@ pub enum GameRequest {
     },
     /// `Mail::List` C→S — opcode 16050: empty payload.
     MailList,
+    /// `Mail::Detail` C→S — opcode 16051: `[u8 mail_id]`.
+    MailDetail {
+        mail_id: u64,
+    },
+    /// `Mail::Send` C→S — opcode 16052.
+    MailSend {
+        recipient: String,
+        title: String,
+        body: String,
+        money: u64,
+        items: Vec<(u32, u16, u16)>,
+    },
+    /// `Mail::Withdraw` C→S — opcode 16053: `[u8 mail_id]`.
+    MailWithdraw {
+        mail_id: u64,
+    },
+    /// `Mail::Delete` C→S — opcode 16054: `[u2 count][count x u8 mail_id]`.
+    MailDelete {
+        mail_ids: Vec<u64>,
+    },
+    /// `pGame::MacroQuestion` C→S — opcode 1064: `[modern_str target_name]`.
+    MacroQuestion {
+        target_name: String,
+    },
+    /// `pGame::MacroAnswer` C→S — opcode 1065: `[modern_str answer]`.
+    MacroAnswer {
+        answer: String,
+    },
+    /// `User::SettingChange` C→S — opcode 60002 (-5534).
+    UserSettingChange {
+        entries: Vec<UserSettingEntry>,
+    },
 }
 
 /// Bodies the client frames under `pSkill::Summon`; the leading case byte chooses one.
@@ -3123,6 +3163,7 @@ pub struct DungeonClearReward {
 pub struct DungeonClearInfoPacket {
     pub value: u32,
     pub clears: Vec<DungeonClearEntry>,
+    pub sep1: u8,
     pub rewards: Vec<DungeonClearReward>,
 }
 
@@ -3139,6 +3180,7 @@ impl DungeonClearInfoPacket {
             writer.write_u8(entry.flag);
             writer.write_u32(entry.value);
         }
+        writer.write_u8(self.sep1);
         writer.write_u8(self.rewards.len() as u8);
         for reward in &self.rewards {
             writer.write_u32(reward.value);
@@ -3443,7 +3485,7 @@ impl FlaggedTextDetailPacket {
             (self.present != 0) == self.body.is_some(),
             "the gate byte and the optional body must agree"
         );
-        let mut writer = PacketWriter::new(game::NOTICE_3955);
+        let mut writer = PacketWriter::new(game::DIRECT_HATCH);
         writer.write_u8(self.present);
         if let Some(body) = &self.body {
             assert!(
@@ -3931,7 +3973,7 @@ impl InitSkinDataPacket {
 /// The in-memory row occupies 75 bytes because a vtable pointer leads it; the
 /// vtable never travels, so anything that sized the wire row from the memory
 /// layout would over-read by four bytes per item.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SerializedItemRow {
     pub item: u32,
     pub first_word: u16,
@@ -4453,7 +4495,7 @@ pub struct FiveWordFlagBlockPacket {
 
 impl FiveWordFlagBlockPacket {
     pub fn encode(&self) -> Vec<u8> {
-        let mut writer = PacketWriter::new(game::NOTICE_16066);
+        let mut writer = PacketWriter::new(game::HATCH_SYNC);
         writer.write_u32(self.first_value);
         writer.write_u32(self.second_value);
         writer.write_u32(self.third_value);
@@ -4965,6 +5007,7 @@ impl ServerMessageNoticePacket {
 pub struct MailListPacket {
     pub value: u32,
     pub rows: Vec<MailInfoRow>,
+    pub update_view: u8,
 }
 
 impl MailListPacket {
@@ -4976,6 +5019,7 @@ impl MailListPacket {
         let mut writer = PacketWriter::new(game::RES_MAIL_LIST);
         writer.write_u32(self.value);
         write_mail_rows(&mut writer, &self.rows);
+        writer.write_u8(self.update_view);
         writer.finalize()
     }
 }
@@ -7093,10 +7137,11 @@ impl HalfWordNoticePacket {
 /// `Game::ProgressNotice` — opcode 905: {u4 value; u8 value}.
 ///
 /// Both fields are unbound, so they keep positional names.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProgressNoticePacket {
     pub value: u32,
     pub second_value: u64,
+    pub text: String,
 }
 
 impl ProgressNoticePacket {
@@ -7105,6 +7150,27 @@ impl ProgressNoticePacket {
         writer.write_u32(self.value);
         writer.write_u32(self.second_value as u32);
         writer.write_u32((self.second_value >> 32) as u32);
+        writer.write_modern_utf8_string(&self.text);
+        writer.finalize()
+    }
+}
+
+/// `JumpBooster` S2C — opcode 1057 (`16B`: `[u32 result][u32 map_id][i32 x][i32 y]`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JumpBoosterResultPacket {
+    pub result: u32,
+    pub map_id: u32,
+    pub x: i32,
+    pub y: i32,
+}
+
+impl JumpBoosterResultPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::JUMP_BOOSTER);
+        writer.write_u32(self.result);
+        writer.write_u32(self.map_id);
+        writer.write_i32(self.x);
+        writer.write_i32(self.y);
         writer.finalize()
     }
 }
@@ -7395,6 +7461,8 @@ pub struct DungeonScheduleListPacket {
     pub dungeon_id: u32,
     pub value: u64,
     pub second_value: u64,
+    pub sep_a: u8,
+    pub sep_b: u8,
     pub clears: Vec<DungeonClearEntry>,
     pub schedules: Vec<DungeonScheduleEntry>,
     pub rows: Vec<DungeonScheduleRow>,
@@ -7416,6 +7484,8 @@ impl DungeonScheduleListPacket {
             "dungeon schedule lists overflow a signed u1"
         );
 
+        writer.write_u8(self.sep_a);
+        writer.write_u8(self.sep_b);
         writer.write_u8(self.clears.len() as u8);
         for entry in &self.clears {
             writer.write_u8(entry.flag);
@@ -7489,27 +7559,24 @@ impl DungeonStageInfoPacket {
     }
 }
 
-/// `Msg::DungeonMatchState` — opcode 14007: {u4 value; u1 flag; u1 flag;
-/// u4 value; u2 value}.
-///
-/// Four of the five fields are unbound, so they keep positional names.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// `Msg::DungeonMatchState` — opcode 14007: `{u1 count; count x (u4, u2)}`.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DungeonMatchStatePacket {
-    pub value: u32,
-    pub flag: u8,
-    pub second_flag: u8,
-    pub second_value: u32,
-    pub trailing: u16,
+    pub entries: Vec<(u32, u16)>,
 }
 
 impl DungeonMatchStatePacket {
     pub fn encode(&self) -> Vec<u8> {
+        assert!(
+            self.entries.len() <= i8::MAX as usize,
+            "dungeon match state entries overflow a signed u1"
+        );
         let mut writer = PacketWriter::new(game::MSG_DUNGEON_MATCH_STATE);
-        writer.write_u32(self.value);
-        writer.write_u8(self.flag);
-        writer.write_u8(self.second_flag);
-        writer.write_u32(self.second_value);
-        writer.write_u16(self.trailing);
+        writer.write_u8(self.entries.len() as u8);
+        for &(first, second) in &self.entries {
+            writer.write_u32(first);
+            writer.write_u16(second);
+        }
         writer.finalize()
     }
 }
@@ -8327,28 +8394,27 @@ impl Unknown3248Packet {
     }
 }
 
-/// Unnamed modern op 3249: {u4 a; u4 b; u1 c; u1 d; u1 e; u1 f} drives
-/// the evolution-list mutation and pops empty event 479. Unresolved
-/// fields keep their read offsets.
+/// Digimon skill level-up response (opcode 3249):
+/// [result: u32][digimon_type_id: u32][evo_unit_idx: u8][skill_idx: u8][remaining_sp: u8][new_level: u8].
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct Unknown3249Packet {
-    pub a: u32, // unresolved field
-    pub b: u32, // unresolved field
-    pub c: u8,  // unresolved field
-    pub d: u8,  // unresolved field
-    pub e: u8,  // unresolved field
-    pub f: u8,  // unresolved field
+pub struct DigimonSkillLevelUpPacket {
+    pub result: u32,
+    pub digimon_type_id: u32,
+    pub evo_unit_idx: u8,
+    pub skill_idx: u8,
+    pub remaining_sp: u8,
+    pub new_level: u8,
 }
 
-impl Unknown3249Packet {
+impl DigimonSkillLevelUpPacket {
     pub fn encode(&self) -> Vec<u8> {
-        let mut writer = PacketWriter::new(game::UNKNOWN_3249);
-        writer.write_u32(self.a);
-        writer.write_u32(self.b);
-        writer.write_u8(self.c);
-        writer.write_u8(self.d);
-        writer.write_u8(self.e);
-        writer.write_u8(self.f);
+        let mut writer = PacketWriter::new(game::DIGIMON_SKILL_LEVEL_UP);
+        writer.write_u32(self.result);
+        writer.write_u32(self.digimon_type_id);
+        writer.write_u8(self.evo_unit_idx);
+        writer.write_u8(self.skill_idx);
+        writer.write_u8(self.remaining_sp);
+        writer.write_u8(self.new_level);
         writer.finalize()
     }
 }
@@ -9830,7 +9896,7 @@ pub struct PartyMemberListPacket {
     pub party_id: u32,
     pub my_slot: i32,
     pub leader_slot: i32,
-    pub loot_type: u32,
+    pub loot_type: u8,
     pub rare_rate: u8,
     pub disp_rare_grade: u8,
     pub members: Vec<PartyMemberListEntry>,
@@ -9842,7 +9908,7 @@ impl PartyMemberListPacket {
         writer.write_u32(self.party_id);
         writer.write_i32(self.my_slot);
         writer.write_i32(self.leader_slot);
-        writer.write_u32(self.loot_type);
+        writer.write_u8(self.loot_type);
         writer.write_u8(self.rare_rate);
         writer.write_u8(self.disp_rare_grade);
         for member in &self.members {
@@ -10052,9 +10118,7 @@ pub struct DigimonEvolutionFailPacket;
 
 impl DigimonEvolutionFailPacket {
     pub fn encode(&self) -> Vec<u8> {
-        let mut writer = PacketWriter::new(game::EVOLUTION_FAILURE);
-        writer.write_i32(0);
-        writer.finalize()
+        PacketWriter::new(game::EVOLUTION_FAILURE).finalize()
     }
 }
 
@@ -10777,6 +10841,7 @@ pub struct OtherTamerDetailDigimon {
     pub field_115: u32,
     pub group_119: (u32, u16, u8),
     pub group_126: (u32, u16, u8),
+    pub field_133_byte: u8,
     pub field_133: u16,
     pub attribute_records: [(u64, u32, u16); 3],
     pub group_177: (u32, u16),
@@ -10801,6 +10866,7 @@ impl OtherTamerDetailDigimon {
             field_115: 0,
             group_119: (0, 0, 0),
             group_126: (0, 0, 0),
+            field_133_byte: 0,
             field_133: 0,
             attribute_records: [(0, 0, 0); 3],
             group_177: (0, 0),
@@ -10828,6 +10894,7 @@ impl OtherTamerDetailDigimon {
         writer.write_u32(self.group_126.0);
         writer.write_u16(self.group_126.1);
         writer.write_u8(self.group_126.2);
+        writer.write_u8(self.field_133_byte);
         writer.write_u16(self.field_133);
         for (a, b, c) in self.attribute_records {
             writer.write_u64(a);
@@ -11049,7 +11116,7 @@ impl TradeAcceptPacket {
     }
 }
 
-/// `TradeCancel` — opcode 1506.
+/// `TradeCancel` — opcode 1506 (0B payload).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TradeCancelPacket {
     pub target_handler: u32,
@@ -11057,9 +11124,7 @@ pub struct TradeCancelPacket {
 
 impl TradeCancelPacket {
     pub fn encode(&self) -> Vec<u8> {
-        let mut writer = PacketWriter::new(game::TRADE_CANCEL);
-        writer.write_u32(self.target_handler);
-        writer.finalize()
+        PacketWriter::new(game::TRADE_CANCEL).finalize()
     }
 }
 
@@ -11077,7 +11142,7 @@ impl TradeConfirmationPacket {
     }
 }
 
-/// `TradeFinalConfirmation` — opcode 1504.
+/// `TradeFinalConfirmation` — opcode 1504 (0B payload).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TradeFinalConfirmationPacket {
     pub target_handler: u32,
@@ -11085,34 +11150,34 @@ pub struct TradeFinalConfirmationPacket {
 
 impl TradeFinalConfirmationPacket {
     pub fn encode(&self) -> Vec<u8> {
-        let mut writer = PacketWriter::new(game::TRADE_FINAL_CONFIRMATION);
-        writer.write_u32(self.target_handler);
-        writer.finalize()
+        PacketWriter::new(game::TRADE_FINAL_CONFIRMATION).finalize()
     }
 }
 
-/// `TradeAddItem` — opcode 1508.
-/// `[u32 target][item bytes (~80)][u8 trade_slot][i32 inventory_slot]`.
+/// `TradeAddItem` — opcode 1508 (76B).
+/// `[u32 target][69B item record][u8 trade_slot][u16 inventory_slot]`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TradeAddItemPacket {
     pub target_handler: u32,
     pub item_bytes: Vec<u8>,
     pub trade_slot: u8,
-    pub inventory_slot: i32,
+    pub inventory_slot: u16,
 }
 
 impl TradeAddItemPacket {
     pub fn encode(&self) -> Vec<u8> {
         let mut writer = PacketWriter::new(game::TRADE_ADD_ITEM);
         writer.write_u32(self.target_handler);
-        writer.write_bytes(&self.item_bytes);
+        let mut record = self.item_bytes.clone();
+        record.resize(69, 0);
+        writer.write_bytes(&record);
         writer.write_u8(self.trade_slot);
-        writer.write_i32(self.inventory_slot);
+        writer.write_u16(self.inventory_slot);
         writer.finalize()
     }
 }
 
-/// `TradeRemoveItem` — opcode 1519.
+/// `TradeRemoveItem` — opcode 1531 (5B).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TradeRemoveItemPacket {
     pub target_handler: u32,
@@ -11121,7 +11186,7 @@ pub struct TradeRemoveItemPacket {
 
 impl TradeRemoveItemPacket {
     pub fn encode(&self) -> Vec<u8> {
-        let mut writer = PacketWriter::new(game::TRADE_REMOVE_ITEM_RESPONSE);
+        let mut writer = PacketWriter::new(game::TRADE_REMOVE_ITEM);
         writer.write_u32(self.target_handler);
         writer.write_u8(self.trade_slot);
         writer.finalize()
@@ -11144,7 +11209,7 @@ impl TradeAddMoneyPacket {
     }
 }
 
-/// `TradeInventoryLock` — opcode 1532.
+/// `TradeInventoryLock` — opcode 1532 (4B).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TradeInventoryLockPacket {
     pub target_handler: u32,
@@ -11154,12 +11219,11 @@ impl TradeInventoryLockPacket {
     pub fn encode(&self) -> Vec<u8> {
         let mut writer = PacketWriter::new(game::TRADE_LOCK);
         writer.write_u32(self.target_handler);
-        writer.write_u8(1);
         writer.finalize()
     }
 }
 
-/// `TradeInventoryUnlock` — opcode 1505.
+/// `TradeInventoryUnlock` — opcode 1505 (4B).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TradeInventoryUnlockPacket {
     pub target_handler: u32,
@@ -11169,7 +11233,6 @@ impl TradeInventoryUnlockPacket {
     pub fn encode(&self) -> Vec<u8> {
         let mut writer = PacketWriter::new(game::TRADE_UNLOCK);
         writer.write_u32(self.target_handler);
-        writer.write_u8(0);
         writer.finalize()
     }
 }
@@ -11704,30 +11767,45 @@ impl ItemIdentifyPacket {
     }
 }
 
-/// `ItemReroll` — opcode 3969.
+/// `ItemReroll` — opcode 3969 (`[u8 result][71B item][u16 cnt][cnt * {u32, u16, u16}]`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ItemRerollPacket {
     pub result: u8,
-    pub accessory_slot: i16,
-    pub power: u8,
-    pub reroll_left: u8,
-    pub types: [i16; 4],
-    pub values: [i16; 4],
+    pub item: SerializedItemRow,
+    pub stones: Vec<(u32, u16, u16)>,
 }
 
 impl ItemRerollPacket {
     pub fn encode(&self) -> Vec<u8> {
         let mut writer = PacketWriter::new(game::ITEM_REROLL);
         writer.write_u8(self.result);
-        writer.write_i16(self.accessory_slot);
-        writer.write_u8(self.power);
-        writer.write_u8(self.reroll_left);
-        for ty in self.types {
-            writer.write_i16(ty);
+        self.item.encode_into(&mut writer);
+        writer.write_u16(self.stones.len().min(u16::MAX as usize) as u16);
+        for &(id, slot, count) in &self.stones {
+            writer.write_u32(id);
+            writer.write_u16(slot);
+            writer.write_u16(count);
         }
-        for val in self.values {
-            writer.write_i16(val);
+        writer.finalize()
+    }
+}
+
+/// `Seal::Unseal` — opcode 3971 (`[u16 cnt][cnt * 71B item][u64 result_or_val]`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SealUnsealPacket {
+    pub items: Vec<SerializedItemRow>,
+    pub result_or_val: u64,
+}
+
+impl SealUnsealPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = PacketWriter::new(game::SEAL_OPEN);
+        writer.write_u16(self.items.len().min(u16::MAX as usize) as u16);
+        for item in &self.items {
+            item.encode_into(&mut writer);
         }
+        writer.write_u32(self.result_or_val as u32);
+        writer.write_u32((self.result_or_val >> 32) as u32);
         writer.finalize()
     }
 }
@@ -11862,9 +11940,8 @@ impl PartnerSwitchPacket {
         writer.write_u8(self.slot);
         writer.write_i32(self.partner.digimon_type);
         writer.write_u8(self.partner.level);
-        writer.write_fixed_wide_string(&self.partner.name, 32);
+        writer.write_modern_utf8_string(&self.partner.name);
         writer.write_i16(self.partner.size);
-        writer.write_i32(0);
         writer.write_u16(self.partner.clone_level);
         writer.write_u16(self.partner.clone_at_value);
         writer.write_u16(self.partner.clone_bl_value);
@@ -11887,24 +11964,24 @@ impl PartnerSwitchPacket {
             writer.write_u32(buff.remaining_seconds.max(0) as u32);
             writer.write_i32(buff.skill_id);
         }
-        writer.write_i32(self.partner.hp);
-        writer.write_i32(self.partner.ds);
-        writer.write_i32(self.partner.de);
-        writer.write_i32(self.partner.at);
-        writer.write_i32(self.partner.current_hp);
-        writer.write_i32(self.partner.current_ds);
-        writer.write_i32(self.partner.fs);
-        writer.write_i32(0);
-        writer.write_i32(self.partner.ev);
-        writer.write_i32(self.partner.cc);
-        writer.write_i32(self.partner.ms);
-        writer.write_i32(self.partner.as_value);
-        writer.write_i32(self.partner.ar);
-        writer.write_i32(self.partner.ht);
-        writer.write_i32(0);
-        writer.write_i32(0);
-        writer.write_i32(0);
-        writer.write_i32(self.partner.bl);
+        writer.write_u64(self.partner.hp.max(0) as u64);
+        writer.write_u64(self.partner.ds.max(0) as u64);
+        writer.write_u64(self.partner.de.max(0) as u64);
+        writer.write_u64(self.partner.at.max(0) as u64);
+        writer.write_u64(self.partner.current_hp.max(0) as u64);
+        writer.write_u64(self.partner.current_ds.max(0) as u64);
+        writer.write_u64(self.partner.fs.max(0) as u64);
+        writer.write_u64(0);
+        writer.write_u64(self.partner.ev.max(0) as u64);
+        writer.write_u64(self.partner.cc.max(0) as u64);
+        writer.write_u64(self.partner.ms.max(0) as u64);
+        writer.write_u64(self.partner.as_value.max(0) as u64);
+        writer.write_u64(self.partner.ar.max(0) as u64);
+        writer.write_u64(self.partner.ht.max(0) as u64);
+        writer.write_u64(0);
+        writer.write_u64(0);
+        writer.write_u64(0);
+        writer.write_u64(self.partner.bl.max(0) as u64);
         writer.finalize()
     }
 }
@@ -12115,12 +12192,17 @@ impl GuildInviteAcceptPacket {
     pub fn encode(&self) -> Vec<u8> {
         let mut writer = PacketWriter::new(game::GUILD_INVITE_RESPONSE_ACCEPT);
         writer.write_u8(self.authority);
-        writer.write_u8(self.member_model);
-        writer.write_modern_utf8_string(&self.character_name);
-        writer.write_u8(self.level);
-        writer.write_i16(self.map_id);
-        writer.write_u8(self.channel);
-        writer.write_modern_utf8_string(&self.guild_name);
+        if self.authority == 0 {
+            writer.write_modern_utf8_string(&self.character_name);
+            writer.write_modern_utf8_string(&self.guild_name);
+        } else {
+            writer.write_u8(self.member_model);
+            writer.write_modern_utf8_string(&self.character_name);
+            writer.write_u8(self.level);
+            writer.write_i16(self.map_id);
+            writer.write_u8(self.channel);
+            writer.write_modern_utf8_string(&self.guild_name);
+        }
         writer.finalize()
     }
 }
@@ -12740,10 +12822,10 @@ fn write_party_member(writer: &mut PacketWriter, member: &PartyMemberListEntry) 
     writer.write_i32(member.party_slot);
     writer.write_i32(member.character.model);
     writer.write_i16(i16::from(member.character.level));
-    writer.write_string(&member.character.name);
+    writer.write_modern_utf8_string(&member.character.name);
     writer.write_i32(member.character.partner_current_type);
     writer.write_i16(i16::from(member.character.partner_level));
-    writer.write_string(&member.character.partner_name);
+    writer.write_modern_utf8_string(&member.character.partner_name);
     writer.write_i32(i32::from(member.character.map_id));
     writer.write_i32(i32::from(member.character.channel));
     writer.write_u32(member.character.general_handler);
@@ -13581,13 +13663,15 @@ impl TryFrom<RawPacket> for GameRequest {
                 })
             }
             game::DIGIMON_ARCHIVE_SWAP => {
+                let _vip = reader.read_u8()?;
+                let src_slot = reader.read_u32()?;
+                let dst_slot = reader.read_u32()?;
                 let npc_idx = reader.read_u32()?;
-                let archive_type = reader.read_i32()?;
-                let src_arr = reader.read_u8()?;
-                let dst_arr = reader.read_u8()?;
+                let src_arr = src_slot.saturating_sub(1000) as u8;
+                let dst_arr = dst_slot.saturating_sub(1000) as u8;
                 Ok(Self::DigimonArchiveSwap {
                     npc_idx,
-                    archive_type,
+                    archive_type: 0,
                     src_arr,
                     dst_arr,
                 })
@@ -13626,8 +13710,36 @@ impl TryFrom<RawPacket> for GameRequest {
                 }
             }
             game::ITEM_REROLL => {
-                let item_slot = reader.read_i16()?;
-                Ok(Self::ItemReroll { item_slot })
+                if reader.remaining_len() == 2 {
+                    let item_slot = reader.read_i16()?;
+                    Ok(Self::ItemReroll {
+                        item_slot,
+                        tamer_uid: 0,
+                        stones: Vec::new(),
+                        lock_flags: 0,
+                        mode: 0,
+                    })
+                } else {
+                    let tamer_uid = reader.read_u32()?;
+                    let item_slot = reader.read_u16()? as i16;
+                    let cnt = reader.read_u16()? as usize;
+                    let mut stones = Vec::with_capacity(cnt.min(64));
+                    for _ in 0..cnt {
+                        let id = reader.read_u32()?;
+                        let slot = reader.read_u16()?;
+                        let count = reader.read_u16()?;
+                        stones.push((id, slot, count));
+                    }
+                    let lock_flags = reader.read_u64()?;
+                    let mode = reader.read_u8()?;
+                    Ok(Self::ItemReroll {
+                        item_slot,
+                        tamer_uid,
+                        stones,
+                        lock_flags,
+                        mode,
+                    })
+                }
             }
             game::ITEM_SOCKET_IN => {
                 let vip = reader.read_u8()?;
@@ -13812,6 +13924,10 @@ impl TryFrom<RawPacket> for GameRequest {
             }
             game::SEAL_OPEN => {
                 let seal_idx = reader.read_i16()?;
+                if reader.remaining_len() >= 6 {
+                    let _item_id = reader.read_u32()?;
+                    let _field = reader.read_u16()?;
+                }
                 Ok(Self::SealOpen { seal_idx })
             }
             game::SEAL_CLOSE => {
@@ -13850,7 +13966,7 @@ impl TryFrom<RawPacket> for GameRequest {
                 let deck_idx = reader.read_u16()?;
                 Ok(Self::EncyclopediaDeckBuff { deck_idx })
             }
-            game::OTHER_TAMER_DETAIL_INFO_REQUEST => {
+            game::OTHER_TAMER_DETAIL_INFO_REQUEST | 16070 => {
                 let target_handler = reader.read_u32()?;
                 Ok(Self::OtherTamerDetailInfo { target_handler })
             }
@@ -14222,7 +14338,20 @@ impl TryFrom<RawPacket> for GameRequest {
             }
             game::PARTY_MEMBER_DISCONNECT => Ok(Self::PartyMemberDisconnect),
             game::MONSTER_RESPAWN_TIMER => Ok(Self::MonsterRespawnTimer),
-            game::JUMP_BOOSTER => Ok(Self::JumpBooster),
+            game::JUMP_BOOSTER => {
+                if reader.remaining_len() >= 8 {
+                    let vip = reader.read_u32()?;
+                    let slot = reader.read_u16()?;
+                    let order = reader.read_u16()?;
+                    Ok(Self::JumpBooster { vip, slot, order })
+                } else {
+                    Ok(Self::JumpBooster {
+                        vip: 0,
+                        slot: 0,
+                        order: 0,
+                    })
+                }
+            }
             game::SKILL_LEVEL_UP => {
                 let uid = reader.read_u32()?;
                 let evo_unit_idx = reader.read_u8()?;
@@ -14293,6 +14422,61 @@ impl TryFrom<RawPacket> for GameRequest {
                 Ok(Self::SyncVerification { value })
             }
             game::RES_MAIL_LIST => Ok(Self::MailList),
+            game::RES_MAIL_DETAIL => {
+                let mail_id = reader.read_u64()?;
+                Ok(Self::MailDetail { mail_id })
+            }
+            game::RES_MAIL_SEND => {
+                let recipient = reader.read_modern_utf8_string()?;
+                let title = reader.read_modern_utf8_string()?;
+                let body = reader.read_modern_utf8_string()?;
+                let money = reader.read_u64()?;
+                let cnt = reader.read_u16()? as usize;
+                let mut items = Vec::with_capacity(cnt.min(64));
+                for _ in 0..cnt {
+                    let id = reader.read_u32()?;
+                    let slot = reader.read_u16()?;
+                    let count = reader.read_u16()?;
+                    items.push((id, slot, count));
+                }
+                Ok(Self::MailSend {
+                    recipient,
+                    title,
+                    body,
+                    money,
+                    items,
+                })
+            }
+            game::RES_MAIL_WITHDRAW => {
+                let mail_id = reader.read_u64()?;
+                Ok(Self::MailWithdraw { mail_id })
+            }
+            game::RES_MAIL_DELETE => {
+                let cnt = reader.read_u16()? as usize;
+                let mut mail_ids = Vec::with_capacity(cnt.min(256));
+                for _ in 0..cnt {
+                    mail_ids.push(reader.read_u64()?);
+                }
+                Ok(Self::MailDelete { mail_ids })
+            }
+            game::GAME_MACRO_QUESTION => {
+                let target_name = reader.read_modern_utf8_string()?;
+                Ok(Self::MacroQuestion { target_name })
+            }
+            game::GAME_MACRO_ANSWER => {
+                let answer = reader.read_modern_utf8_string()?;
+                Ok(Self::MacroAnswer { answer })
+            }
+            game::USER_SETTING_CHANGE => {
+                let cnt = reader.read_u16()? as usize;
+                let mut entries = Vec::with_capacity(cnt.min(256));
+                for _ in 0..cnt {
+                    let prefix = reader.read_u16()?;
+                    let value = reader.read_modern_utf8_string()?;
+                    entries.push(UserSettingEntry { prefix, value });
+                }
+                Ok(Self::UserSettingChange { entries })
+            }
             other => Err(ProtocolError::InvalidGamePacketType(other)),
         }
     }
@@ -14926,7 +15110,7 @@ mod tests {
     fn flagged_text_detail_opens_and_closes_with_the_gate_byte() {
         let closed = FlaggedTextDetailPacket { present: 0, body: None }.encode();
         let raw = PacketReader::from_frame(&closed).expect("frame should decode");
-        assert_eq!(raw.packet_type, game::NOTICE_3955);
+        assert_eq!(raw.packet_type, game::DIRECT_HATCH);
         assert_eq!(raw.payload, [0]);
 
         let open = FlaggedTextDetailPacket {
@@ -14949,7 +15133,7 @@ mod tests {
         }
         .encode();
         let raw = PacketReader::from_frame(&open).expect("frame should decode");
-        assert_eq!(raw.packet_type, game::NOTICE_3955);
+        assert_eq!(raw.packet_type, game::DIRECT_HATCH);
         // 1 + 4 + 4 + 8 + (2 + 2) + 2 + 8 + 8 + 2 + 144 + 1 + 56 + 2 + 14 + 14
         // = 272.
         assert_eq!(raw.payload.len(), 272);
@@ -15283,7 +15467,7 @@ mod tests {
         }
         .encode();
         let raw = PacketReader::from_frame(&frame).expect("frame should decode");
-        assert_eq!(raw.packet_type, game::NOTICE_16066);
+        assert_eq!(raw.packet_type, game::HATCH_SYNC);
         assert_eq!(raw.payload.len(), 23);
         assert_eq!(
             &raw.payload[..21],
@@ -15540,6 +15724,7 @@ mod tests {
         let frame = MailListPacket {
             value: 8,
             rows: vec![row],
+            update_view: 1,
         }
         .encode();
         let raw = PacketReader::from_frame(&frame).expect("frame should decode");
@@ -15556,6 +15741,7 @@ mod tests {
                 1, 0, b't', // title
                 6, 0, 0, 0, // first tail
                 7, 0, 0, 0, // second tail
+                1, // update_view
             ]
         );
     }
@@ -16742,11 +16928,15 @@ mod tests {
         let frame = ProgressNoticePacket {
             value: 1,
             second_value: 0x0000_0002_0000_0003,
+            text: "ok".to_string(),
         }
         .encode();
         let raw = PacketReader::from_frame(&frame).expect("frame should decode");
         assert_eq!(raw.packet_type, game::PROGRESS_NOTICE_905);
-        assert_eq!(raw.payload, [1, 0, 0, 0, 3, 0, 0, 0, 2, 0, 0, 0]);
+        assert_eq!(
+            raw.payload,
+            [1, 0, 0, 0, 3, 0, 0, 0, 2, 0, 0, 0, 2, 0, b'o', b'k']
+        );
     }
 
     #[test]
@@ -16866,6 +17056,8 @@ mod tests {
             dungeon_id: 1,
             value: 2,
             second_value: 3,
+            sep_a: 0xAA,
+            sep_b: 0xBB,
             clears: vec![DungeonClearEntry { flag: 4, value: 5 }],
             schedules: vec![DungeonScheduleEntry {
                 kind: 6,
@@ -16898,26 +17090,27 @@ mod tests {
         assert_eq!(&payload[0..4], &[1, 0, 0, 0], "dungeon id");
         assert_eq!(&payload[4..12], &[2, 0, 0, 0, 0, 0, 0, 0], "first u8");
         assert_eq!(&payload[12..20], &[3, 0, 0, 0, 0, 0, 0, 0], "second u8");
-        assert_eq!(payload[20], 1, "clear count");
-        assert_eq!(&payload[21..26], &[4, 5, 0, 0, 0], "clear row");
-        assert_eq!(payload[26], 1, "schedule count");
-        assert_eq!(payload[27], 6, "schedule kind");
-        assert_eq!(&payload[28..36], &[7, 0, 0, 0, 0, 0, 0, 0], "schedule u8");
-        assert_eq!(&payload[36..40], &[8, 0, 0, 0], "schedule u4");
-        assert_eq!(&payload[40..42], &[9, 0], "schedule u2");
-        assert_eq!(&payload[42..45], &[1, 0, b't'], "title prefix");
-        assert_eq!(&payload[45..49], &[10, 0, 0, 0], "schedule u4");
-        assert_eq!(&payload[49..51], &[11, 0], "schedule u2");
-        assert_eq!(&payload[51..54], &[1, 0, b'n'], "note prefix");
-        assert_eq!(payload[54], 1, "member count");
-        assert_eq!(&payload[55..58], &[1, 0, b'm'], "member name");
-        assert_eq!(&payload[58..66], &[12, 0, 0, 0, 0, 0, 0, 0], "member u8");
-        assert_eq!(payload[66], 1, "row count");
-        assert_eq!(&payload[67..71], &[13, 0, 14, 0], "row head/tail");
-        assert_eq!(&payload[71..140], &[15u8; 69], "row body");
-        assert_eq!(payload[140], 1, "gift count");
-        assert_eq!(&payload[141..147], &[16, 0, 0, 0, 17, 0], "gift row");
-        assert_eq!(payload.len(), 147, "no trailing bytes");
+        assert_eq!(&payload[20..22], &[0xAA, 0xBB], "sepA/sepB");
+        assert_eq!(payload[22], 1, "clear count");
+        assert_eq!(&payload[23..28], &[4, 5, 0, 0, 0], "clear row");
+        assert_eq!(payload[28], 1, "schedule count");
+        assert_eq!(payload[29], 6, "schedule kind");
+        assert_eq!(&payload[30..38], &[7, 0, 0, 0, 0, 0, 0, 0], "schedule u8");
+        assert_eq!(&payload[38..42], &[8, 0, 0, 0], "schedule u4");
+        assert_eq!(&payload[42..44], &[9, 0], "schedule u2");
+        assert_eq!(&payload[44..47], &[1, 0, b't'], "title prefix");
+        assert_eq!(&payload[47..51], &[10, 0, 0, 0], "schedule u4");
+        assert_eq!(&payload[51..53], &[11, 0], "schedule u2");
+        assert_eq!(&payload[53..56], &[1, 0, b'n'], "note prefix");
+        assert_eq!(payload[56], 1, "member count");
+        assert_eq!(&payload[57..60], &[1, 0, b'm'], "member name");
+        assert_eq!(&payload[60..68], &[12, 0, 0, 0, 0, 0, 0, 0], "member u8");
+        assert_eq!(payload[68], 1, "row count");
+        assert_eq!(&payload[69..73], &[13, 0, 14, 0], "row head/tail");
+        assert_eq!(&payload[73..142], &[15u8; 69], "row body");
+        assert_eq!(payload[142], 1, "gift count");
+        assert_eq!(&payload[143..149], &[16, 0, 0, 0, 17, 0], "gift row");
+        assert_eq!(payload.len(), 149, "no trailing bytes");
 
         let stage = DungeonStageInfoPacket {
             slot: 1,
@@ -16945,6 +17138,7 @@ mod tests {
         let clear = DungeonClearInfoPacket {
             value: 7,
             clears: vec![DungeonClearEntry { flag: 1, value: 2 }],
+            sep1: 0x55,
             rewards: vec![DungeonClearReward {
                 value: 3,
                 item: 4,
@@ -16959,22 +17153,19 @@ mod tests {
                 7, 0, 0, 0, // value
                 1, // clear count
                 1, 2, 0, 0, 0, // clear row
+                0x55, // sep1
                 1, // reward count
                 3, 0, 0, 0, 4, 0, // reward row
             ]
         );
 
         let state = DungeonMatchStatePacket {
-            value: 1,
-            flag: 2,
-            second_flag: 3,
-            second_value: 4,
-            trailing: 5,
+            entries: vec![(1, 2), (3, 4)],
         }
         .encode();
         let raw = PacketReader::from_frame(&state).expect("frame should decode");
         assert_eq!(raw.packet_type, game::MSG_DUNGEON_MATCH_STATE);
-        assert_eq!(raw.payload, [1, 0, 0, 0, 2, 3, 4, 0, 0, 0, 5, 0]);
+        assert_eq!(raw.payload, [2, 1, 0, 0, 0, 2, 0, 3, 0, 0, 0, 4, 0]);
 
         let result = DungeonMatchResultPacket {
             value: 6,
@@ -20027,17 +20218,17 @@ mod tests {
 
     #[test]
     fn quad_and_cash_list_snapshots_write_encoded_bodies() {
-        let quad = Unknown3249Packet {
-            a: 1,
-            b: 2,
-            c: 3,
-            d: 4,
-            e: 5,
-            f: 6,
+        let quad = DigimonSkillLevelUpPacket {
+            result: 1,
+            digimon_type_id: 2,
+            evo_unit_idx: 3,
+            skill_idx: 4,
+            remaining_sp: 5,
+            new_level: 6,
         }
         .encode();
         let raw = PacketReader::from_frame(&quad).expect("frame should decode");
-        assert_eq!(raw.packet_type, game::UNKNOWN_3249);
+        assert_eq!(raw.packet_type, game::DIGIMON_SKILL_LEVEL_UP);
         assert_eq!(raw.payload.len(), 12);
         assert_eq!(&raw.payload[..4], &1u32.to_le_bytes());
         assert_eq!(&raw.payload[4..8], &2u32.to_le_bytes());
@@ -20918,7 +21109,8 @@ mod tests {
         assert_eq!(reader.read_u32().expect("d111"), 0);
         assert_eq!(reader.read_u32().expect("d115"), 0);
         let _ = reader.read_bytes(7 + 7).expect("two 7-byte groups");
-        assert_eq!(reader.read_u16().expect("d133"), 0);
+        assert_eq!(reader.read_u8().expect("d133_byte"), 0);
+        assert_eq!(reader.read_u16().expect("d134"), 0);
         let _ = reader.read_bytes(14 * 3).expect("three 14-byte records");
         let _ = reader.read_bytes(6).expect("6-byte group");
         let _ = reader.read_bytes(20).expect("20-byte group");
@@ -21002,8 +21194,7 @@ mod tests {
         let packet = DigimonEvolutionFailPacket.encode();
         let raw = PacketReader::from_frame(&packet).expect("frame should decode");
         assert_eq!(raw.packet_type, game::EVOLUTION_FAILURE);
-        let mut payload = PacketReader::new(raw.payload);
-        assert_eq!(payload.read_i32().expect("fail payload"), 0);
+        assert!(raw.payload.is_empty());
     }
 
     #[test]

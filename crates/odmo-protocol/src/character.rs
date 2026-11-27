@@ -169,6 +169,9 @@ impl CharacterDeletedPacket {
     pub fn encode(&self) -> Vec<u8> {
         let mut writer = PacketWriter::new(character::CHARACTER_DELETED);
         writer.write_i32(self.result as i32);
+        if self.result as i32 == 3 {
+            writer.write_modern_utf8_string("");
+        }
         writer.finalize()
     }
 }
@@ -203,20 +206,22 @@ impl CharacterCreatedPacket {
         writer.write_i16(0);
         writer.write_i16(0);
         writer.write_i16(0);
-        writer.write_u8(self.character.slot);
+        writer.write_u32(u32::from(self.character.slot));
+        writer.write_u32(self.character.id as u32);
         writer.write_i16(self.character.map_id);
         writer.write_i32(self.character.model);
         writer.write_u8(1);
-        writer.write_string(&self.character.name);
+        writer.write_modern_utf8_string(&self.character.name);
 
-        for _ in 0..18 {
-            writer.write_bytes(&[0; 60]);
+        for _ in 0..16 {
+            writer.write_bytes(&[0; 69]);
         }
 
         writer.write_i32(self.character.partner_model);
         writer.write_u8(1);
-        writer.write_string(&self.character.partner_name);
-        writer.write_bytes(&[0; 8]);
+        writer.write_modern_utf8_string(&self.character.partner_name);
+        writer.write_u16(0);
+        writer.write_u16(0);
         writer.finalize()
     }
 }
@@ -242,8 +247,8 @@ impl TryFrom<RawPacket> for CharacterRequest {
             }
             character::CREATE_CHARACTER => Ok(parse_create_character(&mut reader)?),
             character::DELETE_CHARACTER => {
-                // The list slot rides as a dword, then the second-password text in modern form.
                 let slot = reader.read_u32()? as u8;
+                let _char_id = reader.read_u32()?;
                 Ok(Self::DeleteCharacter {
                     slot,
                     validation: reader.read_modern_utf8_string()?,
@@ -251,7 +256,11 @@ impl TryFrom<RawPacket> for CharacterRequest {
             }
             character::GET_CHARACTER_POSITION => {
                 let slot = if reader.remaining_len() >= 4 {
-                    reader.read_i32()? as u8
+                    let s = reader.read_i32()? as u8;
+                    if reader.remaining_len() >= 4 {
+                        let _char_id = reader.read_u32()?;
+                    }
+                    s
                 } else {
                     reader.read_u8()?
                 };
@@ -259,7 +268,7 @@ impl TryFrom<RawPacket> for CharacterRequest {
             }
             character::CONNECT_GAME_SERVER => Ok(Self::ConnectGameServer),
             character::CHECK_NAME_DUPLICITY => Ok(Self::CheckNameDuplicity {
-                name: reader.read_string()?,
+                name: reader.read_modern_utf8_string()?,
             }),
             other => Err(ProtocolError::InvalidCharacterPacketType(other)),
         }
@@ -269,9 +278,17 @@ impl TryFrom<RawPacket> for CharacterRequest {
 fn parse_create_character(reader: &mut PacketReader) -> Result<CharacterRequest, ProtocolError> {
     let slot = reader.read_u8()?;
     let tamer_model = reader.read_i32()?;
-    let tamer_name = read_fixed_ascii(reader, 33)?;
-    let partner_model = reader.read_i32()?;
-    let partner_name = read_fixed_ascii(reader, 33)?;
+    let (tamer_name, partner_model, partner_name) = if reader.remaining_len() >= 66 + 4 + 66 {
+        let tamer_name = read_fixed_utf16(reader, 33)?;
+        let partner_model = reader.read_i32()?;
+        let partner_name = read_fixed_utf16(reader, 33)?;
+        (tamer_name, partner_model, partner_name)
+    } else {
+        let tamer_name = read_fixed_ascii(reader, 33)?;
+        let partner_model = reader.read_i32()?;
+        let partner_name = read_fixed_ascii(reader, 33)?;
+        (tamer_name, partner_model, partner_name)
+    };
 
     Ok(CharacterRequest::CreateCharacter {
         slot,
@@ -280,6 +297,19 @@ fn parse_create_character(reader: &mut PacketReader) -> Result<CharacterRequest,
         partner_model,
         partner_name,
     })
+}
+
+fn read_fixed_utf16(reader: &mut PacketReader, code_units: usize) -> Result<String, ProtocolError> {
+    let bytes = reader.read_bytes(code_units * 2)?;
+    let mut units = Vec::with_capacity(code_units);
+    for pair in bytes.chunks_exact(2) {
+        let unit = u16::from_le_bytes([pair[0], pair[1]]);
+        if unit == 0 {
+            break;
+        }
+        units.push(unit);
+    }
+    Ok(String::from_utf16_lossy(&units).trim().to_string())
 }
 
 fn read_fixed_ascii(reader: &mut PacketReader, len: usize) -> Result<String, ProtocolError> {
@@ -327,6 +357,7 @@ mod tests {
     fn parse_delete_character_reads_dword_slot_and_modern_text() {
         let mut payload = Vec::new();
         payload.extend_from_slice(&2u32.to_le_bytes());
+        payload.extend_from_slice(&99u32.to_le_bytes());
         payload.extend_from_slice(&(4u16).to_le_bytes());
         payload.extend_from_slice(b"pass");
 
@@ -370,12 +401,16 @@ mod tests {
         let mut payload = Vec::new();
         payload.push(1);
         payload.extend_from_slice(&DEFAULT_TAMER_MODEL_ID.to_le_bytes());
-        let mut tamer = [0_u8; 33];
-        tamer[..5].copy_from_slice(b"Admin");
+        let mut tamer = [0_u8; 66];
+        for (i, unit) in "Admin".encode_utf16().enumerate() {
+            tamer[i * 2..i * 2 + 2].copy_from_slice(&unit.to_le_bytes());
+        }
         payload.extend_from_slice(&tamer);
         payload.extend_from_slice(&31001_i32.to_le_bytes());
-        let mut partner = [0_u8; 33];
-        partner[..6].copy_from_slice(b"Agumon");
+        let mut partner = [0_u8; 66];
+        for (i, unit) in "Agumon".encode_utf16().enumerate() {
+            partner[i * 2..i * 2 + 2].copy_from_slice(&unit.to_le_bytes());
+        }
         payload.extend_from_slice(&partner);
 
         let request = CharacterRequest::try_from(RawPacket {

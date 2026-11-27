@@ -171,10 +171,8 @@ pub mod game {
     pub const EVENT_PINOCHI_VOTE: i16 = 3127;
     // Store-summon use {u1 count; count x {r4; r4}} -> ev466.
     pub const ITEM_STORE_SUMMON_USE: i16 = 3953;
-    // Wire-only staged detail {u1 gate; [gate] {u4; u4; u8; text; u2; u8; u8;
-    // u2; 144-byte block; u1 rows; rows x 28B; u2; 14B; 14B}}. No dump or fork
-    // name is bound to it; the read side turns the wide pair through tick math.
-    pub const NOTICE_3955: i16 = 3955;
+    // Direct hatch response (portable incubator / direct egg hatch).
+    pub const DIRECT_HATCH: i16 = 3955;
     // Skill error {u1 kind; u2 code; dead u2 when kind = 255}: kind 95 resets only
     // on code 0, kind 100 closes the cast window on code 1 and other kinds fall
     // through to the digimon vtable reset.
@@ -339,6 +337,7 @@ pub mod game {
     // dialog (each answer row is an nsMacroProtector::stAnswerForImageQuestion) and
     // pops event 357 (+).
     pub const GAME_MACRO_QUESTION: i16 = 1064;
+    pub const GAME_MACRO_ANSWER: i16 = 1065;
     // Master money set {u8 money}: stores the amount into the local wallet
     // singleton slot (+60) and pings event 38.
     pub const MASTER_SET_MONEY: i16 = 9907;
@@ -528,8 +527,8 @@ pub mod game {
     // Incubator slot change {u4 slot; u4 value} -> event 411; slot -1 makes the
     // client close the incubator view instead.
     pub const DIGIMON_INCUBATER_SLOT_CHANGE: i16 = 3231;
-    pub const OTHER_TAMER_DETAIL_INFO_REQUEST: i16 = 16070;
-    pub const OTHER_TAMER_DETAIL_INFO_RESPONSE: i16 = 16071;
+    pub const OTHER_TAMER_DETAIL_INFO_REQUEST: i16 = -25535;
+    pub const OTHER_TAMER_DETAIL_INFO_RESPONSE: i16 = -25535;
     pub const ARENA_DAILY_POINTS: i16 = 4131;
     pub const ARENA_DAILY_RANKING: i16 = 4130;
     // Ranking requests and their responses share one id each. The client sends
@@ -637,9 +636,8 @@ pub mod game {
     pub const RETRIEVE_ACCOUNT_WAREHOUSE: i16 = 3931;
     pub const PARTY_MEMBER_DISCONNECT: i16 = 2312;
     pub const MONSTER_RESPAWN_TIMER: i16 = 16064;
-    // Wire-only wide block: {u4 x5; u1 gate; u2 short}. The read side turns
-    // the gate's 1 into a pushed sentinel; no dump or fork name is bound.
-    pub const NOTICE_16066: i16 = 16066;
+    // Incubator initial synchronization state (five dwords, VIP flag, slot value).
+    pub const HATCH_SYNC: i16 = 16066;
     pub const JUMP_BOOSTER: i16 = 1057;
     pub const SKILL_LEVEL_UP: i16 = 1104;
     pub const TAMER_CHARGE_XCRYSTAL: i16 = 16030;
@@ -718,9 +716,8 @@ pub mod game {
     // empty event 476 when the value path settles on the main monster.
     pub const UNKNOWN_3247: i16 = 3247;
     pub const UNKNOWN_3248: i16 = 3248;
-    // Unnamed quad {u4 a; u4 b; u1 c; u1 d; u1 e; u1 f} driving the evolution-list
-    // mutation and popping empty event 479.
-    pub const UNKNOWN_3249: i16 = 3249;
+    // Digimon skill level-up response: [result: u32][digimon_type_id: u32][evo_unit_idx: u8][skill_idx: u8][remaining_sp: u8][new_level: u8].
+    pub const DIGIMON_SKILL_LEVEL_UP: i16 = 3249;
     // Cash-list snapshots: 3415 {u4 a; u4 b; u2 count; count x {u4 c; u2 d}}
     // through event 438 ; 3417 {u4 a; u4 b; u2 count; count x {u4 c; u4 d; u4 e; u1
     // f; u2 g; u2 h; u2 i; u1 j; u1 k; u1 l; u1 m; u1 n}} 24-byte rows through
@@ -841,6 +838,7 @@ pub mod game {
     // The opcode exceeds i16 positive range, so it rides the wire as its
     // two-complement negative form, which is what the client compares against.
     pub const USER_SETTING_DATA: i16 = -5535;
+    pub const USER_SETTING_CHANGE: i16 = -5534;
     // Other-tamer detail info, same negative encoding.
     pub const OTHER_TAMER_DETAIL_INFO: i16 = -25535;
     // Cash-shop balance notice {u4 value}; the client reacts only to value 1.

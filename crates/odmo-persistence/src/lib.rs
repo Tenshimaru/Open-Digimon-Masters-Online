@@ -1273,6 +1273,27 @@ pub(crate) fn get_portal_definitions() -> Vec<PortalDefinition> {
             destination_x: DEFAULT_START_X,
             destination_y: DEFAULT_START_Y,
         },
+        PortalDefinition {
+            id: 105001,
+            is_local: false,
+            destination_map_id: 3,
+            destination_x: 19981,
+            destination_y: 14501,
+        },
+        PortalDefinition {
+            id: 105002,
+            is_local: false,
+            destination_map_id: 110,
+            destination_x: 8802,
+            destination_y: 20706,
+        },
+        PortalDefinition {
+            id: 3004,
+            is_local: false,
+            destination_map_id: 105,
+            destination_x: 46521,
+            destination_y: 2649,
+        },
     ]
 }
 

@@ -484,11 +484,23 @@ impl CharacterApplication {
                     ]);
                 }
 
+                let existing = self
+                    .repository
+                    .list_characters_by_account(account_id)
+                    .map_err(|error| CharacterFlowError::Storage(error.to_string()))?;
+                let effective_slot = if existing.iter().any(|c| c.slot == slot) || slot >= 4 {
+                    (0_u8..4)
+                        .find(|candidate| !existing.iter().any(|c| c.slot == *candidate))
+                        .unwrap_or(slot)
+                } else {
+                    slot
+                };
+
                 let created = self
                     .repository
                     .create_character(
                         account_id,
-                        slot,
+                        effective_slot,
                         tamer_name,
                         tamer_model,
                         partner_name,

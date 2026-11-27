@@ -15,12 +15,13 @@ use odmo_protocol::opcode::game as game_opcode;
 use odmo_protocol::{
     ArenaFameInfoPacket, ArenaFameSeasonListPacket, ArenaOldRankingInfoPacket,
     ArenaRankingDailyLoadPacket, ArenaRankingDailyUpdatePointsPacket, ArenaRankingInfoPacket,
-    AvailableChannelsPacket, CashShopBuyResponsePacket, CashShopCoinsPacket,
-    CashShopCropResponsePacket, CashShopWarehousePacket, CashTradeTimeoutPacket,
-    ChangeLimitedAttributePacket, ChangeTamerModelPacket, CountedWordNoticePacket,
-    DailyCheckEventInfoPacket, DailyCheckEventInfoRow, DailyCheckEventItemResultPacket,
-    DetailStatPair, DigiSummonPurchaseResponsePacket, DigiSummonSyncResponsePacket,
-    DigimonEvolutionFailPacket, DigimonEvolutionSuccessPacket, DigimonToSpiritResultPacket,
+    AvailableChannelsPacket, BuddyAddPacket, BuddyNotFoundPacket, CashShopBuyResponsePacket,
+    CashShopCoinsPacket, CashShopCropResponsePacket, CashShopWarehousePacket,
+    CashTradeTimeoutPacket, ChangeLimitedAttributePacket, ChangeTamerModelPacket,
+    CountedWordNoticePacket, DailyCheckEventInfoPacket, DailyCheckEventInfoRow,
+    DailyCheckEventItemResultPacket, DetailStatPair, DigiSummonPurchaseResponsePacket,
+    DigiSummonSyncResponsePacket, DigimonEvolutionFailPacket, DigimonEvolutionSuccessPacket,
+    DigimonSkillLevelUpPacket, DigimonToSpiritResultPacket,
     DigimonWalkPacket, DungeonArenaNextStagePacket, EncyclopediaDeckBuffUsePacket,
     EncyclopediaLoadPacket, EncyclopediaReceiveRewardItemPacket, ExtraInventorySortPacket,
     GameBattleOffPacket, GameBattleOnPacket, GameConnectionPacket, GameHpRatePacket,
@@ -32,7 +33,8 @@ use odmo_protocol::{
     InitUnionDataPacket, InventorySortLockResponsePacket, InventoryType, ItemConsumeFailPacket,
     ItemConsumeSuccessPacket, ItemCraftResponsePacket, ItemIdentifyPacket, ItemMoveFailPacket,
     ItemMoveSuccessPacket, ItemRerollPacket, ItemReturnPacket, ItemSocketIdentifyPacket,
-    ItemSocketInPacket, ItemSocketOutPacket, ItemStoragePacket, KillOnHitPacket, KillOnSkillPacket,
+    ItemSocketInPacket, ItemSocketOutPacket, ItemStoragePacket, JumpBoosterResultPacket,
+    KillOnHitPacket, KillOnSkillPacket,
     LevelUpPacket, LoadBuffsPacket, LoadDropsPacket, LoadInventoryPacket, LoadMobBuffsPacket,
     LoadMobsPacket, LoadTamerPacket, LocalMapSwapPacket, MailListPacket, MapSwapPacket,
     MembershipPacket, MissHitPacket, MonsterRespawnTimerPacket, MultiSellEntry,
@@ -47,7 +49,7 @@ use odmo_protocol::{
     PickItemFailReason, PickItemPacket, QuestCompletePacket, QuestCompleteRewardRow,
     QuestGoalUpdatePacket, RandomBoxListEntry, RandomBoxListResponsePacket,
     RandomBoxPurchaseResponsePacket, ReceiveExpPacket, RecompenseGainPacket, RemoveBuffPacket,
-    RepurchaseBuyRow, SealsPacket, SerializedItemRow, ServerExperiencePacket,
+    RepurchaseBuyRow, SealUnsealPacket, SealsPacket, SerializedItemRow, ServerExperiencePacket,
     SkillApplyAroundBody, SkillApplyAroundPacket, SkillStatRow, SpiritToDigimonResultPacket,
     SplitItemPacket, SyncChatLine, SyncChatRecord, SyncMegaphoneLine, SyncNamedLine,
     SyncWhisperLine, TamerAttendancePacket, TamerChangeNamePacket, TamerEquipItemPacket,
@@ -61,7 +63,8 @@ use odmo_protocol::{
     XaiInfoPacket,
     game::{
         CombineResultResponsePacket, CombineSyncResponsePacket, FriendConnectPacket, GuildRankPacket,
-        SkillUpdateCooldownPacket,
+        MailDeleteResultPacket, MailDeleteRun, MailDetailPacket, MailSendPacket, MailWithdrawPacket,
+        SkillUpdateCooldownPacket, UserSettingDataPacket,
     },
 };
 use odmo_types::{
@@ -286,6 +289,7 @@ struct GuildRoom {
     name: String,
     notice: String,
     leader_id: u64,
+    authorities: Vec<odmo_types::GuildAuthoritySnapshot>,
     members: Vec<GuildRoomMember>,
     historic: Vec<odmo_types::GuildHistoricEntry>,
 }
@@ -664,6 +668,10 @@ impl GameApplication {
                     .encode(),
                     ServerExperiencePacket {
                         experience: character.server_experience,
+                    }
+                    .encode(),
+                    UserSettingDataPacket {
+                        entries: Vec::new(),
                     }
                     .encode(),
                     CashShopCoinsPacket {
@@ -2749,7 +2757,7 @@ impl GameApplication {
                 flag: _,
             } => self.handle_item_craft(session, npc_id, recipe_id, count),
             // ItemReroll — re-roll the accessory stats on the target item.
-            GameRequest::ItemReroll { item_slot } => self.handle_item_reroll(session, item_slot),
+            GameRequest::ItemReroll { item_slot, .. } => self.handle_item_reroll(session, item_slot),
             GameRequest::ItemSocketIn {
                 vip: _,
                 inven_portable_pos: _,
@@ -3133,7 +3141,7 @@ impl GameApplication {
             GameRequest::PartyMemberDisconnect => Ok(Vec::new()),
             // ----- Combat misc ---------------------------------------------------
             GameRequest::MonsterRespawnTimer => self.handle_monster_respawn_timer(session),
-            GameRequest::JumpBooster => self.handle_jump_booster(session),
+            GameRequest::JumpBooster { .. } => self.handle_jump_booster(session),
             GameRequest::SkillLevelUp {
                 uid,
                 evo_unit_idx,
@@ -3204,9 +3212,57 @@ impl GameApplication {
                 MailListPacket {
                     value: 0,
                     rows: Vec::new(),
+                    update_view: 0,
                 }
                 .encode(),
             ]),
+            GameRequest::MailDetail { mail_id } => Ok(vec![
+                MailDetailPacket {
+                    result: 0,
+                    mail_id,
+                    mail_type: 0,
+                    title: String::new(),
+                    field_value: 0,
+                    items: Vec::new(),
+                }
+                .encode(),
+            ]),
+            GameRequest::MailSend { .. } => Ok(vec![
+                MailSendPacket {
+                    result: 0,
+                    money: 0,
+                    refs: Vec::new(),
+                }
+                .encode(),
+            ]),
+            GameRequest::MailWithdraw { mail_id } => Ok(vec![
+                MailWithdrawPacket {
+                    value: 0,
+                    gold: mail_id,
+                    first_wide: 0,
+                    second_wide: 0,
+                    items: Vec::new(),
+                }
+                .encode(),
+            ]),
+            GameRequest::MailDelete { mail_ids } => {
+                let entries = mail_ids
+                    .into_iter()
+                    .map(|id| (id as u32, (id >> 32) as u32))
+                    .collect();
+                Ok(vec![
+                    MailDeleteResultPacket {
+                        first: MailDeleteRun { entries },
+                        second: MailDeleteRun {
+                            entries: Vec::new(),
+                        },
+                    }
+                    .encode(),
+                ])
+            }
+            GameRequest::MacroQuestion { .. }
+            | GameRequest::MacroAnswer { .. }
+            | GameRequest::UserSettingChange { .. } => Ok(Vec::new()),
         }?;
 
         responses.extend(request_responses);
@@ -3362,13 +3418,10 @@ impl GameApplication {
         let mut writer = odmo_protocol::writer::PacketWriter::new(
             odmo_protocol::opcode::game::CASHSHOP_BUY_HISTORY,
         );
+        writer.write_u8(0);
         writer.write_u16(character.cash_shop_history.len().min(u16::MAX as usize) as u16);
         for entry in &character.cash_shop_history {
-            writer.write_u32(entry.order_id);
-            writer.write_i32(entry.product_id);
-            writer.write_i16(entry.amount);
-            writer.write_i32(entry.price);
-            writer.write_u64(entry.purchased_at_unix);
+            writer.write_u32(entry.product_id.max(0) as u32);
         }
         Ok(vec![writer.finalize()])
     }
@@ -3532,10 +3585,11 @@ impl GameApplication {
 
         let mut friends = character.friend_list.clone();
 
-        if let Some(target) = target
-            && target.id != character.id
-            && !friends.iter().any(|f| f.character_id == target.id)
-        {
+        let Some(target) = target else {
+            return Ok(vec![BuddyNotFoundPacket { name: friend_name }.encode()]);
+        };
+
+        if target.id != character.id && !friends.iter().any(|f| f.character_id == target.id) {
             friends.push(odmo_types::FriendListEntry {
                 character_id: target.id,
                 name: target.name.clone(),
@@ -3547,7 +3601,17 @@ impl GameApplication {
                 .map_err(|error| GameFlowError::Storage(error.to_string()))?;
         }
 
-        Ok(Vec::new())
+        let is_online = self
+            .broadcast
+            .as_ref()
+            .is_some_and(|b| b.is_online(target.id));
+        Ok(vec![
+            BuddyAddPacket {
+                flag: if is_online { 1 } else { 0 },
+                name: target.name,
+            }
+            .encode(),
+        ])
     }
 
     /// `pBuddy::Delete` (2402): drops the named friend, then refreshes the panel
@@ -3936,12 +4000,6 @@ impl GameApplication {
             .update_partner_roster(character_id, character.partner_current_slot, partner_slots)
             .map_err(|error| GameFlowError::Storage(error.to_string()))?;
 
-        let mut hatch_finish =
-            odmo_protocol::writer::PacketWriter::new(odmo_protocol::opcode::game::HATCH_FINISH);
-        hatch_finish.write_u8(1);
-        hatch_finish.write_u8(next_slot);
-        hatch_finish.write_string(&name);
-
         let consumed_packet_items = consumed_items
             .iter()
             .map(|item| {
@@ -3956,7 +4014,6 @@ impl GameApplication {
         let _ = original_bits;
 
         Ok(vec![
-            hatch_finish.finalize(),
             SpiritToDigimonResultPacket {
                 digimon_id: model_id as u32,
                 remaining_bits: character.inventory_bits,
@@ -4795,9 +4852,15 @@ impl GameApplication {
             .character_by_id(character_id)
             .map_err(|error| GameFlowError::Storage(error.to_string()))?
             .ok_or(GameFlowError::CharacterNotFound(character_id))?;
-        // Just acknowledge silently with the new count incremented in dev backends.
-        let _ = character;
-        Ok(Vec::new())
+        Ok(vec![
+            JumpBoosterResultPacket {
+                result: 0,
+                map_id: character.map_id.max(0) as u32,
+                x: character.x,
+                y: character.y,
+            }
+            .encode(),
+        ])
     }
 
     fn handle_skill_level_up(
@@ -4836,6 +4899,9 @@ impl GameApplication {
                 if evo.skill_points > 0 {
                     evo.skill_points -= 1;
                 }
+                let new_level = *level;
+                let remaining_sp = evo.skill_points;
+                let digimon_type_id = active.digimon_type as u32;
                 self.repository
                     .update_partner_roster(
                         character_id,
@@ -4843,6 +4909,17 @@ impl GameApplication {
                         partner_slots,
                     )
                     .map_err(|error| GameFlowError::Storage(error.to_string()))?;
+                return Ok(vec![
+                    DigimonSkillLevelUpPacket {
+                        result: 0,
+                        digimon_type_id,
+                        evo_unit_idx,
+                        skill_idx,
+                        remaining_sp,
+                        new_level,
+                    }
+                    .encode(),
+                ]);
             }
             return Ok(Vec::new());
         }
@@ -5613,7 +5690,7 @@ impl GameApplication {
             party_id: party.id,
             my_slot,
             leader_slot,
-            loot_type: party.loot_type,
+            loot_type: party.loot_type.min(u8::MAX as u32) as u8,
             rare_rate: party.rare_rate,
             disp_rare_grade: party.disp_rare_grade,
             members,
@@ -7242,28 +7319,22 @@ impl GameApplication {
             return Ok(vec![
                 ItemRerollPacket {
                     result: 0,
-                    accessory_slot: item_slot,
-                    power: 0,
-                    reroll_left: 0,
-                    types: [0; 4],
-                    values: [0; 4],
+                    item: SerializedItemRow::default(),
+                    stones: Vec::new(),
                 }
                 .encode(),
             ]);
         }
 
-        // Real reroll requires accessory asset data; we acknowledge with a successful
-        // result and leave the stats blank. The legacy server consumes a "reroll counter"
-        // slot from the item's record on success — that field stays where the modern
-        // client expects it (in the item record blob) and we leave the value untouched.
+        let item = SerializedItemRow::from_item_record(
+            item_slot as u16,
+            &character.inventory.items[idx],
+        );
         Ok(vec![
             ItemRerollPacket {
                 result: 1,
-                accessory_slot: item_slot,
-                power: 0,
-                reroll_left: 4,
-                types: [0; 4],
-                values: [0; 4],
+                item,
+                stones: Vec::new(),
             }
             .encode(),
         ])
@@ -7637,30 +7708,27 @@ impl GameApplication {
             .map_err(|error| GameFlowError::Storage(error.to_string()))?
             .ok_or(GameFlowError::CharacterNotFound(character_id))?;
 
-        let idx = inven_slot as usize;
-        if idx >= character.inventory.items.len() {
+        let encode_hatch_fail = |handler: u32, fail_type: u8| {
             let mut writer = odmo_protocol::writer::PacketWriter::new(
                 odmo_protocol::opcode::game::HATCH_FAILURE,
             );
-            writer.write_u8(0);
-            return Ok(vec![writer.finalize()]);
+            writer.write_u32(handler);
+            writer.write_u8(fail_type);
+            writer.finalize()
+        };
+
+        let idx = inven_slot as usize;
+        if idx >= character.inventory.items.len() {
+            return Ok(vec![encode_hatch_fail(character.general_handler, 0)]);
         }
         let egg = character.inventory.items[idx].clone();
         if egg.item_id <= 0 {
-            let mut writer = odmo_protocol::writer::PacketWriter::new(
-                odmo_protocol::opcode::game::HATCH_FAILURE,
-            );
-            writer.write_u8(0);
-            return Ok(vec![writer.finalize()]);
+            return Ok(vec![encode_hatch_fail(character.general_handler, 0)]);
         }
 
         // Reject if an egg is already inserted.
         if character.hatch_state.egg_inserted {
-            let mut writer = odmo_protocol::writer::PacketWriter::new(
-                odmo_protocol::opcode::game::HATCH_FAILURE,
-            );
-            writer.write_u8(0);
-            return Ok(vec![writer.finalize()]);
+            return Ok(vec![encode_hatch_fail(character.general_handler, 1)]);
         }
 
         // Remove the egg from inventory and store it in the incubator.
@@ -7673,17 +7741,19 @@ impl GameApplication {
         hatch.backup_active = false;
 
         self.repository
-            .update_inventory(character_id, inventory)
+            .update_inventory(character_id, inventory.clone())
             .map_err(|error| GameFlowError::Storage(error.to_string()))?;
         self.repository
             .update_hatch_state(character_id, hatch)
             .map_err(|error| GameFlowError::Storage(error.to_string()))?;
 
-        let mut writer =
-            odmo_protocol::writer::PacketWriter::new(odmo_protocol::opcode::game::HATCH_INSERT_EGG);
-        writer.write_u8(1);
-        writer.write_i32(egg.item_id);
-        Ok(vec![writer.finalize()])
+        Ok(vec![
+            LoadInventoryPacket {
+                inventory,
+                inventory_type: InventoryType::Inventory,
+            }
+            .encode(),
+        ])
     }
 
     fn handle_hatch_increase(
@@ -7702,12 +7772,13 @@ impl GameApplication {
             let mut writer = odmo_protocol::writer::PacketWriter::new(
                 odmo_protocol::opcode::game::HATCH_FAILURE,
             );
-            writer.write_u8(0);
+            writer.write_u32(character.general_handler);
+            writer.write_u8(1);
             return Ok(vec![writer.finalize()]);
         }
 
         let mut hatch = character.hatch_state.clone();
-        hatch.increase_level = (hatch.increase_level + data_level.max(1)).min(100);
+        hatch.increase_level = (hatch.increase_level + data_level.max(1)).min(5);
 
         self.repository
             .update_hatch_state(character_id, hatch.clone())
@@ -7715,8 +7786,8 @@ impl GameApplication {
 
         let mut writer =
             odmo_protocol::writer::PacketWriter::new(odmo_protocol::opcode::game::HATCH_INCREASE);
-        writer.write_u8(1);
-        writer.write_i8(hatch.increase_level);
+        writer.write_u32(character.general_handler);
+        writer.write_u8(hatch.increase_level.max(0) as u8);
         Ok(vec![writer.finalize()])
     }
 
@@ -7736,6 +7807,7 @@ impl GameApplication {
             let mut writer = odmo_protocol::writer::PacketWriter::new(
                 odmo_protocol::opcode::game::HATCH_FAILURE,
             );
+            writer.write_u32(character.general_handler);
             writer.write_u8(0);
             return Ok(vec![writer.finalize()]);
         }
@@ -7749,50 +7821,91 @@ impl GameApplication {
             let mut writer = odmo_protocol::writer::PacketWriter::new(
                 odmo_protocol::opcode::game::HATCH_FAILURE,
             );
-            writer.write_u8(0);
+            writer.write_u32(character.general_handler);
+            writer.write_u8(1);
             return Ok(vec![writer.finalize()]);
         };
 
-        // The egg item id maps to a partner type; without the egg-asset table we
-        // use the default partner model.
+        let hatch_level = character.hatch_state.increase_level.clamp(1, 5) as u8;
         let new_partner = odmo_types::PartnerSlotSnapshot {
             slot,
             digimon_type: odmo_types::DEFAULT_PARTNER_MODEL_ID,
             model: odmo_types::DEFAULT_PARTNER_MODEL_ID,
             level: 1,
             name: name.clone(),
+            hatch_grade: hatch_level,
             ..odmo_types::PartnerSlotSnapshot::default()
         };
-        partner_slots.push(new_partner);
+        partner_slots.push(new_partner.clone());
 
-        // Clear the incubator.
+        // Clear the incubator and persist the new partner roster.
         let mut hatch = character.hatch_state.clone();
         hatch.egg_inserted = false;
         hatch.egg_item_id = 0;
         hatch.increase_level = 0;
         hatch.backup_active = false;
 
-        // We don't have a dedicated update_partner_slots repository method yet, so we
-        // persist via the existing `update_partner_type` no-op surface. For dev mode
-        // (JSON) the following extension persists the new partner roster too.
-        // We mutate the runtime character via the repository helper.
         self.repository
             .update_hatch_state(character_id, hatch)
             .map_err(|error| GameFlowError::Storage(error.to_string()))?;
-
-        // Persist the new partner roster (JSON repo handles via helper).
-        if let Ok(Some(c)) = self.repository.character_by_id(character_id) {
-            // Reuse the JSON-only `update_*` surface by serializing through
-            // `update_seal_list` is not appropriate; we just keep the in-memory state
-            // and rely on the next character refresh to pick up the new slot.
-            let _ = c;
-        }
+        self.repository
+            .update_partner_roster(character_id, character.partner_current_slot, partner_slots)
+            .map_err(|error| GameFlowError::Storage(error.to_string()))?;
 
         let mut writer =
             odmo_protocol::writer::PacketWriter::new(odmo_protocol::opcode::game::HATCH_FINISH);
-        writer.write_u8(1);
-        writer.write_u8(slot);
-        writer.write_string(&name);
+        writer.write_u32(slot as u32);
+        writer.write_i32(new_partner.digimon_type);
+        writer.write_u32(1);
+        writer.write_modern_utf8_string(&new_partner.name);
+        writer.write_i16(new_partner.size);
+        writer.write_i64(0);
+        writer.write_u64(0);
+        writer.write_u16(new_partner.level as u16);
+        // 18 x u64 (144B) stats block
+        for stat in [
+            new_partner.hp,
+            new_partner.ds,
+            new_partner.de,
+            new_partner.at,
+            new_partner.current_hp,
+            new_partner.current_ds,
+            new_partner.fs,
+            0,
+            new_partner.ev,
+            new_partner.cc,
+            new_partner.ms,
+            new_partner.as_value,
+            new_partner.ar,
+            new_partner.ht,
+            0,
+            0,
+            0,
+            new_partner.bl,
+        ] {
+            writer.write_u64(stat.max(0) as u64);
+        }
+        writer.write_u8(new_partner.hatch_grade);
+        writer.write_i32(new_partner.model);
+        let evo_cnt = new_partner.evolutions.len().min(18);
+        writer.write_u8(evo_cnt as u8);
+        for evo in new_partner.evolutions.iter().take(evo_cnt) {
+            writer.write_i32(evo.evolution_type);
+            writer.write_u8(evo.unlocked);
+            writer.write_u8(evo.skill_points);
+            writer.write_u8(0);
+            writer.write_u8(0);
+            for &lv in &evo.skill_levels {
+                writer.write_u8(lv);
+            }
+            for &max_lv in &evo.max_skill_levels {
+                writer.write_u8(max_lv);
+            }
+            writer.write_bytes(&[0u8; 10]);
+        }
+        writer.write_u16(new_partner.clone_level);
+        writer.write_bytes(&[0u8; 14]);
+        writer.write_bytes(&[0u8; 14]);
         Ok(vec![writer.finalize()])
     }
 
@@ -8264,7 +8377,20 @@ impl GameApplication {
                 character.partner_slots.clone(),
             )
             .map_err(|error| GameFlowError::Storage(error.to_string()))?;
-        Ok(Vec::new())
+
+        let mut writer =
+            odmo_protocol::writer::PacketWriter::new(odmo_protocol::opcode::game::EVOLUTION_UNLOCK);
+        writer.write_u16(0);
+        writer.write_i32(evo_index as i32);
+        writer.write_u32(1);
+        Ok(vec![
+            writer.finalize(),
+            LoadInventoryPacket {
+                inventory: character.inventory,
+                inventory_type: InventoryType::Inventory,
+            }
+            .encode(),
+        ])
     }
 
     fn handle_evolution_unlock(
@@ -8395,7 +8521,20 @@ impl GameApplication {
                 character.partner_slots.clone(),
             )
             .map_err(|error| GameFlowError::Storage(error.to_string()))?;
-        Ok(Vec::new())
+
+        let mut writer =
+            odmo_protocol::writer::PacketWriter::new(odmo_protocol::opcode::game::EVOLUTION_UNLOCK);
+        writer.write_u16(0);
+        writer.write_i32(evolution_index);
+        writer.write_u32(1);
+        Ok(vec![
+            writer.finalize(),
+            LoadInventoryPacket {
+                inventory: character.inventory,
+                inventory_type: InventoryType::Inventory,
+            }
+            .encode(),
+        ])
     }
 
     fn handle_ride_mode_stop(&self, session: &GameSession) -> Result<Vec<Vec<u8>>, GameFlowError> {
@@ -8429,23 +8568,14 @@ impl GameApplication {
         let character_id = session.character_id.ok_or(GameFlowError::Unauthenticated)?;
         let trimmed = new_name.trim().to_string();
         if trimmed.is_empty() || trimmed.len() > 16 {
-            let mut writer = odmo_protocol::writer::PacketWriter::new(
-                odmo_protocol::opcode::game::DIGIMON_CHANGE_NAME,
-            );
-            writer.write_u8(0);
-            return Ok(vec![writer.finalize()]);
+            return Ok(Vec::new());
         }
 
         self.repository
             .update_partner_name(character_id, &trimmed)
             .map_err(|error| GameFlowError::Storage(error.to_string()))?;
 
-        let mut writer = odmo_protocol::writer::PacketWriter::new(
-            odmo_protocol::opcode::game::DIGIMON_CHANGE_NAME,
-        );
-        writer.write_u8(1);
-        writer.write_string(&trimmed);
-        Ok(vec![writer.finalize()])
+        Ok(Vec::new())
     }
 
     // ----- Trade slice -----------------------------------------------------------------
@@ -8692,18 +8822,20 @@ impl GameApplication {
             .map_err(|error| GameFlowError::Storage(error.to_string()))?
             .ok_or(GameFlowError::CharacterNotFound(target_id))?;
 
+        let mut item_record = item.record.clone();
+        item_record.resize(69, 0);
         let packet = TradeAddItemPacket {
             target_handler: character.general_handler,
-            item_bytes: item.record.clone(),
+            item_bytes: item_record.clone(),
             trade_slot,
-            inventory_slot: inven_pos as i32,
+            inventory_slot: inven_pos as u16,
         }
         .encode();
         let mine_packet = TradeAddItemPacket {
             target_handler: other_character.general_handler,
-            item_bytes: item.record,
+            item_bytes: item_record,
             trade_slot,
-            inventory_slot: inven_pos as i32,
+            inventory_slot: inven_pos as u16,
         }
         .encode();
 
@@ -9019,10 +9151,15 @@ impl GameApplication {
                 &mut a.inventory.items[src_idx],
                 odmo_types::ItemRecord::new(0, 0),
             );
-            // Insert into b.
+            // Insert into b preserving full item record metadata.
             if let Some(target_slot) = b.inventory.items.iter().position(|i| i.item_id == 0) {
-                b.inventory.items[target_slot] =
-                    odmo_types::ItemRecord::new(*item_id, *amount as i32);
+                let mut moved = removed.clone();
+                moved.amount = *amount as i32;
+                if moved.record.len() < 69 {
+                    moved.record.resize(69, 0);
+                }
+                moved.record[4..6].copy_from_slice(&(*amount as u16).to_le_bytes());
+                b.inventory.items[target_slot] = moved;
             } else {
                 // No room on b — drop the trade by re-inserting on a.
                 a.inventory.items[src_idx] = removed;
@@ -9042,8 +9179,13 @@ impl GameApplication {
                 odmo_types::ItemRecord::new(0, 0),
             );
             if let Some(target_slot) = a.inventory.items.iter().position(|i| i.item_id == 0) {
-                a.inventory.items[target_slot] =
-                    odmo_types::ItemRecord::new(*item_id, *amount as i32);
+                let mut moved = removed.clone();
+                moved.amount = *amount as i32;
+                if moved.record.len() < 69 {
+                    moved.record.resize(69, 0);
+                }
+                moved.record[4..6].copy_from_slice(&(*amount as u16).to_le_bytes());
+                a.inventory.items[target_slot] = moved;
             } else {
                 b.inventory.items[src_idx] = removed;
                 return Ok(());
@@ -9106,9 +9248,13 @@ impl GameApplication {
             .update_seal_list(character_id, seal_list)
             .map_err(|error| GameFlowError::Storage(error.to_string()))?;
 
-        // The modern client registers no reader for 3971, so the request is
-        // acknowledged by the stored state alone.
-        Ok(Vec::new())
+        Ok(vec![
+            SealUnsealPacket {
+                items: Vec::new(),
+                result_or_val: 0,
+            }
+            .encode(),
+        ])
     }
 
     fn handle_seal_close(
@@ -9153,8 +9299,8 @@ impl GameApplication {
 
         let mut writer =
             odmo_protocol::writer::PacketWriter::new(odmo_protocol::opcode::game::SEAL_SET_LEADER);
+        writer.write_u32(character.general_handler);
         writer.write_u16(card_code);
-        writer.write_u8(1);
         Ok(vec![writer.finalize()])
     }
 
@@ -9169,12 +9315,19 @@ impl GameApplication {
             .map_err(|error| GameFlowError::Storage(error.to_string()))?
             .ok_or(GameFlowError::CharacterNotFound(character_id))?;
 
+        let prev_leader = character.seal_list.seal_leader_id.max(0) as u16;
         let mut seal_list = character.seal_list.clone();
         seal_list.seal_leader_id = 0;
         self.repository
             .update_seal_list(character_id, seal_list)
             .map_err(|error| GameFlowError::Storage(error.to_string()))?;
-        Ok(Vec::new())
+
+        let mut writer = odmo_protocol::writer::PacketWriter::new(
+            odmo_protocol::opcode::game::SEAL_REMOVE_LEADER,
+        );
+        writer.write_u32(character.general_handler);
+        writer.write_u16(prev_leader);
+        Ok(vec![writer.finalize()])
     }
 
     fn handle_seal_set_favorite(
@@ -9206,7 +9359,7 @@ impl GameApplication {
             odmo_protocol::opcode::game::SEAL_SET_FAVORITE,
         );
         writer.write_u16(card_code);
-        writer.write_u8(1);
+        writer.write_u8(bookmark);
         Ok(vec![writer.finalize()])
     }
 
@@ -10272,6 +10425,7 @@ impl GameApplication {
                 name: trimmed.clone(),
                 notice: String::new(),
                 leader_id: character.id,
+                authorities: odmo_types::GuildSnapshot::default().authorities,
                 members: vec![creator_member],
                 historic: vec![historic_entry],
             },
@@ -10844,23 +10998,42 @@ impl GameApplication {
         let Some(authority_class) = authority_class else {
             return Ok(vec![]);
         };
-        let in_guild = self
-            .guild_runtime
-            .read()
-            .expect("guild runtime poisoned")
-            .guild_by_member
-            .contains_key(&character_id);
-        if !in_guild {
-            return Ok(vec![]);
-        }
-        Ok(vec![
-            GuildAuthorityUpdatePacket {
-                authority_class,
-                title,
-                duty,
+        let member_ids = {
+            let mut runtime = self.guild_runtime.write().expect("guild runtime poisoned");
+            let Some(guild_id) = runtime.guild_by_member.get(&character_id).copied() else {
+                return Ok(vec![]);
+            };
+            let Some(guild) = runtime.guilds.get_mut(&guild_id) else {
+                return Ok(vec![]);
+            };
+            if let Some(auth) = guild
+                .authorities
+                .iter_mut()
+                .find(|a| a.class == authority_class)
+            {
+                auth.title = title.clone();
+                auth.duty = duty.clone();
             }
-            .encode(),
-        ])
+            guild
+                .members
+                .iter()
+                .map(|m| m.character_id)
+                .collect::<Vec<_>>()
+        };
+        let packet = GuildAuthorityUpdatePacket {
+            authority_class,
+            title,
+            duty,
+        }
+        .encode();
+        if let Some(broadcast) = &self.broadcast {
+            for id in member_ids {
+                if id != character_id && broadcast.is_online(id) {
+                    let _ = broadcast.send_to(id, &packet);
+                }
+            }
+        }
+        Ok(vec![packet])
     }
 
     fn handle_guild_authority(
@@ -10962,7 +11135,7 @@ impl GameApplication {
             current_experience: 0,
             notice: guild.notice.clone(),
             extra_slots: 0,
-            authorities: odmo_types::GuildSnapshot::default().authorities,
+            authorities: guild.authorities.clone(),
             members,
             historic: guild.historic.clone(),
             rank_position: 0,
@@ -16385,9 +16558,11 @@ mod tests {
             )
             .expect("request should complete");
 
-        assert!(
-            responses.is_empty(),
-            "modern slot-open should stay optimistic"
+        assert_eq!(responses.len(), 2);
+        let unlock_raw = PacketReader::from_frame(&responses[0]).expect("unlock frame");
+        assert_eq!(
+            unlock_raw.packet_type,
+            odmo_protocol::opcode::game::EVOLUTION_UNLOCK
         );
 
         let stored = repo
@@ -16541,7 +16716,12 @@ mod tests {
             )
             .expect("request should complete");
 
-        assert!(responses.is_empty());
+        assert_eq!(responses.len(), 2);
+        let unlock_raw = PacketReader::from_frame(&responses[0]).expect("unlock frame");
+        assert_eq!(
+            unlock_raw.packet_type,
+            odmo_protocol::opcode::game::EVOLUTION_UNLOCK
+        );
 
         let stored = repo
             .character_by_id(100)
@@ -16614,7 +16794,12 @@ mod tests {
             )
             .expect("request should complete");
 
-        assert!(responses.is_empty(), "ride-open should stay optimistic");
+        assert_eq!(responses.len(), 2);
+        let unlock_raw = PacketReader::from_frame(&responses[0]).expect("ride unlock frame");
+        assert_eq!(
+            unlock_raw.packet_type,
+            odmo_protocol::opcode::game::EVOLUTION_UNLOCK
+        );
 
         let stored = repo
             .character_by_id(100)
@@ -16821,8 +17006,8 @@ mod tests {
             )
             .expect("request should complete");
 
-        assert_eq!(responses.len(), 3);
-        let result_raw = PacketReader::from_frame(&responses[1]).expect("result frame");
+        assert_eq!(responses.len(), 2);
+        let result_raw = PacketReader::from_frame(&responses[0]).expect("result frame");
         assert_eq!(
             result_raw.packet_type,
             odmo_protocol::opcode::game::SPIRIT_TO_DIGIMON
